@@ -1,0 +1,66 @@
+:root {
+  --np-font-sans: "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+
+  --np-color-brand-50: #f0f4ff;
+  --np-color-brand-100: #dce6ff;
+  --np-color-brand-200: #c1d2ff;
+  --np-color-brand-300: #99b7ff;
+  --np-color-brand-400: #6f99ff;
+  --np-color-brand-500: #4c7ff4;
+  --np-color-brand-600: #2f67df;
+  --np-color-brand-700: #2351b6;
+
+  --np-color-bg-app: #f1f5fb;
+  --np-color-bg-soft: #e7eef8;
+  --np-color-bg-card: #ffffff;
+  --np-color-bg-elevated: #f8fbff;
+
+  --np-color-text-primary: #15223a;
+  --np-color-text-secondary: #344964;
+  --np-color-text-muted: #667c98;
+
+  --np-color-border: #d0dced;
+  --np-color-border-strong: #bccbe1;
+
+  --np-color-success: #1f9f70;
+  --np-color-warning: #cf8821;
+  --np-color-danger: #c24747;
+  --np-color-info: #4f678c;
+
+  --np-radius-xs: 8px;
+  --np-radius-sm: 10px;
+  --np-radius-md: 14px;
+  --np-radius-lg: 18px;
+
+  --np-shadow-sm: 0 8px 22px rgba(26, 52, 90, 0.08);
+  --np-shadow-md: 0 20px 44px rgba(24, 44, 74, 0.12);
+
+  --np-space-1: 4px;
+  --np-space-2: 8px;
+  --np-space-3: 12px;
+  --np-space-4: 16px;
+  --np-space-5: 20px;
+  --np-space-6: 24px;
+  --np-space-8: 32px;
+
+  --np-trans-fast: 140ms;
+  --np-trans-base: 220ms;
+  --np-trans-page: 280ms;
+
+  --np-layout-max: 1480px;
+  --np-content-gutter: clamp(12px, 2vw, 24px);
+  --np-sidebar-width: 268px;
+  --np-sidebar-width-collapsed: 84px;
+  --np-topbar-height: 58px;
+
+  --el-font-family: var(--np-font-sans);
+  --el-font-size-base: 13px;
+  --el-color-primary: var(--np-color-brand-600);
+  --el-color-success: var(--np-color-success);
+  --el-color-warning: var(--np-color-warning);
+  --el-color-danger: var(--np-color-danger);
+  --el-color-info: var(--np-color-info);
+  --el-border-radius-base: var(--np-radius-sm);
+  --el-border-color: var(--np-color-border);
+  --el-bg-color-page: var(--np-color-bg-app);
+}

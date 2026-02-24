@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:flowable="http://flowable.org/bpmn"
+  targetNamespace="http://nature.platform/processes">
+  <process id="PROJECT_REGISTER_FLOW" name="项目登记审核流程" isExecutable="true">
+    <startEvent id="start_event" name="提交审核" />
+    <sequenceFlow id="flow_start_review" sourceRef="start_event" targetRef="PROJECT_REGISTER_REVIEW" />
+
+    <userTask id="PROJECT_REGISTER_REVIEW" name="项目登记审核" flowable:candidateUsers="admin,reviewer" />
+    <sequenceFlow id="flow_review_gateway" sourceRef="PROJECT_REGISTER_REVIEW" targetRef="review_gateway" />
+
+    <exclusiveGateway id="review_gateway" name="审核决策" />
+
+    <sequenceFlow id="flow_approve" sourceRef="review_gateway" targetRef="approve_end">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${approved == true}]]></conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="flow_reject" sourceRef="review_gateway" targetRef="reject_end">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${approved == false}]]></conditionExpression>
+    </sequenceFlow>
+
+    <endEvent id="approve_end" name="审核通过" />
+    <endEvent id="reject_end" name="审核驳回" />
+  </process>
+</definitions>

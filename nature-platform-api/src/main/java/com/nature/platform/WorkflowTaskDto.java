@@ -1,0 +1,83 @@
+/**
+ * @input Workflow task query rows assembled by WorkflowTaskService
+ * @output WorkflowTaskDto task-center projection for todo list and action payload routing
+ * @position API-facing workflow read model shared by workflow task list UI
+ * @doc-sync Update this header and folder INDEX.md when this file changes.
+ */
+package com.nature.platform;
+
+public class WorkflowTaskDto {
+  private String taskId;
+  private String taskType;
+  private long bizId;
+  private String bizTitle;
+  private String status;
+  private String submittedBy;
+  private String submittedAt;
+  private String processDefinitionKey;
+  private String currentNode;
+  private String processInstanceId;
+
+  public WorkflowTaskDto(
+      String taskId,
+      String taskType,
+      long bizId,
+      String bizTitle,
+      String status,
+      String submittedBy,
+      String submittedAt,
+      String processDefinitionKey,
+      String currentNode,
+      String processInstanceId) {
+    this.taskId = taskId;
+    this.taskType = taskType;
+    this.bizId = bizId;
+    this.bizTitle = bizTitle;
+    this.status = status;
+    this.submittedBy = submittedBy;
+    this.submittedAt = submittedAt;
+    this.processDefinitionKey = processDefinitionKey;
+    this.currentNode = currentNode;
+    this.processInstanceId = processInstanceId;
+  }
+
+  public String getTaskId() {
+    return taskId;
+  }
+
+  public String getTaskType() {
+    return taskType;
+  }
+
+  public long getBizId() {
+    return bizId;
+  }
+
+  public String getBizTitle() {
+    return bizTitle;
+  }
+
+  public String getStatus() {
+    return status;
+  }
+
+  public String getSubmittedBy() {
+    return submittedBy;
+  }
+
+  public String getSubmittedAt() {
+    return submittedAt;
+  }
+
+  public String getProcessDefinitionKey() {
+    return processDefinitionKey;
+  }
+
+  public String getCurrentNode() {
+    return currentNode;
+  }
+
+  public String getProcessInstanceId() {
+    return processInstanceId;
+  }
+}

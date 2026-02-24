@@ -1,0 +1,186 @@
+/**
+ * @input Jakarta validation and nested ContractSystemItemPayload list from REST body
+ * @output ContractRequest DTO for contract create/update operations
+ * @position Contract domain input contract capturing bid+contract combined fields
+ * @doc-sync Update this header and folder INDEX.md when this file changes.
+ */
+package com.nature.platform;
+
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
+
+public class ContractRequest {
+  @Min(1)
+  private long customerId;
+
+  @NotBlank private String projectName;
+  @NotBlank private String contactName;
+  @NotBlank private String mobilePhone;
+  @NotBlank private String paymentCompany;
+  private BigDecimal paymentAmount;
+  private String paymentMethod;
+  private String partnerName;
+  private String salesPerson;
+  private String performanceCity;
+  private String dealStatus;
+  private String remark;
+  private String contractType;
+  private String contractFileObjectKey;
+  private String serviceYearDetail;
+  private String paymentStatus;
+
+  @NotEmpty private List<Integer> serviceYears = new ArrayList<>();
+
+  @Valid
+  @NotEmpty
+  private List<ContractSystemItemPayload> systemItems = new ArrayList<>();
+
+  public long getCustomerId() {
+    return customerId;
+  }
+
+  public void setCustomerId(long customerId) {
+    this.customerId = customerId;
+  }
+
+  public String getProjectName() {
+    return projectName;
+  }
+
+  public void setProjectName(String projectName) {
+    this.projectName = projectName;
+  }
+
+  public String getContactName() {
+    return contactName;
+  }
+
+  public void setContactName(String contactName) {
+    this.contactName = contactName;
+  }
+
+  public String getMobilePhone() {
+    return mobilePhone;
+  }
+
+  public void setMobilePhone(String mobilePhone) {
+    this.mobilePhone = mobilePhone;
+  }
+
+  public String getPaymentCompany() {
+    return paymentCompany;
+  }
+
+  public void setPaymentCompany(String paymentCompany) {
+    this.paymentCompany = paymentCompany;
+  }
+
+  public BigDecimal getPaymentAmount() {
+    return paymentAmount;
+  }
+
+  public void setPaymentAmount(BigDecimal paymentAmount) {
+    this.paymentAmount = paymentAmount;
+  }
+
+  public String getPaymentMethod() {
+    return paymentMethod;
+  }
+
+  public void setPaymentMethod(String paymentMethod) {
+    this.paymentMethod = paymentMethod;
+  }
+
+  public String getPartnerName() {
+    return partnerName;
+  }
+
+  public void setPartnerName(String partnerName) {
+    this.partnerName = partnerName;
+  }
+
+  public String getSalesPerson() {
+    return salesPerson;
+  }
+
+  public void setSalesPerson(String salesPerson) {
+    this.salesPerson = salesPerson;
+  }
+
+  public String getPerformanceCity() {
+    return performanceCity;
+  }
+
+  public void setPerformanceCity(String performanceCity) {
+    this.performanceCity = performanceCity;
+  }
+
+  public String getDealStatus() {
+    return dealStatus;
+  }
+
+  public void setDealStatus(String dealStatus) {
+    this.dealStatus = dealStatus;
+  }
+
+  public String getRemark() {
+    return remark;
+  }
+
+  public void setRemark(String remark) {
+    this.remark = remark;
+  }
+
+  public String getContractType() {
+    return contractType;
+  }
+
+  public void setContractType(String contractType) {
+    this.contractType = contractType;
+  }
+
+  public String getContractFileObjectKey() {
+    return contractFileObjectKey;
+  }
+
+  public void setContractFileObjectKey(String contractFileObjectKey) {
+    this.contractFileObjectKey = contractFileObjectKey;
+  }
+
+  public String getServiceYearDetail() {
+    return serviceYearDetail;
+  }
+
+  public void setServiceYearDetail(String serviceYearDetail) {
+    this.serviceYearDetail = serviceYearDetail;
+  }
+
+  public String getPaymentStatus() {
+    return paymentStatus;
+  }
+
+  public void setPaymentStatus(String paymentStatus) {
+    this.paymentStatus = paymentStatus;
+  }
+
+  public List<Integer> getServiceYears() {
+    return serviceYears;
+  }
+
+  public void setServiceYears(List<Integer> serviceYears) {
+    this.serviceYears = serviceYears;
+  }
+
+  public List<ContractSystemItemPayload> getSystemItems() {
+    return systemItems;
+  }
+
+  public void setSystemItems(List<ContractSystemItemPayload> systemItems) {
+    this.systemItems = systemItems;
+  }
+}

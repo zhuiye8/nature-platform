@@ -1,0 +1,21 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:nature_test;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  flyway:
+    enabled: false
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+flowable:
+  async-executor-activate: false
+  database-schema-update: true
+
+app:
+  security:
+    jwt-secret: test-secret-with-at-least-32-bytes-1234
+

@@ -1,0 +1,578 @@
+/**
+ * @input JdbcTemplate, user-account service, workflow trace helper, and notifications
+ * @output Node-12 content-review submit and A/B/C task approval/rejection operations
+ * @position Report content-review service bridging technical-review completion to compile-assignment stage
+ * @doc-sync Update this header and folder INDEX.md when this file changes.
+ */
+package com.nature.platform;
+
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Timestamp;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
+
+@Service
+public class ReportContentReviewService {
+  public static final String NODE_TASK = "REPORT_CONTENT_REVIEW_TASK";
+  public static final String NEXT_NODE = "REPORT_COMPILE_ASSIGN";
+
+  private static final String ROLE_A = "CONTENT_A";
+  private static final String ROLE_B = "CONTENT_B";
+  private static final String ROLE_C = "CONTENT_C";
+
+  private final JdbcTemplate jdbcTemplate;
+  private final UserAccountService userAccountService;
+  private final ProjectWorkflowTraceService workflowTraceService;
+  private final NotificationService notificationService;
+
+  public ReportContentReviewService(
+      JdbcTemplate jdbcTemplate,
+      UserAccountService userAccountService,
+      ProjectWorkflowTraceService workflowTraceService,
+      NotificationService notificationService) {
+    this.jdbcTemplate = jdbcTemplate;
+    this.userAccountService = userAccountService;
+    this.workflowTraceService = workflowTraceService;
+    this.notificationService = notificationService;
+  }
+
+  public List<ReportContentReviewRecord> list() {
+    List<ReportContentReviewRecord> rows =
+        jdbcTemplate.query(baseSql() + " ORDER BY p.id DESC", new ReportContentReviewRowMapper());
+    loadTasks(rows);
+    return rows;
+  }
+
+  public java.util.Optional<ReportContentReviewRecord> detail(long projectId) {
+    List<ReportContentReviewRecord> rows =
+        jdbcTemplate.query(baseSql() + " AND p.id = ?", new ReportContentReviewRowMapper(), projectId);
+    if (rows.isEmpty()) {
+      return java.util.Optional.empty();
+    }
+    loadTasks(rows);
+    return rows.stream().findFirst();
+  }
+
+  public List<ReportContentTodoTask> listTodoTasks(String operator, String keyword) {
+    boolean admin = isAdmin(operator);
+    List<ReportContentTodoTask> rows =
+        jdbcTemplate.query(
+            """
+            SELECT
+              t.id,
+              t.project_register_id,
+              p.application_name,
+              a.applied_by,
+              a.submitted_at,
+              t.review_role,
+              t.assignee,
+              wi.process_instance_id
+            FROM report_content_review_task t
+            JOIN report_content_review_apply a ON a.id = t.apply_id
+            JOIN project_register p ON p.id = t.project_register_id
+            LEFT JOIN workflow_instance wi ON wi.biz_type = 'PROJECT_REGISTER' AND wi.biz_id = t.project_register_id
+            WHERE t.status = 'PENDING'
+              AND a.status = 'SUBMITTED'
+              AND (? = 1 OR t.assignee = ?)
+            ORDER BY a.submitted_at DESC, t.id DESC
+            """,
+            (rs, rowNum) ->
+                new ReportContentTodoTask(
+                    rs.getLong("id"),
+                    rs.getLong("project_register_id"),
+                    rs.getString("application_name"),
+                    rs.getString("applied_by"),
+                    stringTimestamp(rs.getTimestamp("submitted_at")),
+                    rs.getString("review_role"),
+                    rs.getString("assignee"),
+                    rs.getString("process_instance_id")),
+            admin ? 1 : 0,
+            operator);
+
+    if (keyword == null || keyword.isBlank()) {
+      return rows;
+    }
+    String needle = keyword.trim().toLowerCase(Locale.ROOT);
+    return rows.stream()
+        .filter(
+            item ->
+                contains(item.applicationName(), needle)
+                    || contains(item.appliedBy(), needle)
+                    || contains(item.reviewRole(), needle)
+                    || contains(item.assignee(), needle)
+                    || String.valueOf(item.projectRegisterId()).contains(needle))
+        .toList();
+  }
+
+  @Transactional
+  public ReportContentReviewRecord submit(long projectId, String operator) {
+    ensureTechReviewApproved(projectId);
+    Assignment reviewers = loadAssignment(projectId);
+    ensureEnabledUsers(reviewers);
+
+    List<ApplyRow> applies =
+        jdbcTemplate.query(
+            """
+            SELECT id, status, applied_by
+            FROM report_content_review_apply
+            WHERE project_register_id = ?
+            """,
+            (rs, rowNum) -> new ApplyRow(rs.getLong("id"), rs.getString("status"), rs.getString("applied_by")),
+            projectId);
+
+    long applyId;
+    String oldStatus;
+    if (applies.isEmpty()) {
+      jdbcTemplate.update(
+          """
+          INSERT INTO report_content_review_apply (
+            project_register_id, status, applied_by, submitted_at, finished_at, updated_by
+          ) VALUES (?, 'SUBMITTED', ?, NOW(), NULL, ?)
+          """,
+          projectId,
+          operator,
+          operator);
+      Long id = jdbcTemplate.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
+      if (id == null || id <= 0) {
+        throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "content review apply create failed");
+      }
+      applyId = id;
+      oldStatus = "DRAFT";
+    } else {
+      ApplyRow apply = applies.get(0);
+      applyId = apply.id();
+      oldStatus = apply.status();
+      jdbcTemplate.update(
+          """
+          UPDATE report_content_review_apply
+          SET status = 'SUBMITTED', applied_by = ?, submitted_at = NOW(), finished_at = NULL, updated_by = ?
+          WHERE id = ?
+          """,
+          operator,
+          operator,
+          applyId);
+    }
+
+    jdbcTemplate.update("DELETE FROM report_content_review_task WHERE apply_id = ?", applyId);
+    Map<String, String> taskMap = new LinkedHashMap<>();
+    taskMap.put(ROLE_A, reviewers.reviewerA());
+    taskMap.put(ROLE_B, reviewers.reviewerB());
+    taskMap.put(ROLE_C, reviewers.reviewerC());
+    for (Map.Entry<String, String> item : taskMap.entrySet()) {
+      jdbcTemplate.update(
+          """
+          INSERT INTO report_content_review_task (
+            apply_id, project_register_id, review_role, assignee, status
+          ) VALUES (?, ?, ?, ?, 'PENDING')
+          """,
+          applyId,
+          projectId,
+          item.getKey(),
+          item.getValue());
+    }
+
+    workflowTraceService.moveNode(projectId, NODE_TASK, "PENDING", operator);
+    workflowTraceService.appendAction(
+        projectId, "REPORT_CONTENT_REVIEW_SUBMIT", oldStatus, "SUBMITTED", operator, "");
+
+    ProjectRef project = loadProjectRef(projectId);
+    notificationService.createForUsers(
+        List.of(reviewers.reviewerA(), reviewers.reviewerB(), reviewers.reviewerC()),
+        "报告内容审核待处理",
+        "项目[" + project.applicationName() + "]已进入报告内容审核阶段。",
+        "REPORT_CONTENT_REVIEW_ENTER",
+        ProjectRegisterService.BIZ_TYPE,
+        projectId);
+
+    return detail(projectId).orElseThrow();
+  }
+
+  @Transactional
+  public void approveTask(long taskId, String operator) {
+    TaskContext task = loadTask(taskId);
+    ensureTaskPermission(task.assignee(), operator);
+    ensureTaskPending(task.status());
+
+    jdbcTemplate.update(
+        """
+        UPDATE report_content_review_task
+        SET status = 'APPROVED', remark = '', processed_by = ?, processed_at = NOW()
+        WHERE id = ?
+        """,
+        operator,
+        taskId);
+
+    workflowTraceService.appendAction(
+        task.projectId(),
+        "REPORT_CONTENT_REVIEW_" + task.reviewRole() + "_APPROVE",
+        "PENDING",
+        "APPROVED",
+        operator,
+        "");
+    completeIfAllApproved(task.projectId(), task.applyId(), operator, task.appliedBy(), task.applicationName());
+  }
+
+  @Transactional
+  public void rejectTask(long taskId, String operator, String remark) {
+    TaskContext task = loadTask(taskId);
+    ensureTaskPermission(task.assignee(), operator);
+    ensureTaskPending(task.status());
+    String safeRemark = normalizeRemark(remark);
+
+    jdbcTemplate.update(
+        """
+        UPDATE report_content_review_task
+        SET status = 'REJECTED', remark = ?, processed_by = ?, processed_at = NOW()
+        WHERE id = ?
+        """,
+        safeRemark,
+        operator,
+        taskId);
+    jdbcTemplate.update(
+        """
+        UPDATE report_content_review_task
+        SET status = 'CLOSED', remark = 'closed by reject', processed_by = ?, processed_at = NOW()
+        WHERE apply_id = ? AND status = 'PENDING' AND id <> ?
+        """,
+        operator,
+        task.applyId(),
+        taskId);
+    jdbcTemplate.update(
+        """
+        UPDATE report_content_review_apply
+        SET status = 'REJECTED', finished_at = NOW(), updated_by = ?
+        WHERE id = ?
+        """,
+        operator,
+        task.applyId());
+
+    workflowTraceService.moveNode(task.projectId(), NODE_TASK, "REJECTED", operator);
+    workflowTraceService.appendAction(
+        task.projectId(),
+        "REPORT_CONTENT_REVIEW_" + task.reviewRole() + "_REJECT",
+        "PENDING",
+        "REJECTED",
+        operator,
+        safeRemark);
+
+    notificationService.createForUser(
+        task.appliedBy(),
+        "报告内容审核驳回",
+        "项目[" + task.applicationName() + "]报告内容审核已驳回。",
+        "REPORT_CONTENT_REVIEW_REJECTED",
+        ProjectRegisterService.BIZ_TYPE,
+        task.projectId());
+  }
+
+  private void completeIfAllApproved(
+      long projectId, long applyId, String operator, String appliedBy, String applicationName) {
+    Integer pending =
+        jdbcTemplate.queryForObject(
+            "SELECT COUNT(1) FROM report_content_review_task WHERE apply_id = ? AND status = 'PENDING'",
+            Integer.class,
+            applyId);
+    Integer rejected =
+        jdbcTemplate.queryForObject(
+            "SELECT COUNT(1) FROM report_content_review_task WHERE apply_id = ? AND status = 'REJECTED'",
+            Integer.class,
+            applyId);
+    if ((pending == null ? 0 : pending) > 0 || (rejected == null ? 0 : rejected) > 0) {
+      return;
+    }
+
+    jdbcTemplate.update(
+        """
+        UPDATE report_content_review_apply
+        SET status = 'APPROVED', finished_at = NOW(), updated_by = ?
+        WHERE id = ?
+        """,
+        operator,
+        applyId);
+
+    workflowTraceService.moveNode(projectId, NEXT_NODE, "PENDING", operator);
+    workflowTraceService.appendAction(
+        projectId, "REPORT_CONTENT_REVIEW_FINISH", "SUBMITTED", "APPROVED", operator, "");
+
+    notificationService.createForUser(
+        appliedBy,
+        "报告内容审核通过",
+        "项目[" + applicationName + "]报告内容审核全部通过。",
+        "REPORT_CONTENT_REVIEW_APPROVED",
+        ProjectRegisterService.BIZ_TYPE,
+        projectId);
+  }
+
+  private void loadTasks(List<ReportContentReviewRecord> rows) {
+    if (rows.isEmpty()) {
+      return;
+    }
+    Map<Long, ReportContentReviewRecord> map = new LinkedHashMap<>();
+    StringBuilder inSql = new StringBuilder();
+    for (int i = 0; i < rows.size(); i++) {
+      ReportContentReviewRecord row = rows.get(i);
+      map.put(row.getProjectRegisterId(), row);
+      row.setTasks(new ArrayList<>());
+      if (i > 0) {
+        inSql.append(',');
+      }
+      inSql.append(row.getProjectRegisterId());
+    }
+
+    jdbcTemplate.query(
+        """
+        SELECT
+          id,
+          project_register_id,
+          review_role,
+          assignee,
+          status,
+          remark,
+          processed_by,
+          processed_at
+        FROM report_content_review_task
+        WHERE project_register_id IN (%s)
+        ORDER BY id ASC
+        """
+            .formatted(inSql),
+        rs -> {
+          ReportContentReviewRecord row = map.get(rs.getLong("project_register_id"));
+          if (row == null) {
+            return;
+          }
+          ReportContentReviewTaskRecord task = new ReportContentReviewTaskRecord();
+          task.setId(rs.getLong("id"));
+          task.setReviewRole(rs.getString("review_role"));
+          task.setAssignee(rs.getString("assignee"));
+          task.setStatus(rs.getString("status"));
+          task.setRemark(rs.getString("remark"));
+          task.setProcessedBy(rs.getString("processed_by"));
+          task.setProcessedAt(stringTimestamp(rs.getTimestamp("processed_at")));
+          row.getTasks().add(task);
+        });
+  }
+
+  private void ensureTechReviewApproved(long projectId) {
+    List<String> rows =
+        jdbcTemplate.query(
+            """
+            SELECT tr.status
+            FROM project_register p
+            LEFT JOIN report_tech_review_apply tr ON tr.project_register_id = p.id
+            WHERE p.id = ? AND p.deleted_flag = 0
+            """,
+            (rs, rowNum) -> rs.getString("status"),
+            projectId);
+    if (rows.isEmpty()) {
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "project register not found");
+    }
+    if (!"APPROVED".equalsIgnoreCase(rows.get(0))) {
+      throw new ResponseStatusException(HttpStatus.CONFLICT, "report tech review must be approved first");
+    }
+  }
+
+  private Assignment loadAssignment(long projectId) {
+    List<Assignment> rows =
+        jdbcTemplate.query(
+            """
+            SELECT content_reviewer_a, content_reviewer_b, content_reviewer_c
+            FROM workflow_assignment
+            WHERE project_register_id = ?
+            """,
+            (rs, rowNum) ->
+                new Assignment(
+                    rs.getString("content_reviewer_a"),
+                    rs.getString("content_reviewer_b"),
+                    rs.getString("content_reviewer_c")),
+            projectId);
+    if (rows.isEmpty()) {
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT, "quality assignment is required before content review submit");
+    }
+    Assignment assignment = rows.get(0);
+    if (isBlank(assignment.reviewerA()) || isBlank(assignment.reviewerB()) || isBlank(assignment.reviewerC())) {
+      throw new ResponseStatusException(HttpStatus.CONFLICT, "content reviewers A/B/C are required");
+    }
+    return assignment;
+  }
+
+  private void ensureEnabledUsers(Assignment assignment) {
+    Set<String> enabledUsers = Set.copyOf(userAccountService.listEnabledUsernames());
+    for (String user : List.of(assignment.reviewerA(), assignment.reviewerB(), assignment.reviewerC())) {
+      if (!enabledUsers.contains(user)) {
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "assignee user not enabled: " + user);
+      }
+    }
+  }
+
+  private TaskContext loadTask(long taskId) {
+    List<TaskContext> rows =
+        jdbcTemplate.query(
+            """
+            SELECT
+              t.id,
+              t.apply_id,
+              t.project_register_id,
+              t.review_role,
+              t.assignee,
+              t.status,
+              a.applied_by,
+              p.application_name
+            FROM report_content_review_task t
+            JOIN report_content_review_apply a ON a.id = t.apply_id
+            JOIN project_register p ON p.id = t.project_register_id
+            WHERE t.id = ?
+            """,
+            (rs, rowNum) ->
+                new TaskContext(
+                    rs.getLong("id"),
+                    rs.getLong("apply_id"),
+                    rs.getLong("project_register_id"),
+                    rs.getString("review_role"),
+                    rs.getString("assignee"),
+                    rs.getString("status"),
+                    rs.getString("applied_by"),
+                    rs.getString("application_name")),
+            taskId);
+    if (rows.isEmpty()) {
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "report content review task not found");
+    }
+    return rows.get(0);
+  }
+
+  private void ensureTaskPermission(String assignee, String operator) {
+    if (isAdmin(operator)) {
+      return;
+    }
+    if (!operator.equals(assignee)) {
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "current user has no permission for this task");
+    }
+  }
+
+  private void ensureTaskPending(String status) {
+    if (!"PENDING".equalsIgnoreCase(status)) {
+      throw new ResponseStatusException(HttpStatus.CONFLICT, "task already processed");
+    }
+  }
+
+  private boolean isAdmin(String username) {
+    return userAccountService.hasRole(username, UserAccountService.ROLE_SUPER_ADMIN);
+  }
+
+  private boolean isBlank(String value) {
+    return value == null || value.isBlank();
+  }
+
+  private boolean contains(String value, String needle) {
+    return value != null && value.toLowerCase(Locale.ROOT).contains(needle);
+  }
+
+  private String normalizeRemark(String value) {
+    return value == null ? "" : value.trim();
+  }
+
+  private String stringTimestamp(Timestamp timestamp) {
+    return timestamp == null ? null : String.valueOf(timestamp);
+  }
+
+  private ProjectRef loadProjectRef(long projectId) {
+    List<ProjectRef> rows =
+        jdbcTemplate.query(
+            "SELECT id, application_name FROM project_register WHERE id = ? AND deleted_flag = 0",
+            (rs, rowNum) -> new ProjectRef(rs.getLong("id"), rs.getString("application_name")),
+            projectId);
+    if (rows.isEmpty()) {
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "project register not found");
+    }
+    return rows.get(0);
+  }
+
+  private String baseSql() {
+    return """
+        SELECT
+          p.id project_register_id,
+          p.application_name,
+          tr.status tech_review_status,
+          osa.package_object_key on_site_package_object_key,
+          wa.content_reviewer_a reviewer_a,
+          wa.content_reviewer_b reviewer_b,
+          wa.content_reviewer_c reviewer_c,
+          COALESCE(a.status, 'DRAFT') status,
+          a.applied_by,
+          a.submitted_at,
+          a.finished_at,
+          wi.current_node workflow_node,
+          wi.status workflow_status
+        FROM project_register p
+        JOIN report_tech_review_apply tr ON tr.project_register_id = p.id
+        LEFT JOIN on_site_assessment osa ON osa.project_register_id = p.id AND osa.status = 'SUBMITTED'
+        LEFT JOIN workflow_assignment wa ON wa.project_register_id = p.id
+        LEFT JOIN report_content_review_apply a ON a.project_register_id = p.id
+        LEFT JOIN workflow_instance wi ON wi.biz_type = 'PROJECT_REGISTER' AND wi.biz_id = p.id
+        WHERE p.deleted_flag = 0
+          AND tr.status = 'APPROVED'
+        """;
+  }
+
+  private static class ReportContentReviewRowMapper implements RowMapper<ReportContentReviewRecord> {
+    @Override
+    public ReportContentReviewRecord mapRow(ResultSet rs, int rowNum) throws SQLException {
+      ReportContentReviewRecord record = new ReportContentReviewRecord();
+      record.setProjectRegisterId(rs.getLong("project_register_id"));
+      record.setApplicationName(rs.getString("application_name"));
+      record.setTechReviewStatus(rs.getString("tech_review_status"));
+      record.setOnSitePackageObjectKey(rs.getString("on_site_package_object_key"));
+      record.setReviewerA(rs.getString("reviewer_a"));
+      record.setReviewerB(rs.getString("reviewer_b"));
+      record.setReviewerC(rs.getString("reviewer_c"));
+      record.setStatus(rs.getString("status"));
+      record.setAppliedBy(rs.getString("applied_by"));
+      record.setSubmittedAt(stringTimestamp(rs.getTimestamp("submitted_at")));
+      record.setFinishedAt(stringTimestamp(rs.getTimestamp("finished_at")));
+      record.setWorkflowNode(rs.getString("workflow_node"));
+      record.setWorkflowStatus(rs.getString("workflow_status"));
+      return record;
+    }
+
+    private String stringTimestamp(Timestamp timestamp) {
+      return timestamp == null ? null : String.valueOf(timestamp);
+    }
+  }
+
+  public record ReportContentTodoTask(
+      long taskId,
+      long projectRegisterId,
+      String applicationName,
+      String appliedBy,
+      String submittedAt,
+      String reviewRole,
+      String assignee,
+      String processInstanceId) {}
+
+  private record Assignment(String reviewerA, String reviewerB, String reviewerC) {}
+
+  private record ApplyRow(long id, String status, String appliedBy) {}
+
+  private record TaskContext(
+      long taskId,
+      long applyId,
+      long projectId,
+      String reviewRole,
+      String assignee,
+      String status,
+      String appliedBy,
+      String applicationName) {}
+
+  private record ProjectRef(long id, String applicationName) {}
+}
+

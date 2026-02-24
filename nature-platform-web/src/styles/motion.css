@@ -1,0 +1,19 @@
+.np-page-enter-active,
+.np-page-leave-active {
+  transition:
+    opacity var(--np-trans-page) ease,
+    transform var(--np-trans-page) ease;
+}
+
+.np-page-enter-from,
+.np-page-leave-to {
+  opacity: 0;
+  transform: translateY(8px) scale(0.995);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .np-page-enter-active,
+  .np-page-leave-active {
+    transition: none;
+  }
+}

@@ -1,0 +1,77 @@
+.el-card {
+  border: 1px solid var(--np-color-border);
+  border-radius: var(--np-radius-md);
+  box-shadow: var(--np-shadow-sm);
+  background: var(--np-color-bg-card);
+}
+
+.el-card.is-always-shadow,
+.el-card.is-hover-shadow:hover {
+  box-shadow: var(--np-shadow-md);
+}
+
+.el-table {
+  --el-table-border-color: var(--np-color-border);
+  --el-table-header-bg-color: #f4f8ff;
+  --el-table-header-text-color: var(--np-color-text-secondary);
+  --el-table-row-hover-bg-color: #eef5ff;
+  border-radius: var(--np-radius-sm);
+}
+
+.el-table th.el-table__cell {
+  font-weight: 600;
+}
+
+.el-table .el-table__cell {
+  padding: 9px 0;
+}
+
+.el-button {
+  transition:
+    transform var(--np-trans-fast) ease,
+    box-shadow var(--np-trans-fast) ease,
+    background-color var(--np-trans-fast) ease,
+    border-color var(--np-trans-fast) ease;
+}
+
+.el-button:hover {
+  transform: translateY(-1px);
+}
+
+.el-button:active {
+  transform: translateY(0);
+}
+
+.el-input__wrapper,
+.el-select__wrapper,
+.el-textarea__inner {
+  border-radius: var(--np-radius-sm);
+}
+
+.el-input__wrapper,
+.el-select__wrapper {
+  min-height: 34px;
+}
+
+.el-button:focus-visible,
+.el-input__wrapper.is-focus,
+.el-select__wrapper.is-focused,
+.el-textarea__inner:focus {
+  box-shadow: 0 0 0 3px rgba(76, 127, 244, 0.18);
+}
+
+.el-tag {
+  border-radius: 999px;
+}
+
+.el-dialog {
+  border-radius: var(--np-radius-lg);
+}
+
+.el-alert {
+  border-radius: var(--np-radius-sm);
+}
+
+.el-form-item {
+  margin-bottom: 16px;
+}

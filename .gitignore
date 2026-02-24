@@ -1,0 +1,39 @@
+# OS / Editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Local env / secrets
+.env
+.env.*
+!.env.example
+**/application-local.yml
+**/application-*.local.yml
+
+# Logs
+*.log
+logs/
+**/logs/
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Java / Maven
+**/target/
+*.class
+
+# Node / Vite
+**/node_modules/
+**/dist/
+**/.vite/
+**/.cache/
+**/coverage/
+
+# E2E / Playwright artifacts
+**/playwright-report/
+**/test-results/
+deploy/e2e/reports/
