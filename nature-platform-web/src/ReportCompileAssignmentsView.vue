@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="page-shell page section-stack">
     <header class="page-header">
       <div>
@@ -7,11 +7,20 @@
       </div>
       <el-space>
         <el-button :loading="loading" @click="loadRows">刷新</el-button>
-        <el-button type="primary" @click="goWorkflow">打开待办审批</el-button>
+        <el-button v-permission="'workflow-task:view'" type="primary" @click="goWorkflow">打开待办审批</el-button>
       </el-space>
     </header>
 
-    <el-card>
+    <el-card class="tip-card">
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        title="每个项目仅分配 1 名编制人；建议保存后再提交进入下一节点。"
+      />
+    </el-card>
+
+    <el-card class="table-card">
       <el-table :data="rows" v-loading="loading" empty-text="暂无可处理项">
         <el-table-column prop="projectRegisterId" label="项目ID" width="90" />
         <el-table-column prop="applicationName" label="申请单名称" min-width="240" show-overflow-tooltip />
@@ -32,11 +41,18 @@
         </el-table-column>
         <el-table-column prop="versionNo" label="版本" width="90" />
         <el-table-column prop="workflowNode" label="流程节点" width="180" show-overflow-tooltip />
-        <el-table-column label="操作" width="260" fixed="right">
+        <el-table-column label="操作" width="340" fixed="right">
           <template #default="{ row }">
             <el-space>
-              <el-button size="small" @click="openDialog(row)">编辑分配</el-button>
               <el-button
+                v-permission="'report-compile-assignment:save'"
+                size="small"
+                @click="openDialog(row)"
+              >
+                编辑分配
+              </el-button>
+              <el-button
+                v-permission="'report-compile-assignment:submit'"
                 size="small"
                 type="success"
                 :disabled="!canSubmit(row)"
@@ -44,6 +60,7 @@
               >
                 提交分配
               </el-button>
+              <el-button size="small" @click="openProcessOverview(row.projectRegisterId)">流程详情</el-button>
             </el-space>
           </template>
         </el-table-column>
@@ -63,7 +80,14 @@
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="saveForm">保存</el-button>
+        <el-button
+          v-permission="'report-compile-assignment:save'"
+          type="primary"
+          :loading="saving"
+          @click="saveForm"
+        >
+          保存
+        </el-button>
       </template>
     </el-dialog>
   </div>
@@ -71,14 +95,15 @@
 
 <script setup lang="ts">
 /**
- * @input Report compile assignment APIs, candidate pool query, and router navigation for node-13 actions
- * @output Node-13 assignment board supporting assignee save and submit transitions
- * @position Report compile assignment page connecting review completion and compile submission stages
+ * @input Report compile assignment APIs, permission helper, conditional candidate pool query, and router navigation for node-13 actions
+ * @output Node-13 assignment board supporting permission-gated assignee save/submit transitions
+ * @position Report compile assignment page connecting review completion and compile submission stages with button-level RBAC
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useRouter } from "vue-router";
+import { hasPermission } from "./permission";
 import {
   fetchReportCompileAssignments,
   fetchReportCompileCandidates,
@@ -86,6 +111,7 @@ import {
   submitReportCompileAssignment,
   type ReportCompileAssignmentRecord
 } from "./report-compile-service";
+import { toProcessOverviewPath } from "./process-overview-service";
 
 interface FormState {
   projectRegisterId: number;
@@ -99,6 +125,9 @@ const saving = ref(false);
 const dialogVisible = ref(false);
 const rows = ref<ReportCompileAssignmentRecord[]>([]);
 const candidates = ref<string[]>([]);
+const canLoadCandidates = computed(() =>
+  hasPermission("report-compile-assignment:candidate:view")
+);
 
 const form = reactive<FormState>({
   projectRegisterId: 0,
@@ -135,7 +164,7 @@ async function loadRows() {
   try {
     const [list, users] = await Promise.all([
       fetchReportCompileAssignments(),
-      fetchReportCompileCandidates()
+      canLoadCandidates.value ? fetchReportCompileCandidates() : Promise.resolve([])
     ]);
     rows.value = list;
     candidates.value = users;
@@ -205,32 +234,24 @@ function goWorkflow() {
   void router.push("/workflow");
 }
 
+function openProcessOverview(projectId: number) {
+  void router.push(toProcessOverviewPath(projectId));
+}
+
 onMounted(() => {
   void loadRows();
 });
 </script>
 
 <style scoped>
-.page {
-  max-width: 1320px;
-  margin: 24px auto;
-  padding: 0 12px;
+.tip-card {
+  border: 1px solid rgba(31, 152, 122, 0.2);
+  background: linear-gradient(92deg, rgba(45, 184, 146, 0.08), rgba(47, 110, 162, 0.05));
 }
 
-.page-header {
-  margin-bottom: 16px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-}
-
-.page-header h2 {
-  margin: 0;
-}
-
-.page-header p {
-  margin: 6px 0 0;
-  color: #6f7b8a;
+.table-card {
+  background: linear-gradient(180deg, #ffffff, #fbfcfc);
+  border: 1px solid rgba(211, 225, 230, 0.88);
 }
 </style>
+

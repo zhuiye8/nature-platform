@@ -7,7 +7,7 @@
 ## 2. 前置条件
 1. MySQL 容器已启动：`nature-platform-mysql`
 2. 后端服务已启动并可访问：`http://127.0.0.1:18080`
-3. 测试账号可登录：`admin/admin123`、`reviewer/review123`、`normal/normal123`
+3. 测试账号可登录：`admin/admin123`、`reviewer/review123`；`normal/normal123` 由 `deploy/e2e/api/run-all.ps1` 在执行前自动预置/校正
 
 ## 3. 执行命令
 
@@ -64,16 +64,16 @@ pnpm test:e2e
 - `04-final-review-and-material-archive.ps1`
 
 ## 5. 关键接口断言（节点 11-16）
-1. `POST /api/v1/report-tech-reviews/{projectId}/submit`
-   - 断言：返回 `200` 且技术审核进入 `SUBMITTED`
+1. `POST /api/v1/on-site-assessments/{projectId}/submit`
+   - 断言：返回 `200` 且自动创建技术审核待办（`REPORT_TECH_REVIEW_TASK`）
 2. `POST /api/v1/workflow/tasks/{taskId}/approve`（技术/内容/最终审核任务）
    - 断言：返回 `200`，对应任务可完成
 3. `POST /api/v1/workflow/tasks/{taskId}/reject`（内容审核任务）
    - 断言：返回 `200`，详情状态切换为 `REJECTED`
 4. `GET /api/v1/report-content-reviews/{projectId}`
-   - 断言：重提并全部审批后 `status=APPROVED` 且 `workflowNode=REPORT_COMPILE_ASSIGN`
+   - 断言：技术审核通过后自动进入 `SUBMITTED`，全部审批后 `status=APPROVED` 且 `workflowNode=REPORT_COMPILE_ASSIGN`
 5. `POST /api/v1/report-compile-submissions/{projectId}/submit`
-   - 断言：返回 `200`，`workflowNode=REPORT_FINAL_REVIEW`
+   - 断言：返回 `200`，已配置最终审核人时自动创建 `REPORT_FINAL_REVIEW` 待办
 6. `GET /api/v1/material-archives/{projectId}`
    - 断言：`status=ARCHIVED`、`workflowStatus=APPROVED` 且 `reportFiles/formFiles` 均非空
 

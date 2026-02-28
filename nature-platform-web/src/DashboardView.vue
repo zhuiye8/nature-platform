@@ -13,17 +13,17 @@
     </header>
 
     <section class="stats-grid">
-      <el-card class="stat-card" shadow="hover">
+      <el-card class="stat-card stat-card-a" shadow="hover">
         <p class="stat-label">未读通知</p>
         <strong class="stat-value">{{ unreadCount }}</strong>
         <span class="stat-desc">实时联动通知中心计数</span>
       </el-card>
-      <el-card class="stat-card" shadow="hover">
+      <el-card class="stat-card stat-card-b" shadow="hover">
         <p class="stat-label">最近通知</p>
         <strong class="stat-value">{{ notifications.length }}</strong>
         <span class="stat-desc">默认展示最近 20 条</span>
       </el-card>
-      <el-card class="stat-card" shadow="hover">
+      <el-card class="stat-card stat-card-c" shadow="hover">
         <p class="stat-label">快捷入口</p>
         <strong class="stat-value">{{ quickEntries.length }}</strong>
         <span class="stat-desc">覆盖核心业务路径</span>
@@ -73,6 +73,12 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * @input Notification APIs, router navigation helpers, and time-format utility for dashboard orchestration
+ * @output Dashboard widgets for unread counters, quick entries, and recent notifications with read/delete actions
+ * @position Landing workspace page that surfaces system health signals and high-frequency operation shortcuts
+ * @doc-sync Update this header and folder INDEX.md when this file changes.
+ */
 import { onMounted, ref } from "vue";
 import { ElMessage } from "element-plus";
 import { useRouter } from "vue-router";
@@ -95,7 +101,18 @@ interface QuickEntry {
 
 const quickEntries: QuickEntry[] = [
   { path: "/customers", title: "客户管理", tag: "基础", desc: "维护客户基础信息与联系人。" },
-  { path: "/contracts", title: "合同管理", tag: "主流程", desc: "创建合同、提交审核并完成归档。" },
+  {
+    path: "/contract-submissions",
+    title: "合同提审",
+    tag: "主流程",
+    desc: "创建合同、编辑草稿并提交审核。"
+  },
+  {
+    path: "/contract-archives",
+    title: "合同归档",
+    tag: "主流程",
+    desc: "对审核通过合同补录归档信息并完成归档。"
+  },
   { path: "/project-registers", title: "项目登记", tag: "节点 5", desc: "基于已归档合同发起项目登记。" },
   { path: "/workflow", title: "待办审批", tag: "任务", desc: "集中处理合同、项目与报告审核任务。" }
 ];
@@ -181,11 +198,48 @@ onMounted(async () => {
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  gap: 14px;
 }
 
 .stat-card {
-  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+}
+
+.stat-card::after {
+  content: "";
+  position: absolute;
+  right: -30px;
+  bottom: -36px;
+  width: 118px;
+  height: 118px;
+  border-radius: 50%;
+  opacity: 0.38;
+}
+
+.stat-card-a {
+  background: linear-gradient(130deg, #f9fcfd, #ecf7f4);
+}
+
+.stat-card-a::after {
+  background: radial-gradient(circle, rgba(45, 184, 146, 0.3), transparent 72%);
+}
+
+.stat-card-b {
+  background: linear-gradient(130deg, #fbfdff, #eef4fa);
+}
+
+.stat-card-b::after {
+  background: radial-gradient(circle, rgba(47, 110, 162, 0.25), transparent 72%);
+}
+
+.stat-card-c {
+  background: linear-gradient(130deg, #fffcf8, #f8f1e7);
+}
+
+.stat-card-c::after {
+  background: radial-gradient(circle, rgba(201, 136, 34, 0.26), transparent 72%);
 }
 
 .stat-label {
@@ -196,10 +250,10 @@ onMounted(async () => {
 
 .stat-value {
   display: block;
-  margin-top: 10px;
-  font-size: 32px;
+  margin-top: 11px;
+  font-size: 34px;
   line-height: 1;
-  color: var(--np-color-brand-700);
+  color: var(--np-color-ink-900);
 }
 
 .stat-desc {
@@ -216,11 +270,13 @@ onMounted(async () => {
 .entry-card {
   cursor: pointer;
   min-height: 126px;
+  border: 1px solid rgba(210, 224, 229, 0.86);
+  background: linear-gradient(180deg, #ffffff, #f9fcfc);
   transition: transform var(--np-trans-base) ease;
 }
 
 .entry-card:hover {
-  transform: translateY(-2px);
+  transform: translateY(-3px);
 }
 
 .entry-head {
@@ -242,7 +298,8 @@ onMounted(async () => {
 }
 
 .notice-title {
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: 0.2px;
 }
 
 .item-title {

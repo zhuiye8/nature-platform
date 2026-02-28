@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$BaseUrl = "http://127.0.0.1:18080"
 )
 
@@ -16,15 +16,18 @@ $pass =
   $response.status -eq 200 -and
   $null -ne $data -and
   $null -ne $data.techReviewers -and
-  $null -ne $data.contentReviewersA -and
-  $null -ne $data.contentReviewersB -and
-  $null -ne $data.contentReviewersC
+  $null -ne $data.contentReviewersTech -and
+  $null -ne $data.contentReviewersManagement -and
+  $null -ne $data.contentReviewersNetwork
 
 Add-E2EResult -Context $context `
   -CaseName "reviewer_candidates_four_groups" `
-  -Expected "200 + tech/A/B/C arrays" `
+  -Expected "200 + tech+内容技术/管理/网络 arrays" `
   -Actual "status=$($response.status)" `
   -Pass $pass `
   -Detail $response.raw
 
 Complete-E2EResults -Context $context
+
+
+

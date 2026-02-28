@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$BaseUrl = "http://127.0.0.1:18080"
 )
 
@@ -31,9 +31,9 @@ SELECT @project_id;
 
   $requestBody = @{
     techReviewer = "admin"
-    contentReviewerA = "reviewer"
-    contentReviewerB = "reviewer"
-    contentReviewerC = "reviewer"
+    contentReviewerTech = "reviewer"
+    contentReviewerManagement = "reviewer"
+    contentReviewerNetwork = "reviewer"
     versionNo = 0
   }
   $response =
@@ -68,3 +68,6 @@ DELETE FROM project_register WHERE id = $projectId;
 }
 
 Complete-E2EResults -Context $context
+
+
+

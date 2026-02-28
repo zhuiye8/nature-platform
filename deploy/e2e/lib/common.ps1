@@ -74,6 +74,80 @@ WHERE NOT EXISTS (SELECT 1 FROM user_account WHERE username = '$safeUsername');
   Invoke-E2EMySql -Context $Context -Sql $sql | Out-Null
 }
 
+function Ensure-E2EUserByAdminApi {
+  param(
+    [hashtable]$Context,
+    [string]$Username,
+    [string]$Password,
+    [string]$DisplayName,
+    [string[]]$Roles = @("ROLE_USER")
+  )
+
+  if ($null -eq $Roles -or $Roles.Count -eq 0) {
+    $Roles = @("ROLE_USER")
+  }
+
+  $adminToken = Login-E2EToken -Context $Context -Username "admin" -Password "admin123"
+  if ([string]::IsNullOrWhiteSpace($adminToken)) {
+    throw "cannot login admin account when ensuring e2e user: $Username"
+  }
+
+  $listResp = Invoke-E2EApi -Context $Context -Method "Get" -Path "/api/v1/admin/users" -Token $adminToken
+  if ($listResp.status -ne 200 -or $null -eq $listResp.body) {
+    throw "list admin users failed when ensuring e2e user: username=$Username, status=$($listResp.status)"
+  }
+
+  $userRows = @()
+  if ($listResp.body.PSObject.Properties.Name -contains "data") {
+    $userRows = @($listResp.body.data)
+  }
+
+  $exists = $false
+  foreach ($row in $userRows) {
+    if ([string]$row.username -eq $Username) {
+      $exists = $true
+      break
+    }
+  }
+
+  if ($exists) {
+    $updatePayload = @{
+      displayName = $DisplayName
+      password = $Password
+      enabled = $true
+      roles = $Roles
+    }
+    $encodedUsername = [uri]::EscapeDataString($Username)
+    $updateResp =
+      Invoke-E2EApi -Context $Context `
+        -Method "Put" `
+        -Path "/api/v1/admin/users/$encodedUsername" `
+        -Token $adminToken `
+        -Body $updatePayload
+    if ($updateResp.status -ne 200) {
+      throw "update e2e user failed: username=$Username, status=$($updateResp.status)"
+    }
+    return
+  }
+
+  $createPayload = @{
+    username = $Username
+    displayName = $DisplayName
+    password = $Password
+    enabled = $true
+    roles = $Roles
+  }
+  $createResp =
+    Invoke-E2EApi -Context $Context `
+      -Method "Post" `
+      -Path "/api/v1/admin/users" `
+      -Token $adminToken `
+      -Body $createPayload
+  if ($createResp.status -ne 200) {
+    throw "create e2e user failed: username=$Username, status=$($createResp.status)"
+  }
+}
+
 function Login-E2EToken {
   param(
     [hashtable]$Context,

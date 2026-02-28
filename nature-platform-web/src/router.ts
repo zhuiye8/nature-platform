@@ -1,9 +1,10 @@
-/**
- * @input vue-router APIs, auth store token state, and centralized navigation metadata
- * @output Router instance with auth guard, route-level lazy loading, and title metadata derived from navigation config
- * @position Frontend navigation layer enforcing authenticated access and synchronizing route/menu information architecture
+﻿/**
+ * @input vue-router APIs, auth store token/resource state, and centralized navigation metadata
+ * @output Router instance with auth guard, resource guard, and route-level lazy loading metadata (including unified task-detail route)
+ * @position Frontend navigation layer enforcing authenticated and page-resource-aware route access with review detail navigation support
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
+import { ElMessage } from "element-plus";
 import { createRouter, createWebHistory, type RouteRecordRaw } from "vue-router";
 import { useAuthStore } from "./auth-store";
 import { navItems } from "./navigation";
@@ -12,7 +13,8 @@ const viewMap: Record<string, () => Promise<unknown>> = {
   "/dashboard": () => import("./DashboardView.vue"),
   "/workflow": () => import("./WorkflowView.vue"),
   "/customers": () => import("./CustomersView.vue"),
-  "/contracts": () => import("./ContractsView.vue"),
+  "/contract-submissions": () => import("./ContractSubmissionsView.vue"),
+  "/contract-archives": () => import("./ContractArchivesView.vue"),
   "/project-registers": () => import("./ProjectRegistersView.vue"),
   "/police-registers": () => import("./PoliceRegistersView.vue"),
   "/on-site-assessments": () => import("./OnSiteAssessmentsView.vue"),
@@ -23,6 +25,11 @@ const viewMap: Record<string, () => Promise<unknown>> = {
   "/report-compile-submissions": () => import("./ReportCompileSubmissionsView.vue"),
   "/report-final-reviews": () => import("./ReportFinalReviewsView.vue"),
   "/material-archives": () => import("./MaterialArchivesView.vue"),
+  "/admin-users": () => import("./AdminUsersView.vue"),
+  "/admin-roles": () => import("./AdminRolesView.vue"),
+  "/admin-resources": () => import("./AdminResourcesView.vue"),
+  "/admin-workflow": () => import("./AdminWorkflowView.vue"),
+  "/admin-audit-logs": () => import("./AdminAuditLogsView.vue"),
   "/recycle-bin": () => import("./RecycleBinView.vue")
 };
 
@@ -36,7 +43,8 @@ const businessRoutes: RouteRecordRaw[] = navItems
       path: item.path,
       component,
       meta: {
-        title: item.label
+        title: item.label,
+        resourceKey: item.resourceKey
       }
     } as RouteRecordRaw;
   })
@@ -47,6 +55,10 @@ export const router = createRouter({
   routes: [
     { path: "/login", component: () => import("./LoginView.vue"), meta: { public: true, title: "登录" } },
     { path: "/", redirect: "/dashboard" },
+    { path: "/contracts", redirect: "/contract-submissions" },
+    { path: "/admin-permissions", redirect: "/admin-resources" },
+    { path: "/process-overview/:projectId", component: () => import("./ProcessOverviewView.vue"), meta: { title: "流程详情" } },
+    { path: "/task-detail/:taskType/:bizId", component: () => import("./TaskDetailView.vue"), meta: { title: "审核详情" } },
     ...businessRoutes
   ]
 });
@@ -58,6 +70,11 @@ router.beforeEach((to) => {
   }
   if (!authStore.token) {
     return "/login";
+  }
+  const requiredResourceKey = to.meta.resourceKey as string | undefined;
+  if (requiredResourceKey && !authStore.hasResource(requiredResourceKey)) {
+    ElMessage.warning("当前账号无权限访问该页面");
+    return "/dashboard";
   }
   return true;
 });

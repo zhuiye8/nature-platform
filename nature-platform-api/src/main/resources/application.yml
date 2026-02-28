@@ -52,3 +52,6 @@ app:
     access-key: ${MINIO_ACCESS_KEY:minioadmin}
     secret-key: ${MINIO_SECRET_KEY:minioadmin}
     bucket: ${MINIO_BUCKET:nature-files}
+  permission:
+    sync-on-startup: ${PERMISSION_SYNC_ON_STARTUP:true}
+    sync-overwrite-text: ${PERMISSION_SYNC_OVERWRITE_TEXT:false}

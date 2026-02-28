@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$BaseUrl = "http://127.0.0.1:18080"
 )
 
@@ -30,3 +30,6 @@ if ($failed.Count -gt 0) {
 
 Write-Output ""
 Write-Output "happy-path suite passed"
+
+
+

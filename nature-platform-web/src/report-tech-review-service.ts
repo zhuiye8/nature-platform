@@ -1,7 +1,7 @@
 /**
  * @input apiClient and ApiResponse from shared HTTP infra
- * @output Node-11 report-tech-review API wrappers and types
- * @position Frontend service layer for report overall technical-review stage
+ * @output Node-11 report-tech-review list/detail/candidate/save API wrappers and types with displayStatus
+ * @position Frontend service layer for report overall technical-review assignment and task visibility stage
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 import { apiClient, type ApiResponse } from "./api";
@@ -20,6 +20,7 @@ export interface ReportTechReviewRecord {
   finishedAt?: string;
   taskId?: number;
   taskStatus?: string;
+  displayStatus?: string;
   workflowNode?: string;
   workflowStatus?: string;
 }
@@ -55,13 +56,6 @@ export async function saveReportTechReview(
   const response = await apiClient.put<ApiResponse<ReportTechReviewRecord>>(
     `/report-tech-reviews/${projectId}`,
     payload
-  );
-  return response.data.data;
-}
-
-export async function submitReportTechReview(projectId: number): Promise<ReportTechReviewRecord> {
-  const response = await apiClient.post<ApiResponse<ReportTechReviewRecord>>(
-    `/report-tech-reviews/${projectId}/submit`
   );
   return response.data.data;
 }

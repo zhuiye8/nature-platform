@@ -1,6 +1,6 @@
 /**
  * @input JdbcTemplate, user lookup, workflow trace helper, and notification service
- * @output Node-11 report technical-review save/submit and task review operations
+ * @output Node-11 report technical-review save/submit and task review operations with unified displayStatus projection
  * @position Report technical-review domain service bridging quality gateway completion to content-review stage
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
@@ -24,32 +24,40 @@ import org.springframework.web.server.ResponseStatusException;
 public class ReportTechReviewService {
   public static final String NODE_APPLY = "REPORT_TECH_REVIEW_APPLY";
   public static final String NODE_TASK = "REPORT_TECH_REVIEW_TASK";
-  public static final String NEXT_NODE = "REPORT_CONTENT_REVIEW";
+  public static final String NEXT_NODE = "REPORT_CONTENT_REVIEW_TASK";
 
   private final JdbcTemplate jdbcTemplate;
   private final UserAccountService userAccountService;
   private final ProjectWorkflowTraceService workflowTraceService;
   private final NotificationService notificationService;
+  private final ReportContentReviewService reportContentReviewService;
 
   public ReportTechReviewService(
       JdbcTemplate jdbcTemplate,
       UserAccountService userAccountService,
       ProjectWorkflowTraceService workflowTraceService,
-      NotificationService notificationService) {
+      NotificationService notificationService,
+      ReportContentReviewService reportContentReviewService) {
     this.jdbcTemplate = jdbcTemplate;
     this.userAccountService = userAccountService;
     this.workflowTraceService = workflowTraceService;
     this.notificationService = notificationService;
+    this.reportContentReviewService = reportContentReviewService;
   }
 
   public List<ReportTechReviewRecord> list() {
-    return jdbcTemplate.query(baseSql() + " ORDER BY p.id DESC", new ReportTechReviewRowMapper());
+    List<ReportTechReviewRecord> rows =
+        jdbcTemplate.query(baseSql() + " ORDER BY p.id DESC", new ReportTechReviewRowMapper());
+    rows.forEach(this::applyDisplayStatus);
+    return rows;
   }
 
   public Optional<ReportTechReviewRecord> detail(long projectId) {
     List<ReportTechReviewRecord> rows =
         jdbcTemplate.query(baseSql() + " AND p.id = ?", new ReportTechReviewRowMapper(), projectId);
-    return rows.stream().findFirst();
+    Optional<ReportTechReviewRecord> first = rows.stream().findFirst();
+    first.ifPresent(this::applyDisplayStatus);
+    return first;
   }
 
   public List<String> listCandidates() {
@@ -268,7 +276,6 @@ public class ReportTechReviewService {
         operator,
         task.applyId());
 
-    workflowTraceService.moveNode(task.projectId(), NEXT_NODE, "PENDING", operator);
     workflowTraceService.appendAction(
         task.projectId(), "REPORT_TECH_REVIEW_APPROVE", "SUBMITTED", "APPROVED", operator, "");
 
@@ -279,6 +286,9 @@ public class ReportTechReviewService {
         "REPORT_TECH_REVIEW_APPROVED",
         ProjectRegisterService.BIZ_TYPE,
         task.projectId());
+
+    // 技术审核通过后自动创建内容审核并行任务。
+    reportContentReviewService.submit(task.projectId(), operator);
   }
 
   @Transactional
@@ -461,6 +471,38 @@ public class ReportTechReviewService {
 
   private boolean contains(String value, String needle) {
     return value != null && value.toLowerCase(Locale.ROOT).contains(needle);
+  }
+
+  private void applyDisplayStatus(ReportTechReviewRecord row) {
+    String taskStatus = normalizeStatus(row.getTaskStatus());
+    if (taskStatus != null) {
+      row.setDisplayStatus(taskStatus);
+      return;
+    }
+    if (NODE_TASK.equalsIgnoreCase(row.getWorkflowNode())
+        && "PENDING".equalsIgnoreCase(row.getWorkflowStatus())) {
+      row.setDisplayStatus("PENDING");
+      return;
+    }
+    row.setDisplayStatus(normalizeApplyStatus(row.getStatus()));
+  }
+
+  private String normalizeApplyStatus(String status) {
+    String normalized = normalizeStatus(status);
+    if (normalized == null) {
+      return "DRAFT";
+    }
+    if ("SUBMITTED".equals(normalized)) {
+      return "PENDING";
+    }
+    return normalized;
+  }
+
+  private String normalizeStatus(String status) {
+    if (status == null || status.isBlank()) {
+      return null;
+    }
+    return status.trim().toUpperCase(Locale.ROOT);
   }
 
   private String stringTimestamp(Timestamp timestamp) {

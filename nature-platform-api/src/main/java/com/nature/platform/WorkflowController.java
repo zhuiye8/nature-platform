@@ -1,7 +1,7 @@
 /**
- * @input WorkflowTaskService actions and Authentication principal for operator attribution
- * @output /api/v1/workflow/tasks endpoints for todo list query and review actions
- * @position Workflow HTTP adapter layer for task-center list and approve/reject operations
+ * @input WorkflowTaskService actions, AdminAccessService permission checks, and Authentication principal for operator attribution
+ * @output /api/v1/workflow/tasks endpoints for todo query, contract review detail, and approve/reject actions with authorization
+ * @position Workflow HTTP adapter layer for task-center list and approve/reject operations with RBAC guards
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 package com.nature.platform;
@@ -21,9 +21,12 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/workflow/tasks")
 public class WorkflowController {
   private final WorkflowTaskService workflowTaskService;
+  private final AdminAccessService adminAccessService;
 
-  public WorkflowController(WorkflowTaskService workflowTaskService) {
+  public WorkflowController(
+      WorkflowTaskService workflowTaskService, AdminAccessService adminAccessService) {
     this.workflowTaskService = workflowTaskService;
+    this.adminAccessService = adminAccessService;
   }
 
   @GetMapping("/todo")
@@ -31,11 +34,23 @@ public class WorkflowController {
       Authentication authentication,
       @RequestParam(required = false) String type,
       @RequestParam(required = false) String keyword) {
+    adminAccessService.requirePermission(
+        CurrentUser.username(authentication), BusinessPermissionCodes.WORKFLOW_TASK_VIEW);
     return ApiResponse.success(workflowTaskService.listTodo(CurrentUser.username(authentication), type, keyword));
+  }
+
+  @GetMapping("/contracts/{id}/detail")
+  public ApiResponse<ContractRecord> contractReviewDetail(
+      Authentication authentication, @PathVariable long id) {
+    String operator = CurrentUser.username(authentication);
+    adminAccessService.requirePermission(operator, BusinessPermissionCodes.WORKFLOW_TASK_VIEW);
+    return ApiResponse.success(workflowTaskService.loadContractReviewDetail(id, operator));
   }
 
   @PostMapping("/{taskId}/approve")
   public ApiResponse<Map<String, String>> approve(Authentication authentication, @PathVariable String taskId) {
+    adminAccessService.requirePermission(
+        CurrentUser.username(authentication), BusinessPermissionCodes.WORKFLOW_TASK_APPROVE);
     workflowTaskService.approve(taskId, CurrentUser.username(authentication));
     return ApiResponse.success(Map.of("taskId", taskId, "action", "APPROVE"));
   }
@@ -45,6 +60,8 @@ public class WorkflowController {
       Authentication authentication,
       @PathVariable String taskId,
       @RequestBody(required = false) ReviewActionRequest request) {
+    adminAccessService.requirePermission(
+        CurrentUser.username(authentication), BusinessPermissionCodes.WORKFLOW_TASK_REJECT);
     String remark = request == null ? "" : request.getRemark();
     workflowTaskService.reject(taskId, CurrentUser.username(authentication), remark);
     return ApiResponse.success(Map.of("taskId", taskId, "action", "REJECT"));

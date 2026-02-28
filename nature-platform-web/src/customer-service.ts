@@ -1,6 +1,6 @@
 /**
  * @input apiClient and ApiResponse from local HTTP infrastructure
- * @output Customer CRUD API wrappers and customer domain types for management pages
+ * @output Customer CRUD API wrappers and customer domain types with mandatory base fields for management pages
  * @position Frontend customer service layer encapsulating customer REST contracts
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
@@ -23,12 +23,12 @@ export interface CustomerRecord {
 
 export interface CustomerPayload {
   fullName: string;
-  industry?: string;
-  region?: string;
-  addressDetail?: string;
-  uscc?: string;
-  contactName?: string;
-  mobilePhone?: string;
+  industry: string;
+  region: string;
+  addressDetail: string;
+  uscc: string;
+  contactName: string;
+  mobilePhone: string;
   remark?: string;
 }
 

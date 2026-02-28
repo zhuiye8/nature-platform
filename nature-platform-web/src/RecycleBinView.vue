@@ -21,7 +21,7 @@
         title="恢复规则：项目登记若存在相同合同+年份的未删除记录，则不可恢复" />
     </el-card>
 
-    <el-card>
+    <el-card class="table-card">
       <el-tabs v-model="activeTab" type="border-card">
         <el-tab-pane label="合同回收" name="contracts">
           <el-table :data="contractItems" v-loading="loading" empty-text="暂无已删除合同">
@@ -174,30 +174,13 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.page {
-  max-width: 1280px;
-  margin: 24px auto;
-  padding: 0 12px;
-}
-
-.page-header {
-  margin-bottom: 16px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-}
-
-.page-header h2 {
-  margin: 0;
-}
-
-.page-header p {
-  margin: 6px 0 0;
-  color: #6f7b8a;
-}
-
 .tip-card {
-  margin-bottom: 16px;
+  border: 1px solid rgba(31, 152, 122, 0.2);
+  background: linear-gradient(92deg, rgba(45, 184, 146, 0.08), rgba(47, 110, 162, 0.05));
+}
+
+.table-card {
+  background: linear-gradient(180deg, #ffffff, #fbfcfc);
+  border: 1px solid rgba(211, 225, 230, 0.88);
 }
 </style>

@@ -129,7 +129,12 @@ try {
     -Detail $projectResp.raw
 
   Invoke-E2EApi -Context $context -Method "Post" -Path "/api/v1/project-registers/$projectId/submit-review" -Token $adminToken | Out-Null
-  Invoke-E2EApi -Context $context -Method "Post" -Path "/api/v1/workflow/tasks/PROJECT_REGISTER:$projectId/approve" -Token $adminToken | Out-Null
+  $projectTodoResp = Invoke-E2EApi -Context $context -Method "Get" -Path "/api/v1/workflow/tasks/todo?type=PROJECT_REGISTER" -Token $adminToken
+  $projectTodoRows = @($projectTodoResp.body.data | Where-Object { [long]$_.bizId -eq [long]$projectId })
+  if ($projectTodoRows.Count -lt 1) {
+    throw "project register todo task not found for final reject recovery"
+  }
+  Invoke-E2EApi -Context $context -Method "Post" -Path "/api/v1/workflow/tasks/$([string]$projectTodoRows[0].taskId)/approve" -Token $adminToken | Out-Null
 
   Invoke-E2EApi -Context $context -Method "Put" -Path "/api/v1/police-registers/$projectId" -Token $adminToken -Body @{
     registerNo = "REG-$tag"
@@ -148,9 +153,9 @@ try {
   $candidatesResp = Invoke-E2EApi -Context $context -Method "Get" -Path "/api/v1/on-site-assessments/reviewer-candidates" -Token $adminToken
   $candidatesData = $candidatesResp.body.data
   $techUsers = @($candidatesData.techReviewers)
-  $aUsers = @($candidatesData.contentReviewersA)
-  $bUsers = @($candidatesData.contentReviewersB)
-  $cUsers = @($candidatesData.contentReviewersC)
+  $aUsers = @($candidatesData.contentReviewersTech)
+  $bUsers = @($candidatesData.contentReviewersManagement)
+  $cUsers = @($candidatesData.contentReviewersNetwork)
   $candidatePass =
     $candidatesResp.status -eq 200 -and
     $techUsers.Count -gt 0 -and
@@ -159,7 +164,7 @@ try {
     $cUsers.Count -gt 0
   Add-E2EResult -Context $context `
     -CaseName "reviewer_candidates_ready_final_reject" `
-    -Expected "200 + tech/A/B/C all non-empty" `
+    -Expected "200 + tech+内容技术/管理/网络 all non-empty" `
     -Actual "status=$($candidatesResp.status), tech=$($techUsers.Count), A=$($aUsers.Count), B=$($bUsers.Count), C=$($cUsers.Count)" `
     -Pass $candidatePass `
     -Detail $candidatesResp.raw
@@ -167,20 +172,19 @@ try {
     throw "reviewer candidates are not ready for final reject recovery"
   }
 
+  $techAssignee = "admin"
+  $contentTechAssignee = "admin"
+  $contentManagementAssignee = "admin"
+  $contentNetworkAssignee = "admin"
+
   Invoke-E2EApi -Context $context -Method "Put" -Path "/api/v1/on-site-assessments/$projectId/review-assignment" -Token $adminToken -Body @{
-    techReviewer = [string]$techUsers[0]
-    contentReviewerA = [string]$aUsers[0]
-    contentReviewerB = [string]$bUsers[0]
-    contentReviewerC = [string]$cUsers[0]
+    techReviewer = $techAssignee
+    contentReviewerTech = $contentTechAssignee
+    contentReviewerManagement = $contentManagementAssignee
+    contentReviewerNetwork = $contentNetworkAssignee
     versionNo = 0
   } | Out-Null
   Invoke-E2EApi -Context $context -Method "Post" -Path "/api/v1/on-site-assessments/$projectId/submit" -Token $adminToken | Out-Null
-
-  Invoke-E2EApi -Context $context -Method "Put" -Path "/api/v1/report-tech-reviews/$projectId" -Token $adminToken -Body @{
-    remark = "tech review draft by final reject recovery"
-    versionNo = 0
-  } | Out-Null
-  Invoke-E2EApi -Context $context -Method "Post" -Path "/api/v1/report-tech-reviews/$projectId/submit" -Token $adminToken | Out-Null
 
   $techTodoResp = Invoke-E2EApi -Context $context -Method "Get" -Path "/api/v1/workflow/tasks/todo?type=REPORT_TECH_REVIEW" -Token $adminToken
   $techTodoRows = @($techTodoResp.body.data | Where-Object { [long]$_.bizId -eq [long]$projectId })
@@ -189,9 +193,16 @@ try {
   }
   Invoke-E2EApi -Context $context -Method "Post" -Path "/api/v1/workflow/tasks/$([string]$techTodoRows[0].taskId)/approve" -Token $adminToken | Out-Null
 
-  Invoke-E2EApi -Context $context -Method "Post" -Path "/api/v1/report-content-reviews/$projectId/submit" -Token $adminToken | Out-Null
-  $contentTodoResp = Invoke-E2EApi -Context $context -Method "Get" -Path "/api/v1/workflow/tasks/todo?type=REPORT_CONTENT_REVIEW" -Token $adminToken
-  $contentTodoRows = @($contentTodoResp.body.data | Where-Object { [long]$_.bizId -eq [long]$projectId })
+  $contentTodoResp = $null
+  $contentTodoRows = @()
+  for ($attempt = 0; $attempt -lt 10; $attempt++) {
+    $contentTodoResp = Invoke-E2EApi -Context $context -Method "Get" -Path "/api/v1/workflow/tasks/todo?type=REPORT_CONTENT_REVIEW" -Token $adminToken
+    $contentTodoRows = @($contentTodoResp.body.data | Where-Object { [long]$_.bizId -eq [long]$projectId })
+    if ($contentTodoResp.status -eq 200 -and $contentTodoRows.Count -eq 3) {
+      break
+    }
+    Start-Sleep -Milliseconds 200
+  }
   if ($contentTodoRows.Count -ne 3) {
     throw "report content review pending tasks should be 3"
   }
@@ -211,18 +222,10 @@ try {
   }
   Add-E2EResult -Context $context `
     -CaseName "final_save_before_reject" `
-    -Expected "200 + status=DRAFT" `
-    -Actual "status=$($finalSaveResp.status), reviewStatus=$([string]$finalSaveResp.body.data.status)" `
-    -Pass ($finalSaveResp.status -eq 200 -and [string]$finalSaveResp.body.data.status -eq "DRAFT") `
-    -Detail $finalSaveResp.raw
-
-  $finalSubmitResp = Invoke-E2EApi -Context $context -Method "Post" -Path "/api/v1/report-final-reviews/$projectId/submit" -Token $adminToken
-  Add-E2EResult -Context $context `
-    -CaseName "final_submit_before_reject" `
     -Expected "200 + status=SUBMITTED" `
-    -Actual "status=$($finalSubmitResp.status), reviewStatus=$([string]$finalSubmitResp.body.data.status)" `
-    -Pass ($finalSubmitResp.status -eq 200 -and [string]$finalSubmitResp.body.data.status -eq "SUBMITTED") `
-    -Detail $finalSubmitResp.raw
+    -Actual "status=$($finalSaveResp.status), reviewStatus=$([string]$finalSaveResp.body.data.status)" `
+    -Pass ($finalSaveResp.status -eq 200 -and [string]$finalSaveResp.body.data.status -eq "SUBMITTED") `
+    -Detail $finalSaveResp.raw
 
   $finalTodoBeforeRejectResp = Invoke-E2EApi -Context $context -Method "Get" -Path "/api/v1/workflow/tasks/todo?type=REPORT_FINAL_REVIEW" -Token $adminToken
   $finalTodoBeforeRejectRows = @($finalTodoBeforeRejectResp.body.data | Where-Object { [long]$_.bizId -eq [long]$projectId })
@@ -260,11 +263,11 @@ try {
     -Pass ($finalDetailAfterRejectResp.status -eq 200 -and $afterRejectStatus -eq "REJECTED" -and $afterRejectNode -eq "REPORT_FINAL_REVIEW_TASK") `
     -Detail $finalDetailAfterRejectResp.raw
 
-  $finalResubmitResp = Invoke-E2EApi -Context $context -Method "Post" -Path "/api/v1/report-final-reviews/$projectId/submit" -Token $adminToken
+  $finalResubmitResp = Invoke-E2EApi -Context $context -Method "Post" -Path "/api/v1/report-compile-submissions/$projectId/submit" -Token $adminToken
   Add-E2EResult -Context $context `
-    -CaseName "final_resubmit_after_reject" `
+    -CaseName "final_resubmit_after_reject_via_compile_submit" `
     -Expected "200 + status=SUBMITTED" `
-    -Actual "status=$($finalResubmitResp.status), reviewStatus=$([string]$finalResubmitResp.body.data.status)" `
+    -Actual "status=$($finalResubmitResp.status), compileStatus=$([string]$finalResubmitResp.body.data.status)" `
     -Pass ($finalResubmitResp.status -eq 200 -and [string]$finalResubmitResp.body.data.status -eq "SUBMITTED") `
     -Detail $finalResubmitResp.raw
 

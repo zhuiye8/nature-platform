@@ -38,7 +38,7 @@ Invoke-E2EApi -Context $ctx -Method 'Get' -Path '/api/v1/auth/me' -Token $normal
    - 超管恢复冲突：`409`，消息 `restore conflict: same contract-year active record exists`（临时核验）
 3. C. 现场测评分配（角色池）：通过
    - `reviewer-candidates.ps1` 断言四组候选数组均存在
-   - Playwright 用例断言分配弹窗四下拉分别绑定 `tech/A/B/C` 候选池
+   - Playwright 用例断言分配弹窗四下拉分别绑定 `报告技术 + 内容技术/管理/网络` 候选池
    - Playwright 用例断言未选齐 4 人时阻断保存（请求未发出）
 4. D. 待办审批权限：通过
    - `reviewer` 可见合同待办（匹配数 1）
@@ -55,3 +55,5 @@ Invoke-E2EApi -Context $ctx -Method 'Get' -Path '/api/v1/auth/me' -Token $normal
   - `exception-report-tech-reject-recovery-20260212-141548.json`
   - `exception-report-final-reject-recovery-20260212-141549.json`
   - `happy-path-project-police-onsite-assignment-20260212-141551.json`
+
+

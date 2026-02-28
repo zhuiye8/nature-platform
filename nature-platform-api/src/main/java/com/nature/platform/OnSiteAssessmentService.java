@@ -1,11 +1,12 @@
 /**
- * @input JdbcTemplate storage, user/role lookup, police-register prerequisite service, workflow trace helper, and notifications
- * @output Node-8 on-site assessment save/submit plus reviewer-assignment and role-pool candidate operations
- * @position Project node service implementing on-site assessment execution and reviewer selection entry
+ * @input JdbcTemplate storage, user/role lookup, police-register prerequisite service, workflow trace helper, workflow config, and notifications
+ * @output Node-8 on-site assessment save/submit plus reviewer-assignment, rectification routing, and role-pool candidate operations
+ * @position Project node service implementing unified on-site submission entry for first-pass review and rework resubmission
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 package com.nature.platform;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
@@ -21,26 +22,47 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class OnSiteAssessmentService {
-  public static final String NODE_KEY = "ON_SITE_ASSESSMENT";
-  public static final String NEXT_NODE_KEY = "REPORT_TECH_REVIEW_APPLY";
+ public static final String NODE_KEY = "ON_SITE_ASSESSMENT";
+  private static final String NODE_REPORT_TECH_REVIEW_TASK = "REPORT_TECH_REVIEW_TASK";
+  private static final String NODE_REPORT_CONTENT_REVIEW_TASK = "REPORT_CONTENT_REVIEW_TASK";
+  private static final String NODE_REPORT_FINAL_REVIEW_TASK = "REPORT_FINAL_REVIEW_TASK";
+  public static final String SLOT_TECH_REVIEWER = "TECH_REVIEWER";
+  public static final String SLOT_CONTENT_REVIEWER_TECH = "CONTENT_REVIEWER_TECH";
+  public static final String SLOT_CONTENT_REVIEWER_MANAGEMENT = "CONTENT_REVIEWER_MANAGEMENT";
+  public static final String SLOT_CONTENT_REVIEWER_NETWORK = "CONTENT_REVIEWER_NETWORK";
+  private static final String LEGACY_SLOT_CONTENT_REVIEWER_A = "CONTENT_REVIEWER_A";
+  private static final String LEGACY_SLOT_CONTENT_REVIEWER_B = "CONTENT_REVIEWER_B";
+  private static final String LEGACY_SLOT_CONTENT_REVIEWER_C = "CONTENT_REVIEWER_C";
 
   private final JdbcTemplate jdbcTemplate;
   private final UserAccountService userAccountService;
   private final PoliceRegisterService policeRegisterService;
   private final ProjectWorkflowTraceService workflowTraceService;
+  private final WorkflowConfigService workflowConfigService;
   private final NotificationService notificationService;
+  private final ReportTechReviewService reportTechReviewService;
+  private final ReportContentReviewService reportContentReviewService;
+  private final ReportFinalReviewService reportFinalReviewService;
 
   public OnSiteAssessmentService(
       JdbcTemplate jdbcTemplate,
       UserAccountService userAccountService,
       PoliceRegisterService policeRegisterService,
       ProjectWorkflowTraceService workflowTraceService,
-      NotificationService notificationService) {
+      WorkflowConfigService workflowConfigService,
+      NotificationService notificationService,
+      ReportTechReviewService reportTechReviewService,
+      ReportContentReviewService reportContentReviewService,
+      ReportFinalReviewService reportFinalReviewService) {
     this.jdbcTemplate = jdbcTemplate;
     this.userAccountService = userAccountService;
     this.policeRegisterService = policeRegisterService;
     this.workflowTraceService = workflowTraceService;
+    this.workflowConfigService = workflowConfigService;
     this.notificationService = notificationService;
+    this.reportTechReviewService = reportTechReviewService;
+    this.reportContentReviewService = reportContentReviewService;
+    this.reportFinalReviewService = reportFinalReviewService;
   }
 
   public List<OnSiteAssessmentRecord> list() {
@@ -58,27 +80,44 @@ public class OnSiteAssessmentService {
   }
 
   public ReviewerCandidates listReviewAssignmentCandidatesByRole() {
+    List<String> techRoleCodes =
+        workflowConfigService.listRoleCodesBySlot(
+            NODE_KEY,
+            SLOT_TECH_REVIEWER,
+            List.of(
+                UserAccountService.ROLE_SUPER_ADMIN,
+                UserAccountService.ROLE_REVIEWER,
+                UserAccountService.ROLE_REVIEW_TECH));
+    List<String> reviewerTechRoleCodes =
+        listRoleCodesBySlotWithLegacy(
+            SLOT_CONTENT_REVIEWER_TECH,
+            LEGACY_SLOT_CONTENT_REVIEWER_A,
+            List.of(
+                UserAccountService.ROLE_SUPER_ADMIN,
+                UserAccountService.ROLE_REVIEWER,
+                UserAccountService.ROLE_REVIEW_CONTENT_TECH));
+    List<String> reviewerManagementRoleCodes =
+        listRoleCodesBySlotWithLegacy(
+            SLOT_CONTENT_REVIEWER_MANAGEMENT,
+            LEGACY_SLOT_CONTENT_REVIEWER_B,
+            List.of(
+                UserAccountService.ROLE_SUPER_ADMIN,
+                UserAccountService.ROLE_REVIEWER,
+                UserAccountService.ROLE_REVIEW_CONTENT_MANAGEMENT));
+    List<String> reviewerNetworkRoleCodes =
+        listRoleCodesBySlotWithLegacy(
+            SLOT_CONTENT_REVIEWER_NETWORK,
+            LEGACY_SLOT_CONTENT_REVIEWER_C,
+            List.of(
+                UserAccountService.ROLE_SUPER_ADMIN,
+                UserAccountService.ROLE_REVIEWER,
+                UserAccountService.ROLE_REVIEW_CONTENT_NETWORK));
+
     return new ReviewerCandidates(
-        listCandidatesByRoles(
-            List.of(
-                UserAccountService.ROLE_SUPER_ADMIN,
-                UserAccountService.ROLE_REVIEWER,
-                UserAccountService.ROLE_REVIEW_TECH)),
-        listCandidatesByRoles(
-            List.of(
-                UserAccountService.ROLE_SUPER_ADMIN,
-                UserAccountService.ROLE_REVIEWER,
-                UserAccountService.ROLE_REVIEW_CONTENT_A)),
-        listCandidatesByRoles(
-            List.of(
-                UserAccountService.ROLE_SUPER_ADMIN,
-                UserAccountService.ROLE_REVIEWER,
-                UserAccountService.ROLE_REVIEW_CONTENT_B)),
-        listCandidatesByRoles(
-            List.of(
-                UserAccountService.ROLE_SUPER_ADMIN,
-                UserAccountService.ROLE_REVIEWER,
-                UserAccountService.ROLE_REVIEW_CONTENT_C)));
+        listCandidatesByRoles(techRoleCodes),
+        listCandidatesByRoles(reviewerTechRoleCodes),
+        listCandidatesByRoles(reviewerManagementRoleCodes),
+        listCandidatesByRoles(reviewerNetworkRoleCodes));
   }
 
   @Transactional
@@ -108,6 +147,7 @@ public class OnSiteAssessmentService {
       workflowTraceService.appendAction(projectId, "ON_SITE_ASSESSMENT_SAVE", null, "DRAFT", operator, "");
     } else {
       long id = ids.get(0);
+      RectificationTarget rectificationTarget = resolveRectificationTarget(projectId);
       String oldStatus =
           jdbcTemplate.queryForObject(
               "SELECT status FROM on_site_assessment WHERE id = ?",
@@ -124,7 +164,9 @@ public class OnSiteAssessmentService {
           trim(request.getAssessmentDetail()),
           operator,
           id);
-      workflowTraceService.moveNode(projectId, NODE_KEY, "PENDING", operator);
+      if (rectificationTarget == RectificationTarget.NONE) {
+        workflowTraceService.moveNode(projectId, NODE_KEY, "PENDING", operator);
+      }
       workflowTraceService.appendAction(projectId, "ON_SITE_ASSESSMENT_SAVE", oldStatus, "DRAFT", operator, "");
     }
 
@@ -138,9 +180,9 @@ public class OnSiteAssessmentService {
     ensurePackageUploaded(projectId);
 
     String techReviewer = trim(request.getTechReviewer());
-    String reviewerA = trim(request.getContentReviewerA());
-    String reviewerB = trim(request.getContentReviewerB());
-    String reviewerC = trim(request.getContentReviewerC());
+    String reviewerA = trim(request.getContentReviewerTech());
+    String reviewerB = trim(request.getContentReviewerManagement());
+    String reviewerC = trim(request.getContentReviewerNetwork());
     validateAssignees(techReviewer, reviewerA, reviewerB, reviewerC);
 
     List<AssignmentRow> existingRows =
@@ -210,7 +252,6 @@ public class OnSiteAssessmentService {
 
     return detail(projectId).orElseThrow();
   }
-
   @Transactional
   public OnSiteAssessmentRecord submit(long projectId, String operator) {
     ensureProjectApproved(projectId);
@@ -230,6 +271,7 @@ public class OnSiteAssessmentService {
         assignment.contentReviewerA(),
         assignment.contentReviewerB(),
         assignment.contentReviewerC());
+    RectificationTarget rectificationTarget = resolveRectificationTarget(projectId);
 
     jdbcTemplate.update(
         """
@@ -239,7 +281,6 @@ public class OnSiteAssessmentService {
         """,
         operator,
         projectId);
-    workflowTraceService.moveNode(projectId, NEXT_NODE_KEY, "PENDING", operator);
     workflowTraceService.appendAction(
         projectId,
         "ON_SITE_ASSESSMENT_SUBMIT",
@@ -248,12 +289,13 @@ public class OnSiteAssessmentService {
         operator,
         "");
     upsertQualityGatewayApproved(projectId, operator);
+    submitToNextReviewStage(projectId, operator, rectificationTarget);
 
     ProjectOwner projectOwner = loadProjectOwner(projectId);
     notificationService.createForUser(
         projectOwner.createdBy(),
         "现场测评已提交",
-        "项目[" + projectOwner.applicationName() + "]已上传测评压缩包，可进入报告整体技术审核。",
+        "项目[" + projectOwner.applicationName() + "]现场测评已提交，已进入后续审核流程。",
         "ON_SITE_ASSESSMENT_SUBMITTED",
         ProjectRegisterService.BIZ_TYPE,
         projectId);
@@ -289,12 +331,66 @@ public class OnSiteAssessmentService {
     return rows.get(0);
   }
 
+  private void submitToNextReviewStage(
+      long projectId, String operator, RectificationTarget rectificationTarget) {
+    if (rectificationTarget == RectificationTarget.REPORT_CONTENT_REVIEW) {
+      reportContentReviewService.submit(projectId, operator);
+      return;
+    }
+    if (rectificationTarget == RectificationTarget.REPORT_FINAL_REVIEW) {
+      reportFinalReviewService.submit(projectId, operator);
+      return;
+    }
+    reportTechReviewService.submit(projectId, operator);
+  }
+
+  private RectificationTarget resolveRectificationTarget(long projectId) {
+    List<WorkflowState> rows =
+        jdbcTemplate.query(
+            """
+            SELECT current_node, status
+            FROM workflow_instance
+            WHERE biz_type = ? AND biz_id = ?
+            LIMIT 1
+            """,
+            (rs, rowNum) -> new WorkflowState(rs.getString("current_node"), rs.getString("status")),
+            ProjectRegisterService.BIZ_TYPE,
+            projectId);
+    if (rows.isEmpty()) {
+      return RectificationTarget.NONE;
+    }
+    WorkflowState state = rows.get(0);
+    if (!"REJECTED".equalsIgnoreCase(state.status())) {
+      return RectificationTarget.NONE;
+    }
+    if (NODE_REPORT_TECH_REVIEW_TASK.equals(state.currentNode())) {
+      return RectificationTarget.REPORT_TECH_REVIEW;
+    }
+    if (NODE_REPORT_CONTENT_REVIEW_TASK.equals(state.currentNode())) {
+      return RectificationTarget.REPORT_CONTENT_REVIEW;
+    }
+    if (NODE_REPORT_FINAL_REVIEW_TASK.equals(state.currentNode())) {
+      return RectificationTarget.REPORT_FINAL_REVIEW;
+    }
+    return RectificationTarget.NONE;
+  }
+
   private List<String> listCandidatesByRoles(List<String> roles) {
     List<String> rows = userAccountService.listEnabledUsernamesByRoles(roles);
     if (!rows.isEmpty()) {
       return rows;
     }
     return userAccountService.listEnabledUsernames();
+  }
+
+  private List<String> listRoleCodesBySlotWithLegacy(
+      String primarySlotKey, String legacySlotKey, List<String> fallbackRoleCodes) {
+    List<String> primary =
+        workflowConfigService.listRoleCodesBySlot(NODE_KEY, primarySlotKey, List.of());
+    if (!primary.isEmpty()) {
+      return primary;
+    }
+    return workflowConfigService.listRoleCodesBySlot(NODE_KEY, legacySlotKey, fallbackRoleCodes);
   }
 
   private void ensureProjectApproved(long projectId) {
@@ -449,7 +545,61 @@ public class OnSiteAssessmentService {
           osa.created_at,
           osa.updated_at,
           wi.current_node workflow_node,
-          wi.status workflow_status
+          wi.status workflow_status,
+          CASE
+            WHEN wi.status = 'REJECTED'
+              AND wi.current_node IN ('REPORT_TECH_REVIEW_TASK', 'REPORT_CONTENT_REVIEW_TASK', 'REPORT_FINAL_REVIEW_TASK')
+            THEN wi.current_node
+            ELSE NULL
+          END rectification_node,
+          CASE
+            WHEN wi.status = 'REJECTED' AND wi.current_node = 'REPORT_TECH_REVIEW_TASK' THEN (
+              SELECT t.remark
+              FROM report_tech_review_task t
+              WHERE t.project_register_id = p.id AND t.status = 'REJECTED'
+              ORDER BY t.processed_at DESC, t.id DESC
+              LIMIT 1
+            )
+            WHEN wi.status = 'REJECTED' AND wi.current_node = 'REPORT_CONTENT_REVIEW_TASK' THEN (
+              SELECT t.remark
+              FROM report_content_review_task t
+              WHERE t.project_register_id = p.id AND t.status = 'REJECTED'
+              ORDER BY t.processed_at DESC, t.id DESC
+              LIMIT 1
+            )
+            WHEN wi.status = 'REJECTED' AND wi.current_node = 'REPORT_FINAL_REVIEW_TASK' THEN (
+              SELECT t.remark
+              FROM report_final_review_task t
+              WHERE t.project_register_id = p.id AND t.status = 'REJECTED'
+              ORDER BY t.processed_at DESC, t.id DESC
+              LIMIT 1
+            )
+            ELSE NULL
+          END rectification_remark,
+          CASE
+            WHEN wi.status = 'REJECTED' AND wi.current_node = 'REPORT_TECH_REVIEW_TASK' THEN (
+              SELECT t.processed_at
+              FROM report_tech_review_task t
+              WHERE t.project_register_id = p.id AND t.status = 'REJECTED'
+              ORDER BY t.processed_at DESC, t.id DESC
+              LIMIT 1
+            )
+            WHEN wi.status = 'REJECTED' AND wi.current_node = 'REPORT_CONTENT_REVIEW_TASK' THEN (
+              SELECT t.processed_at
+              FROM report_content_review_task t
+              WHERE t.project_register_id = p.id AND t.status = 'REJECTED'
+              ORDER BY t.processed_at DESC, t.id DESC
+              LIMIT 1
+            )
+            WHEN wi.status = 'REJECTED' AND wi.current_node = 'REPORT_FINAL_REVIEW_TASK' THEN (
+              SELECT t.processed_at
+              FROM report_final_review_task t
+              WHERE t.project_register_id = p.id AND t.status = 'REJECTED'
+              ORDER BY t.processed_at DESC, t.id DESC
+              LIMIT 1
+            )
+            ELSE NULL
+          END rectification_at
         FROM project_register p
         LEFT JOIN on_site_assessment osa ON osa.project_register_id = p.id
         LEFT JOIN workflow_assignment wa ON wa.project_register_id = p.id
@@ -484,6 +634,9 @@ public class OnSiteAssessmentService {
       record.setUpdatedAt(stringTimestamp(rs.getTimestamp("updated_at")));
       record.setWorkflowNode(rs.getString("workflow_node"));
       record.setWorkflowStatus(rs.getString("workflow_status"));
+      record.setRectificationNode(rs.getString("rectification_node"));
+      record.setRectificationRemark(rs.getString("rectification_remark"));
+      record.setRectificationAt(stringTimestamp(rs.getTimestamp("rectification_at")));
       return record;
     }
 
@@ -500,12 +653,38 @@ public class OnSiteAssessmentService {
       String contentReviewerC,
       int versionNo) {}
 
+  private record WorkflowState(String currentNode, String status) {}
+
   private record ProjectOwner(String createdBy, String applicationName) {}
+
+  private enum RectificationTarget {
+    NONE,
+    REPORT_TECH_REVIEW,
+    REPORT_CONTENT_REVIEW,
+    REPORT_FINAL_REVIEW
+  }
 
   public record ReviewerCandidates(
       List<String> techReviewers,
-      List<String> contentReviewersA,
-      List<String> contentReviewersB,
-      List<String> contentReviewersC) {}
+      List<String> contentReviewersTech,
+      List<String> contentReviewersManagement,
+      List<String> contentReviewersNetwork) {
+    @JsonProperty("contentReviewersA")
+    public List<String> getContentReviewersA() {
+      return contentReviewersTech;
+    }
+
+    @JsonProperty("contentReviewersB")
+    public List<String> getContentReviewersB() {
+      return contentReviewersManagement;
+    }
+
+    @JsonProperty("contentReviewersC")
+    public List<String> getContentReviewersC() {
+      return contentReviewersNetwork;
+    }
+  }
 }
+
+
 

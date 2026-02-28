@@ -1,6 +1,6 @@
 /**
  * @input apiClient and ApiResponse from local HTTP infrastructure
- * @output Contract CRUD/review/archive API wrappers and contract domain types for management pages
+ * @output Contract submission/archive split API wrappers and contract domain types for management pages
  * @position Frontend contract service layer encapsulating contract lifecycle REST contracts
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
@@ -71,6 +71,16 @@ export interface ContractArchivePayload {
 
 export async function fetchContracts(): Promise<ContractRecord[]> {
   const response = await apiClient.get<ApiResponse<ContractRecord[]>>("/contracts");
+  return response.data.data;
+}
+
+export async function fetchContractSubmissionList(): Promise<ContractRecord[]> {
+  const response = await apiClient.get<ApiResponse<ContractRecord[]>>("/contracts");
+  return response.data.data;
+}
+
+export async function fetchContractArchiveList(): Promise<ContractRecord[]> {
+  const response = await apiClient.get<ApiResponse<ContractRecord[]>>("/contracts/archive-list");
   return response.data.data;
 }
 

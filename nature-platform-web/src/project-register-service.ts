@@ -1,10 +1,11 @@
 /**
  * @input apiClient and ApiResponse from local HTTP infrastructure
- * @output Project-register CRUD/review/trace API wrappers and typed domain models for registration pages
- * @position Frontend project-register service layer encapsulating project registration REST contracts
+ * @output Project-register CRUD/contract-option/review/trace API wrappers and typed domain models for registration pages
+ * @position Frontend project-register service layer encapsulating project registration REST contracts and archived-contract option loading
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 import { apiClient, type ApiResponse } from "./api";
+import type { ContractRecord } from "./contract-service";
 
 export interface ProjectSystemItemPayload {
   systemName: string;
@@ -69,6 +70,13 @@ export async function fetchProjectRegisters(): Promise<ProjectRegisterRecord[]> 
 
 export async function fetchProjectRegisterDetail(id: number): Promise<ProjectRegisterRecord> {
   const response = await apiClient.get<ApiResponse<ProjectRegisterRecord>>(`/project-registers/${id}`);
+  return response.data.data;
+}
+
+export async function fetchProjectRegisterContractOptions(): Promise<ContractRecord[]> {
+  const response = await apiClient.get<ApiResponse<ContractRecord[]>>(
+    "/project-registers/contract-options"
+  );
   return response.data.data;
 }
 

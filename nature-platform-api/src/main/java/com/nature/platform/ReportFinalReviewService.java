@@ -1,6 +1,6 @@
 /**
  * @input JdbcTemplate, user-account service, workflow trace helper, notifications, and compile-stage data
- * @output Node-15 final-review save/submit and task approve/reject operations
+ * @output Node-15 final-review save/auto-submit and task approve/reject operations with unified displayStatus projection
  * @position Report final-review service bridging compile submission completion to material archive stage
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
@@ -22,7 +22,6 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class ReportFinalReviewService {
-  public static final String NODE_APPLY = "REPORT_FINAL_REVIEW_APPLY";
   public static final String NODE_TASK = "REPORT_FINAL_REVIEW_TASK";
   public static final String NEXT_NODE = "MATERIAL_ARCHIVE";
 
@@ -43,13 +42,18 @@ public class ReportFinalReviewService {
   }
 
   public List<ReportFinalReviewRecord> list() {
-    return jdbcTemplate.query(baseSql() + " ORDER BY p.id DESC", new ReportFinalReviewRowMapper());
+    List<ReportFinalReviewRecord> rows =
+        jdbcTemplate.query(baseSql() + " ORDER BY p.id DESC", new ReportFinalReviewRowMapper());
+    rows.forEach(this::applyDisplayStatus);
+    return rows;
   }
 
   public Optional<ReportFinalReviewRecord> detail(long projectId) {
     List<ReportFinalReviewRecord> rows =
         jdbcTemplate.query(baseSql() + " AND p.id = ?", new ReportFinalReviewRowMapper(), projectId);
-    return rows.stream().findFirst();
+    Optional<ReportFinalReviewRecord> first = rows.stream().findFirst();
+    first.ifPresent(this::applyDisplayStatus);
+    return first;
   }
 
   public List<String> listCandidates() {
@@ -169,8 +173,8 @@ public class ReportFinalReviewService {
           "");
     }
 
-    workflowTraceService.moveNode(projectId, NODE_APPLY, "PENDING", operator);
-    return detail(projectId).orElseThrow();
+    // 配置保存后自动提交并刷新最终审核待办，收口手工提交入口。
+    return submit(projectId, operator);
   }
 
   @Transactional
@@ -437,6 +441,38 @@ public class ReportFinalReviewService {
       return "";
     }
     return value.trim();
+  }
+
+  private void applyDisplayStatus(ReportFinalReviewRecord row) {
+    String taskStatus = normalizeStatus(row.getTaskStatus());
+    if (taskStatus != null) {
+      row.setDisplayStatus(taskStatus);
+      return;
+    }
+    if (NODE_TASK.equalsIgnoreCase(row.getWorkflowNode())
+        && "PENDING".equalsIgnoreCase(row.getWorkflowStatus())) {
+      row.setDisplayStatus("PENDING");
+      return;
+    }
+    row.setDisplayStatus(normalizeApplyStatus(row.getStatus()));
+  }
+
+  private String normalizeApplyStatus(String status) {
+    String normalized = normalizeStatus(status);
+    if (normalized == null) {
+      return "DRAFT";
+    }
+    if ("SUBMITTED".equals(normalized)) {
+      return "PENDING";
+    }
+    return normalized;
+  }
+
+  private String normalizeStatus(String status) {
+    if (status == null || status.isBlank()) {
+      return null;
+    }
+    return status.trim().toUpperCase(Locale.ROOT);
   }
 
   private String stringTimestamp(Timestamp timestamp) {

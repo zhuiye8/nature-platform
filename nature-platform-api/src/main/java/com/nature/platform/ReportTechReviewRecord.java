@@ -1,6 +1,6 @@
 /**
  * @input report_tech_review_apply/task and workflow-instance query rows
- * @output ReportTechReviewRecord response model for node-11 list/detail APIs
+ * @output ReportTechReviewRecord response model for node-11 list/detail APIs including unified displayStatus
  * @position Node-11 read model for overall technical review stage status and reviewer metadata
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
@@ -20,6 +20,7 @@ public class ReportTechReviewRecord {
   private String finishedAt;
   private Long taskId;
   private String taskStatus;
+  private String displayStatus;
   private String workflowNode;
   private String workflowStatus;
 
@@ -125,6 +126,14 @@ public class ReportTechReviewRecord {
 
   public void setTaskStatus(String taskStatus) {
     this.taskStatus = taskStatus;
+  }
+
+  public String getDisplayStatus() {
+    return displayStatus;
+  }
+
+  public void setDisplayStatus(String displayStatus) {
+    this.displayStatus = displayStatus;
   }
 
   public String getWorkflowNode() {

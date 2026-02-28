@@ -17,6 +17,7 @@
     "@element-plus/icons-vue": "^2.3.2",
     "axios": "^1.13.1",
     "dayjs": "^1.11.19",
+    "element-china-area-data": "^6.1.0",
     "element-plus": "^2.13.1",
     "pinia": "^3.0.4",
     "vue": "^3.5.27",

@@ -1,6 +1,6 @@
 /**
  * @input apiClient and ApiResponse from local HTTP infrastructure layer
- * @output Workflow task query/action helpers and contract/project detail fetch API functions
+ * @output Workflow task query/action helpers (including displayStatus) and contract/project review-detail fetch API functions
  * @position Frontend workflow service layer encapsulating task-center REST contracts
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
@@ -19,6 +19,7 @@ export interface WorkflowTask {
   bizId: number;
   bizTitle: string;
   status: string;
+  displayStatus?: string;
   submittedBy: string;
   submittedAt: string;
   processDefinitionKey?: string;
@@ -39,6 +40,7 @@ export interface ContractDetail {
   createdAt: string;
   remark: string;
   serviceYears: number[];
+  contractFileObjectKey?: string;
 }
 
 export interface ProjectRegisterDetail {
@@ -75,6 +77,13 @@ export async function rejectTask(taskId: string, remark: string): Promise<void> 
 
 export async function fetchContractDetail(id: number): Promise<ContractDetail> {
   const response = await apiClient.get<ApiResponse<ContractDetail>>(`/contracts/${id}`);
+  return response.data.data;
+}
+
+export async function fetchContractReviewDetail(id: number): Promise<ContractDetail> {
+  const response = await apiClient.get<ApiResponse<ContractDetail>>(
+    `/workflow/tasks/contracts/${id}/detail`
+  );
   return response.data.data;
 }
 

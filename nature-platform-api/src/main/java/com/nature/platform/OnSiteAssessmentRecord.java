@@ -1,7 +1,7 @@
 /**
  * @input On-site assessment table rows joined with project/workflow summary fields
- * @output OnSiteAssessmentRecord response model for node-8 list/detail APIs
- * @position Node-8 read model exposing on-site package and workflow transition status
+ * @output OnSiteAssessmentRecord response model for node-8 list/detail APIs with rectification context
+ * @position Node-8 read model exposing on-site package, workflow transition status, and latest review-rectification hints
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 package com.nature.platform;
@@ -25,6 +25,9 @@ public class OnSiteAssessmentRecord {
   private String updatedAt;
   private String workflowNode;
   private String workflowStatus;
+  private String rectificationNode;
+  private String rectificationRemark;
+  private String rectificationAt;
 
   public Long getId() {
     return id;
@@ -114,6 +117,30 @@ public class OnSiteAssessmentRecord {
     this.contentReviewerC = contentReviewerC;
   }
 
+  public String getContentReviewerTech() {
+    return contentReviewerA;
+  }
+
+  public void setContentReviewerTech(String contentReviewerTech) {
+    this.contentReviewerA = contentReviewerTech;
+  }
+
+  public String getContentReviewerManagement() {
+    return contentReviewerB;
+  }
+
+  public void setContentReviewerManagement(String contentReviewerManagement) {
+    this.contentReviewerB = contentReviewerManagement;
+  }
+
+  public String getContentReviewerNetwork() {
+    return contentReviewerC;
+  }
+
+  public void setContentReviewerNetwork(String contentReviewerNetwork) {
+    this.contentReviewerC = contentReviewerNetwork;
+  }
+
   public int getAssignmentVersionNo() {
     return assignmentVersionNo;
   }
@@ -168,5 +195,29 @@ public class OnSiteAssessmentRecord {
 
   public void setWorkflowStatus(String workflowStatus) {
     this.workflowStatus = workflowStatus;
+  }
+
+  public String getRectificationNode() {
+    return rectificationNode;
+  }
+
+  public void setRectificationNode(String rectificationNode) {
+    this.rectificationNode = rectificationNode;
+  }
+
+  public String getRectificationRemark() {
+    return rectificationRemark;
+  }
+
+  public void setRectificationRemark(String rectificationRemark) {
+    this.rectificationRemark = rectificationRemark;
+  }
+
+  public String getRectificationAt() {
+    return rectificationAt;
+  }
+
+  public void setRectificationAt(String rectificationAt) {
+    this.rectificationAt = rectificationAt;
   }
 }

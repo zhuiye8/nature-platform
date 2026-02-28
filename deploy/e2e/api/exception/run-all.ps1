@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$BaseUrl = "http://127.0.0.1:18080"
 )
 
@@ -12,7 +12,8 @@ $scripts = @(
   "report-review-reject-recovery.ps1",
   "report-tech-reject-recovery.ps1",
   "report-final-reject-recovery.ps1",
-  "notification-trigger-audit.ps1"
+  "notification-trigger-audit.ps1",
+  "admin-management-p2.ps1"
 )
 
 $failed = @()
@@ -34,3 +35,6 @@ if ($failed.Count -gt 0) {
 
 Write-Output ""
 Write-Output "exception suite passed"
+
+
+

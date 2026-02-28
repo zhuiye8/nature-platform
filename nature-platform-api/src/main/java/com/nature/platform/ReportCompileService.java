@@ -1,7 +1,7 @@
 /**
  * @input JdbcTemplate, user-account, workflow trace, notification, and project context data
- * @output Node-13 assignment and node-14 report compile upload save/submit operations
- * @position Report compile workflow service bridging content-review completion to final-review stage
+ * @output Node-13 assignment and node-14 report compile upload save/submit operations with final-review auto task sync
+ * @position Report compile workflow service bridging content-review completion to final-review task stage
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 package com.nature.platform;
@@ -29,16 +29,19 @@ public class ReportCompileService {
   private final UserAccountService userAccountService;
   private final ProjectWorkflowTraceService workflowTraceService;
   private final NotificationService notificationService;
+  private final ReportFinalReviewService reportFinalReviewService;
 
   public ReportCompileService(
       JdbcTemplate jdbcTemplate,
       UserAccountService userAccountService,
       ProjectWorkflowTraceService workflowTraceService,
-      NotificationService notificationService) {
+      NotificationService notificationService,
+      ReportFinalReviewService reportFinalReviewService) {
     this.jdbcTemplate = jdbcTemplate;
     this.userAccountService = userAccountService;
     this.workflowTraceService = workflowTraceService;
     this.notificationService = notificationService;
+    this.reportFinalReviewService = reportFinalReviewService;
   }
 
   public List<ReportCompileAssignmentRecord> listAssignments() {
@@ -261,18 +264,12 @@ public class ReportCompileService {
           "");
     }
 
-    workflowTraceService.moveNode(projectId, NEXT_NODE, "PENDING", operator);
-
     String finalReviewer = loadFinalReviewer(projectId);
-    if (finalReviewer != null) {
-      ProjectRef project = loadProject(projectId);
-      notificationService.createForUser(
-          finalReviewer,
-          "报告最终审核待处理",
-          "项目[" + project.applicationName() + "]已进入报告最终审核阶段。",
-          "REPORT_FINAL_REVIEW_ENTER",
-          ProjectRegisterService.BIZ_TYPE,
-          projectId);
+    if (finalReviewer == null) {
+      workflowTraceService.moveNode(projectId, NEXT_NODE, "PENDING", operator);
+    } else {
+      // 已配置最终审核人时自动创建待办任务，不再依赖手工提交。
+      reportFinalReviewService.submit(projectId, operator);
     }
 
     return detailSubmission(projectId).orElseThrow();
@@ -514,4 +511,5 @@ public class ReportCompileService {
 
   private record ProjectRef(long id, String applicationName) {}
 }
+
 

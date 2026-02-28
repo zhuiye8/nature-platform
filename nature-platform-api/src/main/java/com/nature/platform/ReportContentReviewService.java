@@ -1,6 +1,6 @@
 /**
  * @input JdbcTemplate, user-account service, workflow trace helper, and notifications
- * @output Node-12 content-review submit and A/B/C task approval/rejection operations
+ * @output Node-12 content-review submit and technical/management/network task approval/rejection operations with unified displayStatus projection
  * @position Report content-review service bridging technical-review completion to compile-assignment stage
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
@@ -27,9 +27,9 @@ public class ReportContentReviewService {
   public static final String NODE_TASK = "REPORT_CONTENT_REVIEW_TASK";
   public static final String NEXT_NODE = "REPORT_COMPILE_ASSIGN";
 
-  private static final String ROLE_A = "CONTENT_A";
-  private static final String ROLE_B = "CONTENT_B";
-  private static final String ROLE_C = "CONTENT_C";
+  private static final String ROLE_TECH = "CONTENT_TECH";
+  private static final String ROLE_MANAGEMENT = "CONTENT_MANAGEMENT";
+  private static final String ROLE_NETWORK = "CONTENT_NETWORK";
 
   private final JdbcTemplate jdbcTemplate;
   private final UserAccountService userAccountService;
@@ -51,6 +51,7 @@ public class ReportContentReviewService {
     List<ReportContentReviewRecord> rows =
         jdbcTemplate.query(baseSql() + " ORDER BY p.id DESC", new ReportContentReviewRowMapper());
     loadTasks(rows);
+    rows.forEach(this::applyDisplayStatus);
     return rows;
   }
 
@@ -61,7 +62,9 @@ public class ReportContentReviewService {
       return java.util.Optional.empty();
     }
     loadTasks(rows);
-    return rows.stream().findFirst();
+    java.util.Optional<ReportContentReviewRecord> first = rows.stream().findFirst();
+    first.ifPresent(this::applyDisplayStatus);
+    return first;
   }
 
   public List<ReportContentTodoTask> listTodoTasks(String operator, String keyword) {
@@ -166,9 +169,9 @@ public class ReportContentReviewService {
 
     jdbcTemplate.update("DELETE FROM report_content_review_task WHERE apply_id = ?", applyId);
     Map<String, String> taskMap = new LinkedHashMap<>();
-    taskMap.put(ROLE_A, reviewers.reviewerA());
-    taskMap.put(ROLE_B, reviewers.reviewerB());
-    taskMap.put(ROLE_C, reviewers.reviewerC());
+    taskMap.put(ROLE_TECH, reviewers.reviewerA());
+    taskMap.put(ROLE_MANAGEMENT, reviewers.reviewerB());
+    taskMap.put(ROLE_NETWORK, reviewers.reviewerC());
     for (Map.Entry<String, String> item : taskMap.entrySet()) {
       jdbcTemplate.update(
           """
@@ -401,7 +404,8 @@ public class ReportContentReviewService {
     }
     Assignment assignment = rows.get(0);
     if (isBlank(assignment.reviewerA()) || isBlank(assignment.reviewerB()) || isBlank(assignment.reviewerC())) {
-      throw new ResponseStatusException(HttpStatus.CONFLICT, "content reviewers A/B/C are required");
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT, "content reviewers (technical/management/network) are required");
     }
     return assignment;
   }
@@ -475,6 +479,63 @@ public class ReportContentReviewService {
 
   private boolean contains(String value, String needle) {
     return value != null && value.toLowerCase(Locale.ROOT).contains(needle);
+  }
+
+  private void applyDisplayStatus(ReportContentReviewRecord row) {
+    List<ReportContentReviewTaskRecord> taskRows = row.getTasks();
+    if (taskRows != null && !taskRows.isEmpty()) {
+      boolean hasRejected = false;
+      boolean hasPending = false;
+      boolean allApproved = true;
+      for (ReportContentReviewTaskRecord task : taskRows) {
+        String status = normalizeStatus(task.getStatus());
+        if ("REJECTED".equals(status)) {
+          hasRejected = true;
+        }
+        if ("PENDING".equals(status)) {
+          hasPending = true;
+        }
+        if (!"APPROVED".equals(status)) {
+          allApproved = false;
+        }
+      }
+      if (hasRejected) {
+        row.setDisplayStatus("REJECTED");
+        return;
+      }
+      if (hasPending) {
+        row.setDisplayStatus("PENDING");
+        return;
+      }
+      if (allApproved) {
+        row.setDisplayStatus("APPROVED");
+        return;
+      }
+    }
+    if (NODE_TASK.equalsIgnoreCase(row.getWorkflowNode())
+        && "PENDING".equalsIgnoreCase(row.getWorkflowStatus())) {
+      row.setDisplayStatus("PENDING");
+      return;
+    }
+    row.setDisplayStatus(normalizeApplyStatus(row.getStatus()));
+  }
+
+  private String normalizeApplyStatus(String status) {
+    String normalized = normalizeStatus(status);
+    if (normalized == null) {
+      return "DRAFT";
+    }
+    if ("SUBMITTED".equals(normalized)) {
+      return "PENDING";
+    }
+    return normalized;
+  }
+
+  private String normalizeStatus(String status) {
+    if (status == null || status.isBlank()) {
+      return null;
+    }
+    return status.trim().toUpperCase(Locale.ROOT);
   }
 
   private String normalizeRemark(String value) {

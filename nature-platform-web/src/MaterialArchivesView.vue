@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="page-shell page section-stack">
     <header class="page-header">
       <div>
@@ -8,7 +8,16 @@
       <el-button :loading="loading" @click="loadRows">刷新</el-button>
     </header>
 
-    <el-card>
+    <el-card class="tip-card">
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        title="归档前请确认报告文件与表单材料完整；每行填写一个对象键。"
+      />
+    </el-card>
+
+    <el-card class="table-card">
       <el-table :data="rows" v-loading="loading" empty-text="暂无可处理项">
         <el-table-column prop="projectRegisterId" label="项目ID" width="90" />
         <el-table-column prop="applicationName" label="申请单名称" min-width="220" show-overflow-tooltip />
@@ -31,11 +40,14 @@
           </template>
         </el-table-column>
         <el-table-column prop="workflowNode" label="流程节点" width="180" show-overflow-tooltip />
-        <el-table-column label="操作" width="260" fixed="right">
+        <el-table-column label="操作" width="340" fixed="right">
           <template #default="{ row }">
             <el-space>
-              <el-button size="small" @click="openDialog(row)">编辑</el-button>
+              <el-button v-permission="'material-archive:save'" size="small" @click="openDialog(row)">
+                编辑
+              </el-button>
               <el-button
+                v-permission="'material-archive:submit'"
                 size="small"
                 type="success"
                 :disabled="row.status === 'ARCHIVED'"
@@ -43,6 +55,7 @@
               >
                 提交归档
               </el-button>
+              <el-button size="small" @click="openProcessOverview(row.projectRegisterId)">流程详情</el-button>
             </el-space>
           </template>
         </el-table-column>
@@ -63,7 +76,11 @@
             placeholder="每行一个对象键"
           />
           <div class="upload-row">
-            <el-button :loading="uploadingType === 'report'" @click="triggerUpload('report')">
+            <el-button
+              v-permission="'material-archive:save'"
+              :loading="uploadingType === 'report'"
+              @click="triggerUpload('report')"
+            >
               上传报告文件
             </el-button>
             <span class="upload-tip">上传后自动追加到文本</span>
@@ -78,7 +95,11 @@
             placeholder="每行一个对象键"
           />
           <div class="upload-row">
-            <el-button :loading="uploadingType === 'form'" @click="triggerUpload('form')">
+            <el-button
+              v-permission="'material-archive:save'"
+              :loading="uploadingType === 'form'"
+              @click="triggerUpload('form')"
+            >
               上传表单文件
             </el-button>
             <span class="upload-tip">上传后自动追加到文本</span>
@@ -100,7 +121,14 @@
 
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="saveForm">保存草稿</el-button>
+        <el-button
+          v-permission="'material-archive:save'"
+          type="primary"
+          :loading="saving"
+          @click="saveForm"
+        >
+          保存草稿
+        </el-button>
       </template>
     </el-dialog>
   </div>
@@ -109,11 +137,12 @@
 <script setup lang="ts">
 /**
  * @input Material archive APIs, upload endpoint, and Element Plus form components for node-16 operations
- * @output Node-16 material archive board supporting draft save, file upload, and archive submit actions
- * @position Material archive stage page closing project workflow with report/form materials persistence
+ * @output Node-16 material archive board supporting permission-gated draft save, file upload, and archive submit actions
+ * @position Material archive stage page closing project workflow with report/form materials persistence and button-level RBAC
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 import { onMounted, reactive, ref } from "vue";
+import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { apiClient, type ApiResponse } from "./api";
 import {
@@ -123,6 +152,7 @@ import {
   submitMaterialArchive,
   type MaterialArchiveRecord
 } from "./material-archive-service";
+import { toProcessOverviewPath } from "./process-overview-service";
 
 interface UploadResponse {
   objectKey: string;
@@ -135,6 +165,7 @@ interface FormState {
   remark: string;
 }
 
+const router = useRouter();
 const loading = ref(false);
 const saving = ref(false);
 const dialogVisible = ref(false);
@@ -260,6 +291,10 @@ async function saveForm() {
   }
 }
 
+function openProcessOverview(projectId: number) {
+  void router.push(toProcessOverviewPath(projectId));
+}
+
 async function submitRow(row: MaterialArchiveRecord) {
   try {
     await ElMessageBox.confirm(
@@ -291,26 +326,17 @@ onMounted(() => {
 
 <style scoped>
 .page {
-  max-width: 1320px;
-  margin: 24px auto;
-  padding: 0 12px;
+  padding-top: 24px;
 }
 
-.page-header {
-  margin-bottom: 16px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
+.tip-card {
+  border: 1px solid rgba(31, 152, 122, 0.2);
+  background: linear-gradient(92deg, rgba(45, 184, 146, 0.08), rgba(47, 110, 162, 0.05));
 }
 
-.page-header h2 {
-  margin: 0;
-}
-
-.page-header p {
-  margin: 6px 0 0;
-  color: #6f7b8a;
+.table-card {
+  background: linear-gradient(180deg, #ffffff, #fbfcfc);
+  border: 1px solid rgba(211, 225, 230, 0.88);
 }
 
 .upload-row {
@@ -322,10 +348,12 @@ onMounted(() => {
 
 .upload-tip {
   font-size: 12px;
-  color: #7f8a97;
+  color: var(--np-color-text-muted);
 }
 
 .hidden-file-input {
   display: none;
 }
 </style>
+
+

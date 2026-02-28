@@ -1,7 +1,7 @@
 /**
- * @input MaterialArchiveService operations and authenticated operator context
- * @output /api/v1/material-archives endpoints for node-16 save/submit/list APIs
- * @position HTTP adapter for material archive stage operations
+ * @input MaterialArchiveService operations, AdminAccessService permission checks, and authenticated operator context
+ * @output /api/v1/material-archives endpoints for node-16 save/submit/list APIs with action-level authorization
+ * @position HTTP adapter for material archive stage operations with RBAC guards
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 package com.nature.platform;
@@ -23,18 +23,26 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/material-archives")
 public class MaterialArchiveController {
   private final MaterialArchiveService materialArchiveService;
+  private final AdminAccessService adminAccessService;
 
-  public MaterialArchiveController(MaterialArchiveService materialArchiveService) {
+  public MaterialArchiveController(
+      MaterialArchiveService materialArchiveService, AdminAccessService adminAccessService) {
     this.materialArchiveService = materialArchiveService;
+    this.adminAccessService = adminAccessService;
   }
 
   @GetMapping
-  public ApiResponse<List<MaterialArchiveRecord>> list() {
+  public ApiResponse<List<MaterialArchiveRecord>> list(Authentication authentication) {
+    adminAccessService.requirePermission(
+        CurrentUser.username(authentication), BusinessPermissionCodes.MATERIAL_ARCHIVE_VIEW);
     return ApiResponse.success(materialArchiveService.list());
   }
 
   @GetMapping("/{projectId}")
-  public ResponseEntity<ApiResponse<MaterialArchiveRecord>> detail(@PathVariable long projectId) {
+  public ResponseEntity<ApiResponse<MaterialArchiveRecord>> detail(
+      Authentication authentication, @PathVariable long projectId) {
+    adminAccessService.requirePermission(
+        CurrentUser.username(authentication), BusinessPermissionCodes.MATERIAL_ARCHIVE_VIEW);
     return materialArchiveService
         .detail(projectId)
         .map(item -> ResponseEntity.ok(ApiResponse.success(item)))
@@ -49,6 +57,8 @@ public class MaterialArchiveController {
       Authentication authentication,
       @PathVariable long projectId,
       @Valid @RequestBody MaterialArchiveRequest request) {
+    adminAccessService.requirePermission(
+        CurrentUser.username(authentication), BusinessPermissionCodes.MATERIAL_ARCHIVE_SAVE);
     return ApiResponse.success(
         materialArchiveService.save(projectId, request, CurrentUser.username(authentication)));
   }
@@ -56,6 +66,8 @@ public class MaterialArchiveController {
   @PostMapping("/{projectId}/submit")
   public ApiResponse<MaterialArchiveRecord> submit(
       Authentication authentication, @PathVariable long projectId) {
+    adminAccessService.requirePermission(
+        CurrentUser.username(authentication), BusinessPermissionCodes.MATERIAL_ARCHIVE_SUBMIT);
     return ApiResponse.success(materialArchiveService.submit(projectId, CurrentUser.username(authentication)));
   }
 }

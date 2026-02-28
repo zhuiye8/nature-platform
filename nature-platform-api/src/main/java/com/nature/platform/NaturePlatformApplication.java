@@ -1,5 +1,5 @@
 /**
- * @input SpringApplication from org.springframework.boot; SecurityProperties/DingTalkProperties/MinioProperties local config types
+ * @input SpringApplication from org.springframework.boot; SecurityProperties/DingTalkProperties/MinioProperties/PermissionSyncProperties local config types
  * @output NaturePlatformApplication bootstrap entry for the backend service runtime
  * @position Application bootstrap layer that initializes timezone and starts all module components
  * @doc-sync Update this header and folder INDEX.md when this file changes.
@@ -15,7 +15,8 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 @EnableConfigurationProperties({
   SecurityProperties.class,
   DingTalkProperties.class,
-  MinioProperties.class
+  MinioProperties.class,
+  PermissionSyncProperties.class
 })
 public class NaturePlatformApplication {
 
@@ -24,4 +25,3 @@ public class NaturePlatformApplication {
     SpringApplication.run(NaturePlatformApplication.class, args);
   }
 }
-

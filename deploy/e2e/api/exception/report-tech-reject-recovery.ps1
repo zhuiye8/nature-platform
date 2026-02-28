@@ -129,7 +129,12 @@ try {
     -Detail $projectResp.raw
 
   Invoke-E2EApi -Context $context -Method "Post" -Path "/api/v1/project-registers/$projectId/submit-review" -Token $adminToken | Out-Null
-  Invoke-E2EApi -Context $context -Method "Post" -Path "/api/v1/workflow/tasks/PROJECT_REGISTER:$projectId/approve" -Token $adminToken | Out-Null
+  $projectTodoResp = Invoke-E2EApi -Context $context -Method "Get" -Path "/api/v1/workflow/tasks/todo?type=PROJECT_REGISTER" -Token $adminToken
+  $projectTodoRows = @($projectTodoResp.body.data | Where-Object { [long]$_.bizId -eq [long]$projectId })
+  if ($projectTodoRows.Count -lt 1) {
+    throw "project register todo task not found for tech reject recovery"
+  }
+  Invoke-E2EApi -Context $context -Method "Post" -Path "/api/v1/workflow/tasks/$([string]$projectTodoRows[0].taskId)/approve" -Token $adminToken | Out-Null
 
   Invoke-E2EApi -Context $context -Method "Put" -Path "/api/v1/police-registers/$projectId" -Token $adminToken -Body @{
     registerNo = "REG-$tag"
@@ -148,9 +153,9 @@ try {
   $candidatesResp = Invoke-E2EApi -Context $context -Method "Get" -Path "/api/v1/on-site-assessments/reviewer-candidates" -Token $adminToken
   $candidatesData = $candidatesResp.body.data
   $techUsers = @($candidatesData.techReviewers)
-  $aUsers = @($candidatesData.contentReviewersA)
-  $bUsers = @($candidatesData.contentReviewersB)
-  $cUsers = @($candidatesData.contentReviewersC)
+  $aUsers = @($candidatesData.contentReviewersTech)
+  $bUsers = @($candidatesData.contentReviewersManagement)
+  $cUsers = @($candidatesData.contentReviewersNetwork)
   $candidatePass =
     $candidatesResp.status -eq 200 -and
     $techUsers.Count -gt 0 -and
@@ -159,7 +164,7 @@ try {
     $cUsers.Count -gt 0
   Add-E2EResult -Context $context `
     -CaseName "reviewer_candidates_ready_tech_reject" `
-    -Expected "200 + tech/A/B/C all non-empty" `
+    -Expected "200 + tech+内容技术/管理/网络 all non-empty" `
     -Actual "status=$($candidatesResp.status), tech=$($techUsers.Count), A=$($aUsers.Count), B=$($bUsers.Count), C=$($cUsers.Count)" `
     -Pass $candidatePass `
     -Detail $candidatesResp.raw
@@ -167,26 +172,27 @@ try {
     throw "reviewer candidates are not ready for tech reject recovery"
   }
 
+  $techAssignee = "admin"
+  $contentTechAssignee = "admin"
+  $contentManagementAssignee = "admin"
+  $contentNetworkAssignee = "admin"
+
   Invoke-E2EApi -Context $context -Method "Put" -Path "/api/v1/on-site-assessments/$projectId/review-assignment" -Token $adminToken -Body @{
-    techReviewer = [string]$techUsers[0]
-    contentReviewerA = [string]$aUsers[0]
-    contentReviewerB = [string]$bUsers[0]
-    contentReviewerC = [string]$cUsers[0]
+    techReviewer = $techAssignee
+    contentReviewerTech = $contentTechAssignee
+    contentReviewerManagement = $contentManagementAssignee
+    contentReviewerNetwork = $contentNetworkAssignee
     versionNo = 0
   } | Out-Null
   Invoke-E2EApi -Context $context -Method "Post" -Path "/api/v1/on-site-assessments/$projectId/submit" -Token $adminToken | Out-Null
 
-  Invoke-E2EApi -Context $context -Method "Put" -Path "/api/v1/report-tech-reviews/$projectId" -Token $adminToken -Body @{
-    remark = "tech review draft by reject recovery"
-    versionNo = 0
-  } | Out-Null
-  $techSubmitResp = Invoke-E2EApi -Context $context -Method "Post" -Path "/api/v1/report-tech-reviews/$projectId/submit" -Token $adminToken
+  $techAutoDetailResp = Invoke-E2EApi -Context $context -Method "Get" -Path "/api/v1/report-tech-reviews/$projectId" -Token $adminToken
   Add-E2EResult -Context $context `
-    -CaseName "tech_submit_before_reject" `
-    -Expected "200 + status=SUBMITTED" `
-    -Actual "status=$($techSubmitResp.status), reviewStatus=$([string]$techSubmitResp.body.data.status)" `
-    -Pass ($techSubmitResp.status -eq 200 -and [string]$techSubmitResp.body.data.status -eq "SUBMITTED") `
-    -Detail $techSubmitResp.raw
+    -CaseName "tech_auto_submit_before_reject" `
+    -Expected "200 + status=SUBMITTED + workflowNode=REPORT_TECH_REVIEW_TASK" `
+    -Actual "status=$($techAutoDetailResp.status), reviewStatus=$([string]$techAutoDetailResp.body.data.status), workflowNode=$([string]$techAutoDetailResp.body.data.workflowNode)" `
+    -Pass ($techAutoDetailResp.status -eq 200 -and [string]$techAutoDetailResp.body.data.status -eq "SUBMITTED" -and [string]$techAutoDetailResp.body.data.workflowNode -eq "REPORT_TECH_REVIEW_TASK") `
+    -Detail $techAutoDetailResp.raw
 
   $techTodoBeforeRejectResp = Invoke-E2EApi -Context $context -Method "Get" -Path "/api/v1/workflow/tasks/todo?type=REPORT_TECH_REVIEW" -Token $adminToken
   $techTodoBeforeRejectRows = @($techTodoBeforeRejectResp.body.data | Where-Object { [long]$_.bizId -eq [long]$projectId })
@@ -224,11 +230,11 @@ try {
     -Pass ($techDetailAfterRejectResp.status -eq 200 -and $afterRejectStatus -eq "REJECTED" -and $afterRejectNode -eq "REPORT_TECH_REVIEW_TASK") `
     -Detail $techDetailAfterRejectResp.raw
 
-  $techResubmitResp = Invoke-E2EApi -Context $context -Method "Post" -Path "/api/v1/report-tech-reviews/$projectId/submit" -Token $adminToken
+  $techResubmitResp = Invoke-E2EApi -Context $context -Method "Post" -Path "/api/v1/on-site-assessments/$projectId/submit" -Token $adminToken
   Add-E2EResult -Context $context `
-    -CaseName "tech_resubmit_after_reject" `
+    -CaseName "tech_resubmit_after_reject_via_on_site_submit" `
     -Expected "200 + status=SUBMITTED" `
-    -Actual "status=$($techResubmitResp.status), reviewStatus=$([string]$techResubmitResp.body.data.status)" `
+    -Actual "status=$($techResubmitResp.status), onSiteStatus=$([string]$techResubmitResp.body.data.status)" `
     -Pass ($techResubmitResp.status -eq 200 -and [string]$techResubmitResp.body.data.status -eq "SUBMITTED") `
     -Detail $techResubmitResp.raw
 
@@ -258,9 +264,9 @@ try {
   $afterRecoveryNode = [string]$techDetailAfterRecoveryResp.body.data.workflowNode
   Add-E2EResult -Context $context `
     -CaseName "tech_recovery_to_content_review" `
-    -Expected "200 + status=APPROVED + workflowNode=REPORT_CONTENT_REVIEW" `
+    -Expected "200 + status=APPROVED + workflowNode=REPORT_CONTENT_REVIEW_TASK" `
     -Actual "status=$($techDetailAfterRecoveryResp.status), reviewStatus=$afterRecoveryStatus, workflowNode=$afterRecoveryNode" `
-    -Pass ($techDetailAfterRecoveryResp.status -eq 200 -and $afterRecoveryStatus -eq "APPROVED" -and $afterRecoveryNode -eq "REPORT_CONTENT_REVIEW") `
+    -Pass ($techDetailAfterRecoveryResp.status -eq 200 -and $afterRecoveryStatus -eq "APPROVED" -and $afterRecoveryNode -eq "REPORT_CONTENT_REVIEW_TASK") `
     -Detail $techDetailAfterRecoveryResp.raw
 } finally {
   $cleanupSqlLines = New-Object System.Collections.Generic.List[string]

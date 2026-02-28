@@ -1,12 +1,13 @@
 /**
  * @input WorkflowTaskService with mocked JdbcTemplate/Flowable and contract/project domain dependencies
- * @output Unit tests for workflow task permission checks, Flowable project-task actions, and task-id fallback rules
+ * @output Unit tests for workflow task permission checks, contract review-detail guard, access validation, and task-id fallback rules
  * @position Workflow task service test layer preventing review-action regression
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 package com.nature.platform;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -178,6 +179,31 @@ class WorkflowTaskServiceTests {
 
     verify(qualityReviewService).approveTask(45L, "normal-user");
     verify(contractService, never()).approve(org.mockito.ArgumentMatchers.anyLong(), anyString());
+  }
+
+  @Test
+  void shouldLoadContractReviewDetailForReviewer() {
+    when(userAccountService.hasAnyRole(eq("reviewer"), anyList())).thenReturn(true);
+    ContractRecord contract = new ContractRecord();
+    contract.setId(6L);
+    contract.setReviewStatus("SUBMITTED");
+    when(contractService.findById(6L)).thenReturn(Optional.of(contract));
+
+    ContractRecord actual = workflowTaskService.loadContractReviewDetail(6L, "reviewer");
+
+    assertSame(contract, actual);
+  }
+
+  @Test
+  void shouldRejectEnsureTaskAccessibleWhenTaskNotVisible() {
+    when(qualityReviewService.listTodoTasks("normal-user", null)).thenReturn(java.util.List.of());
+
+    ResponseStatusException ex =
+        assertThrows(
+            ResponseStatusException.class,
+            () -> workflowTaskService.ensureTaskAccessible("normal-user", "QUALITY_REVIEW", 88L));
+
+    assertEquals(HttpStatus.FORBIDDEN, ex.getStatusCode());
   }
 
   private void mockNoFlowableTask(String taskId) {

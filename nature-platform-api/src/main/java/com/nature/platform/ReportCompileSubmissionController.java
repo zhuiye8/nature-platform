@@ -1,7 +1,7 @@
 /**
- * @input ReportCompileService submission operations and authenticated operator context
- * @output /api/v1/report-compile-submissions endpoints for node-14 upload/save/submit/list APIs
- * @position HTTP adapter for report compile and upload stage
+ * @input ReportCompileService submission operations, AdminAccessService permission checks, and authenticated operator context
+ * @output /api/v1/report-compile-submissions endpoints for node-14 upload/save/submit/list APIs with action-level authorization
+ * @position HTTP adapter for report compile and upload stage with RBAC guards
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 package com.nature.platform;
@@ -23,18 +23,26 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/report-compile-submissions")
 public class ReportCompileSubmissionController {
   private final ReportCompileService reportCompileService;
+  private final AdminAccessService adminAccessService;
 
-  public ReportCompileSubmissionController(ReportCompileService reportCompileService) {
+  public ReportCompileSubmissionController(
+      ReportCompileService reportCompileService, AdminAccessService adminAccessService) {
     this.reportCompileService = reportCompileService;
+    this.adminAccessService = adminAccessService;
   }
 
   @GetMapping
-  public ApiResponse<List<ReportCompileSubmissionRecord>> list() {
+  public ApiResponse<List<ReportCompileSubmissionRecord>> list(Authentication authentication) {
+    adminAccessService.requirePermission(
+        CurrentUser.username(authentication), BusinessPermissionCodes.REPORT_COMPILE_SUBMISSION_VIEW);
     return ApiResponse.success(reportCompileService.listSubmissions());
   }
 
   @GetMapping("/{projectId}")
-  public ResponseEntity<ApiResponse<ReportCompileSubmissionRecord>> detail(@PathVariable long projectId) {
+  public ResponseEntity<ApiResponse<ReportCompileSubmissionRecord>> detail(
+      Authentication authentication, @PathVariable long projectId) {
+    adminAccessService.requirePermission(
+        CurrentUser.username(authentication), BusinessPermissionCodes.REPORT_COMPILE_SUBMISSION_VIEW);
     return reportCompileService
         .detailSubmission(projectId)
         .map(item -> ResponseEntity.ok(ApiResponse.success(item)))
@@ -49,6 +57,8 @@ public class ReportCompileSubmissionController {
       Authentication authentication,
       @PathVariable long projectId,
       @Valid @RequestBody ReportCompileSubmissionRequest request) {
+    adminAccessService.requirePermission(
+        CurrentUser.username(authentication), BusinessPermissionCodes.REPORT_COMPILE_SUBMISSION_SAVE);
     return ApiResponse.success(
         reportCompileService.saveSubmission(projectId, request, CurrentUser.username(authentication)));
   }
@@ -56,6 +66,8 @@ public class ReportCompileSubmissionController {
   @PostMapping("/{projectId}/submit")
   public ApiResponse<ReportCompileSubmissionRecord> submit(
       Authentication authentication, @PathVariable long projectId) {
+    adminAccessService.requirePermission(
+        CurrentUser.username(authentication), BusinessPermissionCodes.REPORT_COMPILE_SUBMISSION_SUBMIT);
     return ApiResponse.success(
         reportCompileService.submitSubmission(projectId, CurrentUser.username(authentication)));
   }

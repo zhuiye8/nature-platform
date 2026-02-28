@@ -32,9 +32,9 @@ public class QualityReviewService {
   public static final String NODE_REJECTED = "QUALITY_REVIEW_REJECTED";
 
   private static final String ROLE_TECH = "TECH";
-  private static final String ROLE_A = "CONTENT_A";
-  private static final String ROLE_B = "CONTENT_B";
-  private static final String ROLE_C = "CONTENT_C";
+  private static final String ROLE_CONTENT_TECH = "CONTENT_TECH";
+  private static final String ROLE_CONTENT_MANAGEMENT = "CONTENT_MANAGEMENT";
+  private static final String ROLE_CONTENT_NETWORK = "CONTENT_NETWORK";
 
   private final JdbcTemplate jdbcTemplate;
   private final UserAccountService userAccountService;
@@ -87,9 +87,9 @@ public class QualityReviewService {
     }
 
     String techReviewer = normalizeUser(request.getTechReviewer());
-    String reviewerA = normalizeUser(request.getContentReviewerA());
-    String reviewerB = normalizeUser(request.getContentReviewerB());
-    String reviewerC = normalizeUser(request.getContentReviewerC());
+    String reviewerA = normalizeUser(request.getContentReviewerTech());
+    String reviewerB = normalizeUser(request.getContentReviewerManagement());
+    String reviewerC = normalizeUser(request.getContentReviewerNetwork());
     validateAssignees(techReviewer, reviewerA, reviewerB, reviewerC);
 
     List<AssignmentRow> existingRows =
@@ -235,9 +235,9 @@ public class QualityReviewService {
     jdbcTemplate.update("DELETE FROM quality_review_task WHERE quality_apply_id = ?", applyId);
     Map<String, String> roleAssigneeMap = new LinkedHashMap<>();
     roleAssigneeMap.put(ROLE_TECH, assignment.techReviewer());
-    roleAssigneeMap.put(ROLE_A, assignment.contentReviewerA());
-    roleAssigneeMap.put(ROLE_B, assignment.contentReviewerB());
-    roleAssigneeMap.put(ROLE_C, assignment.contentReviewerC());
+    roleAssigneeMap.put(ROLE_CONTENT_TECH, assignment.contentReviewerA());
+    roleAssigneeMap.put(ROLE_CONTENT_MANAGEMENT, assignment.contentReviewerB());
+    roleAssigneeMap.put(ROLE_CONTENT_NETWORK, assignment.contentReviewerC());
     for (Map.Entry<String, String> entry : roleAssigneeMap.entrySet()) {
       jdbcTemplate.update(
           """

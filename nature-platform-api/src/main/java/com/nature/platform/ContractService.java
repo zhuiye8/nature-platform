@@ -62,6 +62,24 @@ public class ContractService {
     return rows;
   }
 
+  public List<ContractRecord> listForArchive() {
+    List<ContractRecord> rows =
+        jdbcTemplate.query(
+            """
+            SELECT c.id, c.customer_id, COALESCE(cm.full_name, '') customer_name, c.project_name, c.contact_name, c.mobile_phone,
+                   c.payment_company, c.payment_amount, c.payment_method, c.partner_name, c.sales_person, c.performance_city, c.deal_status,
+                   c.remark, c.contract_type, c.contract_file_object_key, c.service_year_detail, c.payment_status,
+                   c.contract_name, c.contract_no, c.review_status, c.archive_status, c.created_by, c.created_at, c.service_years_json
+            FROM contract c
+            LEFT JOIN customer cm ON cm.id = c.customer_id
+            WHERE c.deleted_flag = 0 AND c.review_status = 'APPROVED'
+            ORDER BY c.id DESC
+            """,
+            new ContractRowMapper(jsonSupport));
+    loadSystemItems(rows);
+    return rows;
+  }
+
   public Optional<ContractRecord> findById(long id) {
     List<ContractRecord> rows =
         jdbcTemplate.query(

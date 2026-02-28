@@ -1,7 +1,7 @@
 /**
  * @input JdbcTemplate task queries, Flowable task/runtime services, contract/project transitions, and user-role lookup
- * @output Workflow todo query and task action methods for contract/project/quality-review approve-reject operations
- * @position Workflow application service bridging task-center APIs to contract/project/quality review state machines
+ * @output Workflow todo query, contract review detail, task-access guard, and action methods with unified display-status mapping
+ * @position Workflow application service bridging task-center APIs to contract/project/quality-report review state machines
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 package com.nature.platform;
@@ -102,6 +102,39 @@ public class WorkflowTaskService {
                 WorkflowTaskDto::getSubmittedAt, Comparator.nullsLast(String::compareTo))
             .reversed());
     return rows;
+  }
+
+  public ContractRecord loadContractReviewDetail(long contractId, String operator) {
+    if (contractId <= 0) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "contract id is invalid");
+    }
+    ensureReviewer(operator);
+    ContractRecord contract =
+        contractService
+            .findById(contractId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "contract not found"));
+    ensureSubmitted(contract.getReviewStatus());
+    return contract;
+  }
+
+  public void ensureTaskAccessible(String operator, String taskType, long bizId) {
+    if (bizId <= 0) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "bizId is invalid");
+    }
+    String normalizedType = normalizeTaskType(taskType);
+    if ("ALL".equals(normalizedType)) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "task type is required");
+    }
+    if (TASK_TYPE_CONTRACT.equals(normalizedType)) {
+      loadContractReviewDetail(bizId, operator);
+      return;
+    }
+    boolean matched =
+        listTodo(operator, normalizedType, null).stream().anyMatch(item -> item.getBizId() == bizId);
+    if (!matched) {
+      throw new ResponseStatusException(
+          HttpStatus.FORBIDDEN, "current user has no permission for this task");
+    }
   }
 
   @Transactional
@@ -230,6 +263,7 @@ public class WorkflowTaskService {
               bizId,
               rs.getString("biz_title"),
               rs.getString("status"),
+              toDisplayStatus(rs.getString("status")),
               rs.getString("submitted_by"),
               submittedAt == null ? "" : submittedAt.toString(),
               "",
@@ -269,6 +303,7 @@ public class WorkflowTaskService {
               projectId,
               context.bizTitle(),
               context.status(),
+              toDisplayStatus(context.status()),
               context.submittedBy(),
               submittedAt,
               ProjectRegisterService.PROJECT_REVIEW_WORKFLOW_KEY,
@@ -290,6 +325,7 @@ public class WorkflowTaskService {
               item.projectRegisterId(),
               item.applicationName(),
               "SUBMITTED",
+              "PENDING",
               item.appliedBy(),
               item.submittedAt(),
               "QUALITY_REVIEW_MANUAL",
@@ -311,10 +347,11 @@ public class WorkflowTaskService {
               item.projectRegisterId(),
               item.applicationName(),
               "SUBMITTED",
+              "PENDING",
               item.appliedBy(),
               item.submittedAt(),
               "REPORT_TECH_REVIEW_MANUAL",
-              "TECH_REVIEW",
+              ReportTechReviewService.NODE_TASK,
               item.processInstanceId()));
     }
     return rows;
@@ -332,10 +369,11 @@ public class WorkflowTaskService {
               item.projectRegisterId(),
               item.applicationName(),
               "SUBMITTED",
+              "PENDING",
               item.appliedBy(),
               item.submittedAt(),
               "REPORT_CONTENT_REVIEW_MANUAL",
-              item.reviewRole(),
+              ReportContentReviewService.NODE_TASK,
               item.processInstanceId()));
     }
     return rows;
@@ -353,10 +391,11 @@ public class WorkflowTaskService {
               item.projectRegisterId(),
               item.applicationName(),
               "SUBMITTED",
+              "PENDING",
               item.appliedBy(),
               item.submittedAt(),
               "REPORT_FINAL_REVIEW_MANUAL",
-              "FINAL_REVIEW",
+              ReportFinalReviewService.NODE_TASK,
               item.processInstanceId()));
     }
     return rows;
@@ -460,6 +499,17 @@ public class WorkflowTaskService {
         || String.valueOf(bizId).contains(needle);
   }
 
+  private String toDisplayStatus(String status) {
+    if (status == null || status.isBlank()) {
+      return "PENDING";
+    }
+    String normalized = status.trim().toUpperCase(Locale.ROOT);
+    if ("SUBMITTED".equals(normalized)) {
+      return "PENDING";
+    }
+    return normalized;
+  }
+
   private String safeLower(String value) {
     return value == null ? "" : value.toLowerCase(Locale.ROOT);
   }
@@ -484,20 +534,12 @@ public class WorkflowTaskService {
   }
 
   private void approveContract(long contractId, String operator) {
-    ContractRecord contract =
-        contractService
-            .findById(contractId)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "contract not found"));
-    ensureSubmitted(contract.getReviewStatus());
+    loadContractReviewDetail(contractId, operator);
     contractService.approve(contractId, operator);
   }
 
   private void rejectContract(long contractId, String operator, String remark) {
-    ContractRecord contract =
-        contractService
-            .findById(contractId)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "contract not found"));
-    ensureSubmitted(contract.getReviewStatus());
+    loadContractReviewDetail(contractId, operator);
     contractService.reject(contractId, operator, remark == null ? "" : remark);
   }
 

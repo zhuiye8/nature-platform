@@ -1,14 +1,23 @@
-<template>
+﻿<template>
   <div class="page-shell page section-stack">
     <header class="page-header">
       <div>
         <h2>公安登记</h2>
         <p>节点 7：基于已通过的项目登记，完成公安登记保存与提交</p>
       </div>
-      <el-button :loading="loading" @click="loadRows">刷新</el-button>
+      <el-button v-permission="'police-register:view'" :loading="loading" @click="loadRows">刷新</el-button>
     </header>
 
-    <el-card>
+    <el-card class="tip-card">
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        title="建议先保存草稿再提交；提交后流程自动流转至现场测评节点。"
+      />
+    </el-card>
+
+    <el-card class="table-card">
       <el-table :data="rows" v-loading="loading" empty-text="暂无可处理项">
         <el-table-column prop="projectRegisterId" label="项目ID" width="100" />
         <el-table-column prop="applicationName" label="申请单名称" min-width="260" show-overflow-tooltip />
@@ -19,11 +28,12 @@
         </el-table-column>
         <el-table-column prop="workflowNode" label="流程节点" width="180" />
         <el-table-column prop="updatedAt" label="更新时间" min-width="180" />
-        <el-table-column label="操作" width="250" fixed="right">
+        <el-table-column label="操作" width="330" fixed="right">
           <template #default="{ row }">
             <el-space>
-              <el-button size="small" @click="openDialog(row)">编辑</el-button>
+              <el-button v-permission="'police-register:save'" size="small" @click="openDialog(row)">编辑</el-button>
               <el-button
+                v-permission="'police-register:submit'"
                 size="small"
                 type="success"
                 :disabled="row.status === 'SUBMITTED'"
@@ -31,6 +41,7 @@
               >
                 提交并流转
               </el-button>
+              <el-button size="small" @click="openProcessOverview(row.projectRegisterId)">流程详情</el-button>
             </el-space>
           </template>
         </el-table-column>
@@ -67,7 +78,9 @@
 
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="saveForm">保存草稿</el-button>
+        <el-button v-permission="'police-register:save'" type="primary" :loading="saving" @click="saveForm">
+          保存草稿
+        </el-button>
       </template>
     </el-dialog>
   </div>
@@ -75,12 +88,13 @@
 
 <script setup lang="ts">
 /**
- * @input Police register APIs and Element Plus dialog/form components for node-7 save/submit flow
- * @output Node-7 police register board with draft edit and submit-to-on-site transition actions
+ * @input Police-register APIs, permission directive bindings, and Element Plus dialog/form components
+ * @output Node-7 police register board with permission-aware draft edit and submit transition actions
  * @position Police registration stage page bridging project approval and on-site assessment entry
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 import { onMounted, reactive, ref } from "vue";
+import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   fetchPoliceRegisterDetail,
@@ -89,6 +103,7 @@ import {
   submitPoliceRegister,
   type PoliceRegisterRecord
 } from "./police-register-service";
+import { toProcessOverviewPath } from "./process-overview-service";
 
 interface FormState {
   projectRegisterId: number;
@@ -99,6 +114,7 @@ interface FormState {
   remark: string;
 }
 
+const router = useRouter();
 const loading = ref(false);
 const saving = ref(false);
 const dialogVisible = ref(false);
@@ -206,32 +222,24 @@ async function submitRow(row: PoliceRegisterRecord) {
   }
 }
 
+function openProcessOverview(projectId: number) {
+  void router.push(toProcessOverviewPath(projectId));
+}
+
 onMounted(() => {
   void loadRows();
 });
 </script>
 
 <style scoped>
-.page {
-  max-width: 1200px;
-  margin: 24px auto;
-  padding: 0 12px;
+.tip-card {
+  border: 1px solid rgba(31, 152, 122, 0.2);
+  background: linear-gradient(92deg, rgba(45, 184, 146, 0.08), rgba(47, 110, 162, 0.05));
 }
 
-.page-header {
-  margin-bottom: 16px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-}
-
-.page-header h2 {
-  margin: 0;
-}
-
-.page-header p {
-  margin: 6px 0 0;
-  color: #6f7b8a;
+.table-card {
+  background: linear-gradient(180deg, #ffffff, #fbfcfc);
+  border: 1px solid rgba(211, 225, 230, 0.88);
 }
 </style>
+

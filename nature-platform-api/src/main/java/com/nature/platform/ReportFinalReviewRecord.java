@@ -1,6 +1,6 @@
 /**
  * @input report_final_review_apply/task and workflow-instance query rows
- * @output ReportFinalReviewRecord response model for node-15 final-review APIs
+ * @output ReportFinalReviewRecord response model for node-15 final-review APIs including unified displayStatus
  * @position Node-15 read model for final reviewer, task status, and review outcome state
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
@@ -20,6 +20,7 @@ public class ReportFinalReviewRecord {
   private String finishedAt;
   private Long taskId;
   private String taskStatus;
+  private String displayStatus;
   private String workflowNode;
   private String workflowStatus;
 
@@ -125,6 +126,14 @@ public class ReportFinalReviewRecord {
 
   public void setTaskStatus(String taskStatus) {
     this.taskStatus = taskStatus;
+  }
+
+  public String getDisplayStatus() {
+    return displayStatus;
+  }
+
+  public void setDisplayStatus(String displayStatus) {
+    this.displayStatus = displayStatus;
   }
 
   public String getWorkflowNode() {

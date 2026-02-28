@@ -108,6 +108,30 @@ public class QualityReviewRecord {
     this.contentReviewerC = contentReviewerC;
   }
 
+  public String getContentReviewerTech() {
+    return contentReviewerA;
+  }
+
+  public void setContentReviewerTech(String contentReviewerTech) {
+    this.contentReviewerA = contentReviewerTech;
+  }
+
+  public String getContentReviewerManagement() {
+    return contentReviewerB;
+  }
+
+  public void setContentReviewerManagement(String contentReviewerManagement) {
+    this.contentReviewerB = contentReviewerManagement;
+  }
+
+  public String getContentReviewerNetwork() {
+    return contentReviewerC;
+  }
+
+  public void setContentReviewerNetwork(String contentReviewerNetwork) {
+    this.contentReviewerC = contentReviewerNetwork;
+  }
+
   public int getAssignmentVersionNo() {
     return assignmentVersionNo;
   }

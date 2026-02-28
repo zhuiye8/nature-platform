@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="page-shell page section-stack">
     <header class="page-header">
       <div>
@@ -7,11 +7,20 @@
       </div>
       <el-space>
         <el-button :loading="loading" @click="loadRows">刷新</el-button>
-        <el-button type="primary" @click="goWorkflow">打开待办审批</el-button>
+        <el-button v-permission="'workflow-task:view'" type="primary" @click="goWorkflow">打开待办审批</el-button>
       </el-space>
     </header>
 
-    <el-card>
+    <el-card class="tip-card">
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        title="建议先上传并保存草稿，再执行提交；提交后流程进入最终审核。"
+      />
+    </el-card>
+
+    <el-card class="table-card">
       <el-table :data="rows" v-loading="loading" empty-text="暂无可处理项">
         <el-table-column prop="projectRegisterId" label="项目ID" width="90" />
         <el-table-column prop="applicationName" label="申请单名称" min-width="240" show-overflow-tooltip />
@@ -36,11 +45,14 @@
           </template>
         </el-table-column>
         <el-table-column prop="workflowNode" label="流程节点" width="180" show-overflow-tooltip />
-        <el-table-column label="操作" width="260" fixed="right">
+        <el-table-column label="操作" width="340" fixed="right">
           <template #default="{ row }">
             <el-space>
-              <el-button size="small" @click="openDialog(row)">编辑</el-button>
+              <el-button v-permission="'report-compile-submission:save'" size="small" @click="openDialog(row)">
+                编辑
+              </el-button>
               <el-button
+                v-permission="'report-compile-submission:submit'"
                 size="small"
                 type="success"
                 :disabled="!canSubmit(row)"
@@ -48,6 +60,7 @@
               >
                 提交报告
               </el-button>
+              <el-button size="small" @click="openProcessOverview(row.projectRegisterId)">流程详情</el-button>
             </el-space>
           </template>
         </el-table-column>
@@ -62,7 +75,13 @@
         <el-form-item label="报告文件对象" required>
           <el-input v-model="form.reportObjectKey" placeholder="请上传文件或填写对象键" />
           <div class="upload-row">
-            <el-button :loading="uploading" @click="triggerUpload">上传报告文件</el-button>
+            <el-button
+              v-permission="'report-compile-submission:save'"
+              :loading="uploading"
+              @click="triggerUpload"
+            >
+              上传报告文件
+            </el-button>
             <span class="upload-tip">上传后自动回填对象键</span>
           </div>
           <input ref="fileInputRef" type="file" class="hidden-file-input" @change="handleFileChange" />
@@ -79,7 +98,14 @@
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="saveForm">保存草稿</el-button>
+        <el-button
+          v-permission="'report-compile-submission:save'"
+          type="primary"
+          :loading="saving"
+          @click="saveForm"
+        >
+          保存草稿
+        </el-button>
       </template>
     </el-dialog>
   </div>
@@ -88,8 +114,8 @@
 <script setup lang="ts">
 /**
  * @input Report compile submission APIs, upload endpoint, and router navigation for node-14 operations
- * @output Node-14 report compile/upload board with draft save, file upload, and submit actions
- * @position Report compile submission page bridging assignment output and final review input
+ * @output Node-14 report compile/upload board with permission-gated draft save, file upload, and submit actions
+ * @position Report compile submission page bridging assignment output and final review input with button-level RBAC
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 import { onMounted, reactive, ref } from "vue";
@@ -103,6 +129,7 @@ import {
   submitReportCompileSubmission,
   type ReportCompileSubmissionRecord
 } from "./report-compile-service";
+import { toProcessOverviewPath } from "./process-overview-service";
 
 interface UploadResponse {
   objectKey: string;
@@ -254,33 +281,24 @@ function goWorkflow() {
   void router.push("/workflow");
 }
 
+function openProcessOverview(projectId: number) {
+  void router.push(toProcessOverviewPath(projectId));
+}
+
 onMounted(() => {
   void loadRows();
 });
 </script>
 
 <style scoped>
-.page {
-  max-width: 1320px;
-  margin: 24px auto;
-  padding: 0 12px;
+.tip-card {
+  border: 1px solid rgba(31, 152, 122, 0.2);
+  background: linear-gradient(92deg, rgba(45, 184, 146, 0.08), rgba(47, 110, 162, 0.05));
 }
 
-.page-header {
-  margin-bottom: 16px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-}
-
-.page-header h2 {
-  margin: 0;
-}
-
-.page-header p {
-  margin: 6px 0 0;
-  color: #6f7b8a;
+.table-card {
+  background: linear-gradient(180deg, #ffffff, #fbfcfc);
+  border: 1px solid rgba(211, 225, 230, 0.88);
 }
 
 .upload-row {
@@ -292,10 +310,11 @@ onMounted(() => {
 
 .upload-tip {
   font-size: 12px;
-  color: #7f8a97;
+  color: var(--np-color-text-muted);
 }
 
 .hidden-file-input {
   display: none;
 }
 </style>
+

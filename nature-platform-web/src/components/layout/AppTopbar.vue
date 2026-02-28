@@ -1,5 +1,5 @@
 ﻿<!--
-@input Current route title, authenticated username, and shell toolbar events
+@input Current route title, authenticated display name, and shell toolbar events
 @output Sticky top toolbar with breadcrumb context and session action controls
 @position Main workspace header for desktop/mobile shell operations
 @doc-sync Update this header and folder INDEX.md when this file changes.
@@ -9,14 +9,14 @@
     <div class="topbar-left">
       <el-button class="btn-desktop" text circle :icon="Fold" @click="$emit('toggleSidebar')" />
       <el-button class="btn-mobile" text circle :icon="Menu" @click="$emit('openMobileMenu')" />
-      <el-breadcrumb separator="/">
+      <el-breadcrumb class="topbar-crumb" separator="/">
         <el-breadcrumb-item>工作台</el-breadcrumb-item>
         <el-breadcrumb-item>{{ title }}</el-breadcrumb-item>
       </el-breadcrumb>
     </div>
 
     <div class="topbar-right">
-      <el-tag type="info" effect="light">{{ username || "当前用户" }}</el-tag>
+      <el-tag type="info" effect="light">{{ displayName || "当前用户" }}</el-tag>
       <el-button type="danger" plain @click="$emit('logout')">退出登录</el-button>
     </div>
   </div>
@@ -27,7 +27,7 @@ import { Fold, Menu } from "@element-plus/icons-vue";
 
 defineProps<{
   title: string;
-  username: string;
+  displayName: string;
 }>();
 
 defineEmits<{
@@ -46,8 +46,8 @@ defineEmits<{
   gap: 16px;
   padding: 0 18px;
   border-bottom: 1px solid var(--np-color-border);
-  background: rgba(248, 251, 255, 0.92);
-  backdrop-filter: blur(10px);
+  background: rgba(249, 252, 252, 0.9);
+  backdrop-filter: blur(14px);
 }
 
 .topbar-left,
@@ -55,6 +55,19 @@ defineEmits<{
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.topbar-crumb {
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(31, 152, 122, 0.16);
+  background: rgba(31, 152, 122, 0.06);
+}
+
+.topbar-right :deep(.el-tag) {
+  border-color: rgba(47, 110, 162, 0.2);
+  color: var(--np-color-info);
+  background: rgba(47, 110, 162, 0.08);
 }
 
 .btn-mobile {

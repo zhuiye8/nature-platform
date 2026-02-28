@@ -1,30 +1,14 @@
-# 回归检查清单（最小闭环）
+﻿# 鍥炲綊妫€鏌ユ竻鍗曪紙鏈€灏忛棴鐜級
 
-## A. 账号与角色
-1. 使用 `admin` 登录。
-2. 调用 `GET /api/v1/auth/me`，确认包含 `ROLE_SUPER_ADMIN`。
-3. 使用非超管账号登录，确认不包含 `ROLE_SUPER_ADMIN`。
-
-## B. 回收站权限
-1. 非超管进入“回收站”页面，恢复按钮应禁用。
-2. 非超管直调恢复接口：应返回 `403`。
-3. 超管执行恢复：无冲突应成功；有 `contract_id + contract_year` 冲突应返回 `409`。
-
-## C. 现场测评审核人分配（角色池）
-1. 进入“现场测评”，调用 `GET /api/v1/on-site-assessments/reviewer-candidates`。
-2. 响应应包含四组数组：
+## A. 璐﹀彿涓庤鑹?1. 浣跨敤 `admin` 鐧诲綍銆?2. 璋冪敤 `GET /api/v1/auth/me`锛岀‘璁ゅ寘鍚?`ROLE_SUPER_ADMIN`銆?3. 浣跨敤闈炶秴绠¤处鍙风櫥褰曪紝纭涓嶅寘鍚?`ROLE_SUPER_ADMIN`銆?
+## B. 鍥炴敹绔欐潈闄?1. 闈炶秴绠¤繘鍏モ€滃洖鏀剁珯鈥濋〉闈紝鎭㈠鎸夐挳搴旂鐢ㄣ€?2. 闈炶秴绠＄洿璋冩仮澶嶆帴鍙ｏ細搴旇繑鍥?`403`銆?3. 瓒呯鎵ц鎭㈠锛氭棤鍐茬獊搴旀垚鍔燂紱鏈?`contract_id + contract_year` 鍐茬獊搴旇繑鍥?`409`銆?
+## C. 鐜板満娴嬭瘎瀹℃牳浜哄垎閰嶏紙瑙掕壊姹狅級
+1. 杩涘叆鈥滅幇鍦烘祴璇勨€濓紝璋冪敤 `GET /api/v1/on-site-assessments/reviewer-candidates`銆?2. 鍝嶅簲搴斿寘鍚洓缁勬暟缁勶細
    - `techReviewers`
-   - `contentReviewersA`
-   - `contentReviewersB`
-   - `contentReviewersC`
-3. 前端四个下拉应分别使用对应数组，不可混用。
-4. 任一角色未选时提交分配应被阻止。
-
-## D. 待办审批权限
-1. 无审核角色用户访问“待办审批”中合同/项目审核项应受限。
-2. `ROLE_REVIEWER` 或 `ROLE_SUPER_ADMIN` 用户可正常看到并处理审核。
-
-## E. 基础构建与测试
-1. 后端：`mvn -q test` 通过。
-2. 前端：`pnpm build` 通过。
-3. 文档检查：`check_format_doc.py --mode changed --allow-missing-architecture` 通过。
+   - `contentReviewersTech`
+   - `contentReviewersManagement`
+   - `contentReviewersNetwork`
+3. 鍓嶇鍥涗釜涓嬫媺搴斿垎鍒娇鐢ㄥ搴旀暟缁勶紝涓嶅彲娣风敤銆?4. 浠讳竴瑙掕壊鏈€夋椂鎻愪氦鍒嗛厤搴旇闃绘銆?
+## D. 寰呭姙瀹℃壒鏉冮檺
+1. 鏃犲鏍歌鑹茬敤鎴疯闂€滃緟鍔炲鎵光€濅腑鍚堝悓/椤圭洰瀹℃牳椤瑰簲鍙楅檺銆?2. `ROLE_REVIEWER` 鎴?`ROLE_SUPER_ADMIN` 鐢ㄦ埛鍙甯哥湅鍒板苟澶勭悊瀹℃牳銆?
+## E. 鍩虹鏋勫缓涓庢祴璇?1. 鍚庣锛歚mvn -q test` 閫氳繃銆?2. 鍓嶇锛歚pnpm build` 閫氳繃銆?3. 鏂囨。妫€鏌ワ細`check_format_doc.py --mode changed --allow-missing-architecture` 閫氳繃銆?

@@ -1,7 +1,7 @@
 /**
- * @input CustomerService for domain operations; Authentication principal for ownership context
- * @output /api/v1/customers CRUD endpoints aligned to customer management requirements
- * @position HTTP adapter layer for customer domain with creator-based edit/delete constraints
+ * @input CustomerService, AdminAccessService, and Authentication principal for ownership and permission context
+ * @output /api/v1/customers CRUD endpoints aligned to customer management requirements with action-level guards
+ * @position HTTP adapter layer for customer domain with permission and creator-based edit/delete constraints
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 package com.nature.platform;
@@ -25,18 +25,25 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/customers")
 public class CustomerController {
   private final CustomerService customerService;
+  private final AdminAccessService adminAccessService;
 
-  public CustomerController(CustomerService customerService) {
+  public CustomerController(CustomerService customerService, AdminAccessService adminAccessService) {
     this.customerService = customerService;
+    this.adminAccessService = adminAccessService;
   }
 
   @GetMapping
-  public ApiResponse<List<CustomerRecord>> list() {
+  public ApiResponse<List<CustomerRecord>> list(Authentication authentication) {
+    adminAccessService.requirePermission(
+        CurrentUser.username(authentication), BusinessPermissionCodes.CUSTOMER_VIEW);
     return ApiResponse.success(customerService.list());
   }
 
   @GetMapping("/{id}")
-  public ResponseEntity<ApiResponse<CustomerRecord>> detail(@PathVariable long id) {
+  public ResponseEntity<ApiResponse<CustomerRecord>> detail(
+      Authentication authentication, @PathVariable long id) {
+    adminAccessService.requirePermission(
+        CurrentUser.username(authentication), BusinessPermissionCodes.CUSTOMER_VIEW);
     return customerService
         .findById(id)
         .map(item -> ResponseEntity.ok(ApiResponse.success(item)))
@@ -49,6 +56,8 @@ public class CustomerController {
   @PostMapping
   public ApiResponse<Map<String, Long>> create(
       Authentication authentication, @Valid @RequestBody CustomerRequest request) {
+    adminAccessService.requirePermission(
+        CurrentUser.username(authentication), BusinessPermissionCodes.CUSTOMER_CREATE);
     long id = customerService.create(request, CurrentUser.username(authentication));
     return ApiResponse.success(Map.of("id", id));
   }
@@ -56,13 +65,16 @@ public class CustomerController {
   @PutMapping("/{id}")
   public ApiResponse<CustomerRecord> update(
       Authentication authentication, @PathVariable long id, @Valid @RequestBody CustomerRequest request) {
+    adminAccessService.requirePermission(
+        CurrentUser.username(authentication), BusinessPermissionCodes.CUSTOMER_UPDATE);
     return ApiResponse.success(customerService.update(id, request, CurrentUser.username(authentication)));
   }
 
   @DeleteMapping("/{id}")
   public ApiResponse<Map<String, Long>> delete(Authentication authentication, @PathVariable long id) {
+    adminAccessService.requirePermission(
+        CurrentUser.username(authentication), BusinessPermissionCodes.CUSTOMER_DELETE);
     customerService.delete(id, CurrentUser.username(authentication));
     return ApiResponse.success(Map.of("id", id));
   }
 }
-

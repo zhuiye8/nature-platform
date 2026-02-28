@@ -1,6 +1,6 @@
 /**
  * @input AuthService, DingTalkProperties, LoginRequest; Spring MVC and validation framework
- * @output /api/v1/auth endpoints for login, DingTalk login URL, and current user profile
+ * @output /api/v1/auth endpoints for login, DingTalk login URL, and current user role/permission profile
  * @position HTTP adapter layer for authentication use cases and session bootstrap data
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */

@@ -129,7 +129,12 @@ try {
     -Detail $projectResp.raw
 
   Invoke-E2EApi -Context $context -Method "Post" -Path "/api/v1/project-registers/$projectId/submit-review" -Token $adminToken | Out-Null
-  Invoke-E2EApi -Context $context -Method "Post" -Path "/api/v1/workflow/tasks/PROJECT_REGISTER:$projectId/approve" -Token $adminToken | Out-Null
+  $projectTodoResp = Invoke-E2EApi -Context $context -Method "Get" -Path "/api/v1/workflow/tasks/todo?type=PROJECT_REGISTER" -Token $adminToken
+  $projectTodoRows = @($projectTodoResp.body.data | Where-Object { [long]$_.bizId -eq [long]$projectId })
+  if ($projectTodoRows.Count -lt 1) {
+    throw "project register todo task not found for reject recovery"
+  }
+  Invoke-E2EApi -Context $context -Method "Post" -Path "/api/v1/workflow/tasks/$([string]$projectTodoRows[0].taskId)/approve" -Token $adminToken | Out-Null
 
   Invoke-E2EApi -Context $context -Method "Put" -Path "/api/v1/police-registers/$projectId" -Token $adminToken -Body @{
     registerNo = "REG-$tag"
@@ -148,9 +153,9 @@ try {
   $candidatesResp = Invoke-E2EApi -Context $context -Method "Get" -Path "/api/v1/on-site-assessments/reviewer-candidates" -Token $adminToken
   $candidatesData = $candidatesResp.body.data
   $techUsers = @($candidatesData.techReviewers)
-  $aUsers = @($candidatesData.contentReviewersA)
-  $bUsers = @($candidatesData.contentReviewersB)
-  $cUsers = @($candidatesData.contentReviewersC)
+  $aUsers = @($candidatesData.contentReviewersTech)
+  $bUsers = @($candidatesData.contentReviewersManagement)
+  $cUsers = @($candidatesData.contentReviewersNetwork)
   $candidatePass =
     $candidatesResp.status -eq 200 -and
     $techUsers.Count -gt 0 -and
@@ -159,7 +164,7 @@ try {
     $cUsers.Count -gt 0
   Add-E2EResult -Context $context `
     -CaseName "reviewer_candidates_ready_reject_recovery" `
-    -Expected "200 + tech/A/B/C all non-empty" `
+    -Expected "200 + tech+内容技术/管理/网络 all non-empty" `
     -Actual "status=$($candidatesResp.status), tech=$($techUsers.Count), A=$($aUsers.Count), B=$($bUsers.Count), C=$($cUsers.Count)" `
     -Pass $candidatePass `
     -Detail $candidatesResp.raw
@@ -167,42 +172,66 @@ try {
     throw "reviewer candidates are not ready for reject recovery"
   }
 
+  $techAssignee = "admin"
+  $contentTechAssignee = "admin"
+  $contentManagementAssignee = "admin"
+  $contentNetworkAssignee = "admin"
+
   Invoke-E2EApi -Context $context -Method "Put" -Path "/api/v1/on-site-assessments/$projectId/review-assignment" -Token $adminToken -Body @{
-    techReviewer = [string]$techUsers[0]
-    contentReviewerA = [string]$aUsers[0]
-    contentReviewerB = [string]$bUsers[0]
-    contentReviewerC = [string]$cUsers[0]
+    techReviewer = $techAssignee
+    contentReviewerTech = $contentTechAssignee
+    contentReviewerManagement = $contentManagementAssignee
+    contentReviewerNetwork = $contentNetworkAssignee
     versionNo = 0
   } | Out-Null
   Invoke-E2EApi -Context $context -Method "Post" -Path "/api/v1/on-site-assessments/$projectId/submit" -Token $adminToken | Out-Null
-
-  Invoke-E2EApi -Context $context -Method "Put" -Path "/api/v1/report-tech-reviews/$projectId" -Token $adminToken -Body @{
-    remark = "tech review draft by reject recovery"
-    versionNo = 0
-  } | Out-Null
-  Invoke-E2EApi -Context $context -Method "Post" -Path "/api/v1/report-tech-reviews/$projectId/submit" -Token $adminToken | Out-Null
 
   $techTodoResp = Invoke-E2EApi -Context $context -Method "Get" -Path "/api/v1/workflow/tasks/todo?type=REPORT_TECH_REVIEW" -Token $adminToken
   $techTodoRows = @($techTodoResp.body.data | Where-Object { [long]$_.bizId -eq [long]$projectId })
   if ($techTodoRows.Count -lt 1) {
     throw "report tech review todo task not found"
   }
-  Invoke-E2EApi -Context $context -Method "Post" -Path "/api/v1/workflow/tasks/$([string]$techTodoRows[0].taskId)/approve" -Token $adminToken | Out-Null
+  $techApproveResp = Invoke-E2EApi -Context $context -Method "Post" -Path "/api/v1/workflow/tasks/$([string]$techTodoRows[0].taskId)/approve" -Token $adminToken
+  Add-E2EResult -Context $context `
+    -CaseName "tech_task_approve_before_content_reject" `
+    -Expected "200" `
+    -Actual "status=$($techApproveResp.status)" `
+    -Pass ($techApproveResp.status -eq 200) `
+    -Detail $techApproveResp.raw
+  if ($techApproveResp.status -ne 200) {
+    throw "tech task approve failed: status=$($techApproveResp.status), raw=$($techApproveResp.raw)"
+  }
+
+  $contentAutoDetailResp = Invoke-E2EApi -Context $context -Method "Get" -Path "/api/v1/report-content-reviews/$projectId" -Token $adminToken
+  Add-E2EResult -Context $context `
+    -CaseName "content_auto_submit_after_tech_approve" `
+    -Expected "200 + status=SUBMITTED + workflowNode=REPORT_CONTENT_REVIEW_TASK" `
+    -Actual "status=$($contentAutoDetailResp.status), reviewStatus=$([string]$contentAutoDetailResp.body.data.status), workflowNode=$([string]$contentAutoDetailResp.body.data.workflowNode)" `
+    -Pass ($contentAutoDetailResp.status -eq 200 -and [string]$contentAutoDetailResp.body.data.status -eq "SUBMITTED" -and [string]$contentAutoDetailResp.body.data.workflowNode -eq "REPORT_CONTENT_REVIEW_TASK") `
+    -Detail $contentAutoDetailResp.raw
 
   $contentSubmitResp =
     Invoke-E2EApi -Context $context `
-      -Method "Post" `
-      -Path "/api/v1/report-content-reviews/$projectId/submit" `
+      -Method "Get" `
+      -Path "/api/v1/report-content-reviews/$projectId" `
       -Token $adminToken
   Add-E2EResult -Context $context `
-    -CaseName "content_submit_before_reject" `
-    -Expected "200 + status=SUBMITTED" `
+    -CaseName "content_auto_submit_before_reject" `
+    -Expected "200 + status=SUBMITTED + workflowNode=REPORT_CONTENT_REVIEW_TASK" `
     -Actual "status=$($contentSubmitResp.status), reviewStatus=$([string]$contentSubmitResp.body.data.status)" `
-    -Pass ($contentSubmitResp.status -eq 200 -and [string]$contentSubmitResp.body.data.status -eq "SUBMITTED") `
+    -Pass ($contentSubmitResp.status -eq 200 -and [string]$contentSubmitResp.body.data.status -eq "SUBMITTED" -and [string]$contentSubmitResp.body.data.workflowNode -eq "REPORT_CONTENT_REVIEW_TASK") `
     -Detail $contentSubmitResp.raw
 
-  $contentTodoBeforeRejectResp = Invoke-E2EApi -Context $context -Method "Get" -Path "/api/v1/workflow/tasks/todo?type=REPORT_CONTENT_REVIEW" -Token $adminToken
-  $contentTodoBeforeRejectRows = @($contentTodoBeforeRejectResp.body.data | Where-Object { [long]$_.bizId -eq [long]$projectId })
+  $contentTodoBeforeRejectResp = $null
+  $contentTodoBeforeRejectRows = @()
+  for ($attempt = 0; $attempt -lt 10; $attempt++) {
+    $contentTodoBeforeRejectResp = Invoke-E2EApi -Context $context -Method "Get" -Path "/api/v1/workflow/tasks/todo?type=REPORT_CONTENT_REVIEW" -Token $adminToken
+    $contentTodoBeforeRejectRows = @($contentTodoBeforeRejectResp.body.data | Where-Object { [long]$_.bizId -eq [long]$projectId })
+    if ($contentTodoBeforeRejectResp.status -eq 200 -and $contentTodoBeforeRejectRows.Count -eq 3) {
+      break
+    }
+    Start-Sleep -Milliseconds 200
+  }
   Add-E2EResult -Context $context `
     -CaseName "content_todos_ready_before_reject" `
     -Expected "exactly 3 pending tasks" `
@@ -210,7 +239,13 @@ try {
     -Pass ($contentTodoBeforeRejectResp.status -eq 200 -and $contentTodoBeforeRejectRows.Count -eq 3) `
     -Detail $contentTodoBeforeRejectResp.raw
   if ($contentTodoBeforeRejectRows.Count -ne 3) {
-    throw "report content review pending tasks should be 3 before reject"
+    $allTodoResp = Invoke-E2EApi -Context $context -Method "Get" -Path "/api/v1/workflow/tasks/todo" -Token $adminToken
+    $allTodoRows = @()
+    if ($allTodoResp.status -eq 200) {
+      $allTodoRows = @($allTodoResp.body.data | Where-Object { [long]$_.bizId -eq [long]$projectId })
+    }
+    $allTypes = @($allTodoRows | ForEach-Object { [string]$_.taskType }) -join ","
+    throw "report content review pending tasks should be 3 before reject, contentStatus=$($contentTodoBeforeRejectResp.status), contentMatched=$($contentTodoBeforeRejectRows.Count), allStatus=$($allTodoResp.status), allMatched=$($allTodoRows.Count), allTypes=$allTypes"
   }
 
   $rejectTask = $contentTodoBeforeRejectRows | Select-Object -First 1
@@ -240,17 +275,25 @@ try {
   $contentResubmitResp =
     Invoke-E2EApi -Context $context `
       -Method "Post" `
-      -Path "/api/v1/report-content-reviews/$projectId/submit" `
+      -Path "/api/v1/on-site-assessments/$projectId/submit" `
       -Token $adminToken
   Add-E2EResult -Context $context `
-    -CaseName "content_resubmit_after_reject" `
+    -CaseName "content_resubmit_after_reject_via_on_site_submit" `
     -Expected "200 + status=SUBMITTED" `
-    -Actual "status=$($contentResubmitResp.status), reviewStatus=$([string]$contentResubmitResp.body.data.status)" `
+    -Actual "status=$($contentResubmitResp.status), onSiteStatus=$([string]$contentResubmitResp.body.data.status)" `
     -Pass ($contentResubmitResp.status -eq 200 -and [string]$contentResubmitResp.body.data.status -eq "SUBMITTED") `
     -Detail $contentResubmitResp.raw
 
-  $contentTodoAfterResubmitResp = Invoke-E2EApi -Context $context -Method "Get" -Path "/api/v1/workflow/tasks/todo?type=REPORT_CONTENT_REVIEW" -Token $adminToken
-  $contentTodoAfterResubmitRows = @($contentTodoAfterResubmitResp.body.data | Where-Object { [long]$_.bizId -eq [long]$projectId })
+  $contentTodoAfterResubmitResp = $null
+  $contentTodoAfterResubmitRows = @()
+  for ($attempt = 0; $attempt -lt 10; $attempt++) {
+    $contentTodoAfterResubmitResp = Invoke-E2EApi -Context $context -Method "Get" -Path "/api/v1/workflow/tasks/todo?type=REPORT_CONTENT_REVIEW" -Token $adminToken
+    $contentTodoAfterResubmitRows = @($contentTodoAfterResubmitResp.body.data | Where-Object { [long]$_.bizId -eq [long]$projectId })
+    if ($contentTodoAfterResubmitResp.status -eq 200 -and $contentTodoAfterResubmitRows.Count -eq 3) {
+      break
+    }
+    Start-Sleep -Milliseconds 200
+  }
   Add-E2EResult -Context $context `
     -CaseName "content_todos_recreated_after_resubmit" `
     -Expected "exactly 3 pending tasks" `
@@ -258,7 +301,7 @@ try {
     -Pass ($contentTodoAfterResubmitResp.status -eq 200 -and $contentTodoAfterResubmitRows.Count -eq 3) `
     -Detail $contentTodoAfterResubmitResp.raw
   if ($contentTodoAfterResubmitRows.Count -ne 3) {
-    throw "report content review pending tasks should be 3 after resubmit"
+    throw "report content review pending tasks should be 3 after resubmit, actual=$($contentTodoAfterResubmitRows.Count)"
   }
 
   $approveStatuses = New-Object System.Collections.Generic.List[int]

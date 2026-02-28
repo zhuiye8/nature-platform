@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$BaseUrl = "http://127.0.0.1:18080"
 )
 
@@ -178,10 +178,19 @@ try {
     -Pass ($projectSubmitResp.status -eq 200) `
     -Detail $projectSubmitResp.raw
 
+  $projectTodoResp =
+    Invoke-E2EApi -Context $context `
+      -Method "Get" `
+      -Path "/api/v1/workflow/tasks/todo?type=PROJECT_REGISTER" `
+      -Token $adminToken
+  $projectTodoRows = @($projectTodoResp.body.data | Where-Object { [long]$_.bizId -eq [long]$projectId })
+  if ($projectTodoRows.Count -lt 1) {
+    throw "project register todo task not found for hp03"
+  }
   $projectApproveResp =
     Invoke-E2EApi -Context $context `
       -Method "Post" `
-      -Path "/api/v1/workflow/tasks/PROJECT_REGISTER:$projectId/approve" `
+      -Path "/api/v1/workflow/tasks/$([string]$projectTodoRows[0].taskId)/approve" `
       -Token $adminToken
   Add-E2EResult -Context $context `
     -CaseName "approve_project_register_review_hp03" `
@@ -246,9 +255,9 @@ try {
       -Token $adminToken
   $candidatesData = $candidatesResp.body.data
   $techUsers = @($candidatesData.techReviewers)
-  $aUsers = @($candidatesData.contentReviewersA)
-  $bUsers = @($candidatesData.contentReviewersB)
-  $cUsers = @($candidatesData.contentReviewersC)
+  $aUsers = @($candidatesData.contentReviewersTech)
+  $bUsers = @($candidatesData.contentReviewersManagement)
+  $cUsers = @($candidatesData.contentReviewersNetwork)
   $candidatePass =
     $candidatesResp.status -eq 200 -and
     $techUsers.Count -gt 0 -and
@@ -257,7 +266,7 @@ try {
     $cUsers.Count -gt 0
   Add-E2EResult -Context $context `
     -CaseName "on_site_reviewer_candidates_ready_hp03" `
-    -Expected "200 + tech/A/B/C all non-empty" `
+    -Expected "200 + tech+内容技术/管理/网络 all non-empty" `
     -Actual "status=$($candidatesResp.status), tech=$($techUsers.Count), A=$($aUsers.Count), B=$($bUsers.Count), C=$($cUsers.Count)" `
     -Pass $candidatePass `
     -Detail $candidatesResp.raw
@@ -265,11 +274,16 @@ try {
     throw "reviewer candidates are not ready for hp03"
   }
 
+  $techAssignee = "admin"
+  $contentTechAssignee = "admin"
+  $contentManagementAssignee = "admin"
+  $contentNetworkAssignee = "admin"
+
   $assignPayload = @{
-    techReviewer = [string]$techUsers[0]
-    contentReviewerA = [string]$aUsers[0]
-    contentReviewerB = [string]$bUsers[0]
-    contentReviewerC = [string]$cUsers[0]
+    techReviewer = $techAssignee
+    contentReviewerTech = $contentTechAssignee
+    contentReviewerManagement = $contentManagementAssignee
+    contentReviewerNetwork = $contentNetworkAssignee
     versionNo = 0
   }
   $assignResp =
@@ -309,34 +323,17 @@ try {
     -Pass ($qualityDetailResp.status -eq 200 -and [string]$qualityDetailResp.body.data.status -eq "APPROVED") `
     -Detail $qualityDetailResp.raw
 
-  $techSavePayload = @{
-    remark = "tech review draft by hp03"
-    versionNo = 0
-  }
-  $techSaveResp =
+  $techAutoDetailResp =
     Invoke-E2EApi -Context $context `
-      -Method "Put" `
+      -Method "Get" `
       -Path "/api/v1/report-tech-reviews/$projectId" `
-      -Token $adminToken `
-      -Body $techSavePayload
-  Add-E2EResult -Context $context `
-    -CaseName "report_tech_review_save_success" `
-    -Expected "200 + status=DRAFT" `
-    -Actual "status=$($techSaveResp.status), reviewStatus=$([string]$techSaveResp.body.data.status)" `
-    -Pass ($techSaveResp.status -eq 200 -and [string]$techSaveResp.body.data.status -eq "DRAFT") `
-    -Detail $techSaveResp.raw
-
-  $techSubmitResp =
-    Invoke-E2EApi -Context $context `
-      -Method "Post" `
-      -Path "/api/v1/report-tech-reviews/$projectId/submit" `
       -Token $adminToken
   Add-E2EResult -Context $context `
-    -CaseName "report_tech_review_submit_success" `
-    -Expected "200 + status=SUBMITTED" `
-    -Actual "status=$($techSubmitResp.status), reviewStatus=$([string]$techSubmitResp.body.data.status)" `
-    -Pass ($techSubmitResp.status -eq 200 -and [string]$techSubmitResp.body.data.status -eq "SUBMITTED") `
-    -Detail $techSubmitResp.raw
+    -CaseName "report_tech_review_auto_submit_after_on_site_submit" `
+    -Expected "200 + status=SUBMITTED + workflowNode=REPORT_TECH_REVIEW_TASK" `
+    -Actual "status=$($techAutoDetailResp.status), reviewStatus=$([string]$techAutoDetailResp.body.data.status), workflowNode=$([string]$techAutoDetailResp.body.data.workflowNode)" `
+    -Pass ($techAutoDetailResp.status -eq 200 -and [string]$techAutoDetailResp.body.data.status -eq "SUBMITTED" -and [string]$techAutoDetailResp.body.data.workflowNode -eq "REPORT_TECH_REVIEW_TASK") `
+    -Detail $techAutoDetailResp.raw
 
   $techTodoResp =
     Invoke-E2EApi -Context $context `
@@ -374,36 +371,44 @@ try {
       -Token $adminToken
   Add-E2EResult -Context $context `
     -CaseName "report_tech_review_detail_approved" `
-    -Expected "200 + status=APPROVED + workflowNode=REPORT_CONTENT_REVIEW" `
+    -Expected "200 + status=APPROVED + workflowNode=REPORT_CONTENT_REVIEW_TASK" `
     -Actual "status=$($techDetailAfterResp.status), reviewStatus=$([string]$techDetailAfterResp.body.data.status), workflowNode=$([string]$techDetailAfterResp.body.data.workflowNode)" `
-    -Pass ($techDetailAfterResp.status -eq 200 -and [string]$techDetailAfterResp.body.data.status -eq "APPROVED" -and [string]$techDetailAfterResp.body.data.workflowNode -eq "REPORT_CONTENT_REVIEW") `
+    -Pass ($techDetailAfterResp.status -eq 200 -and [string]$techDetailAfterResp.body.data.status -eq "APPROVED" -and [string]$techDetailAfterResp.body.data.workflowNode -eq "REPORT_CONTENT_REVIEW_TASK") `
     -Detail $techDetailAfterResp.raw
 
-  $contentSubmitResp =
-    Invoke-E2EApi -Context $context `
-      -Method "Post" `
-      -Path "/api/v1/report-content-reviews/$projectId/submit" `
-      -Token $adminToken
-  Add-E2EResult -Context $context `
-    -CaseName "report_content_review_submit_success" `
-    -Expected "200 + status=SUBMITTED" `
-    -Actual "status=$($contentSubmitResp.status), reviewStatus=$([string]$contentSubmitResp.body.data.status)" `
-    -Pass ($contentSubmitResp.status -eq 200 -and [string]$contentSubmitResp.body.data.status -eq "SUBMITTED") `
-    -Detail $contentSubmitResp.raw
-
-  $contentTodoResp =
+  $contentAutoDetailResp =
     Invoke-E2EApi -Context $context `
       -Method "Get" `
-      -Path "/api/v1/workflow/tasks/todo?type=REPORT_CONTENT_REVIEW" `
+      -Path "/api/v1/report-content-reviews/$projectId" `
       -Token $adminToken
-  $contentTodoRows = @($contentTodoResp.body.data | Where-Object { [long]$_.bizId -eq [long]$projectId })
+  Add-E2EResult -Context $context `
+    -CaseName "report_content_review_auto_submit_after_tech_approve" `
+    -Expected "200 + status=SUBMITTED + workflowNode=REPORT_CONTENT_REVIEW_TASK" `
+    -Actual "status=$($contentAutoDetailResp.status), reviewStatus=$([string]$contentAutoDetailResp.body.data.status), workflowNode=$([string]$contentAutoDetailResp.body.data.workflowNode)" `
+    -Pass ($contentAutoDetailResp.status -eq 200 -and [string]$contentAutoDetailResp.body.data.status -eq "SUBMITTED" -and [string]$contentAutoDetailResp.body.data.workflowNode -eq "REPORT_CONTENT_REVIEW_TASK") `
+    -Detail $contentAutoDetailResp.raw
+
+  $contentTodoResp = $null
+  $contentTodoRows = @()
+  for ($attempt = 0; $attempt -lt 10; $attempt++) {
+    $contentTodoResp =
+      Invoke-E2EApi -Context $context `
+        -Method "Get" `
+        -Path "/api/v1/workflow/tasks/todo?type=REPORT_CONTENT_REVIEW" `
+        -Token $adminToken
+    $contentTodoRows = @($contentTodoResp.body.data | Where-Object { [long]$_.bizId -eq [long]$projectId })
+    if ($contentTodoResp.status -eq 200 -and $contentTodoRows.Count -eq 3) {
+      break
+    }
+    Start-Sleep -Milliseconds 200
+  }
   $contentTodoPass =
     $contentTodoResp.status -eq 200 -and
     $contentTodoRows.Count -eq 3 -and
     @($contentTodoRows | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_.taskId) }).Count -eq 3
   Add-E2EResult -Context $context `
     -CaseName "report_content_review_three_tasks_ready" `
-    -Expected "exactly 3 pending tasks for A/B/C" `
+    -Expected "exactly 3 pending tasks for 技术/管理/网络" `
     -Actual "status=$($contentTodoResp.status), matched=$($contentTodoRows.Count)" `
     -Pass $contentTodoPass `
     -Detail $contentTodoResp.raw
@@ -637,3 +642,6 @@ try {
 }
 
 Complete-E2EResults -Context $context
+
+
+

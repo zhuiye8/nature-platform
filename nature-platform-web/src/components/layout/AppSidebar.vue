@@ -1,7 +1,7 @@
 ﻿<!--
-@input grouped navigation metadata and selected route state from app shell
-@output Collapsible grouped sidebar menu with brand entry and route selection events
-@position Left navigation rail for desktop shell and drawer navigation for mobile shell
+@input Backend-driven menuTree session state and active route metadata from app shell
+@output Collapsible grouped sidebar menu with resource-aware runtime navigation rendering
+@position Left navigation rail for desktop shell and drawer navigation with backend resource-tree alignment
 @doc-sync Update this header and folder INDEX.md when this file changes.
 -->
 <template>
@@ -15,8 +15,8 @@
     </div>
 
     <el-scrollbar class="sidebar-scroll">
-      <div v-for="group in groups" :key="group" class="nav-group">
-        <p v-if="!collapsed" class="group-title">{{ group }}</p>
+      <div v-for="group in runtimeGroups" :key="group.groupKey" class="nav-group">
+        <p v-if="!collapsed" class="group-title">{{ group.groupLabel }}</p>
         <el-menu
           :default-active="activePath"
           class="sidebar-menu"
@@ -25,7 +25,7 @@
           @select="handleSelect"
         >
           <el-menu-item
-            v-for="item in grouped[group]"
+            v-for="item in group.children"
             :key="item.path"
             :index="item.path"
           >
@@ -42,7 +42,8 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
-import { groupedNavItems, navGroups } from "../../navigation";
+import { buildRuntimeMenuGroups } from "../../navigation";
+import { useAuthStore } from "../../auth-store";
 
 const props = defineProps<{
   activePath: string;
@@ -53,8 +54,18 @@ const emit = defineEmits<{
   select: [path: string];
 }>();
 
-const groups = navGroups;
-const grouped = groupedNavItems;
+const authStore = useAuthStore();
+
+const runtimeGroups = computed(() =>
+  buildRuntimeMenuGroups(authStore.menuTree)
+    .map((group) => ({
+      ...group,
+      children: group.children.filter(
+        (item) => !item.resourceKey || authStore.hasResource(item.resourceKey)
+      )
+    }))
+    .filter((group) => group.children.length > 0)
+);
 
 function handleSelect(path: string) {
   emit("select", path);
@@ -71,24 +82,25 @@ const collapsed = computed(() => props.collapsed);
 }
 
 .sidebar-brand {
-  min-height: 70px;
-  padding: 14px 14px 12px;
+  min-height: 74px;
+  padding: 15px 14px 13px;
   display: flex;
   align-items: center;
   gap: 10px;
   cursor: pointer;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .brand-mark {
-  width: 34px;
-  height: 34px;
-  border-radius: 11px;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
   display: grid;
   place-items: center;
   font-weight: 700;
-  color: #eaf1ff;
-  background: linear-gradient(140deg, rgba(110, 158, 255, 0.95), rgba(40, 98, 206, 0.9));
+  color: #ecfffa;
+  background: linear-gradient(140deg, rgba(56, 181, 146, 0.95), rgba(37, 127, 170, 0.92));
+  box-shadow: 0 10px 22px rgba(9, 31, 45, 0.32);
 }
 
 .brand-text-wrap {
@@ -98,14 +110,14 @@ const collapsed = computed(() => props.collapsed);
 .brand {
   font-size: 15px;
   font-weight: 700;
-  color: #f2f6ff;
+  color: #effaf9;
   letter-spacing: 0.2px;
 }
 
 .brand-sub {
   margin-top: 2px;
   font-size: 12px;
-  color: rgba(233, 241, 255, 0.72);
+  color: rgba(216, 236, 246, 0.74);
 }
 
 .sidebar-scroll {
@@ -120,7 +132,8 @@ const collapsed = computed(() => props.collapsed);
   margin: 0 0 8px;
   padding: 0 10px;
   font-size: 12px;
-  color: rgba(220, 231, 252, 0.72);
+  color: rgba(201, 226, 237, 0.72);
+  letter-spacing: 0.28px;
 }
 
 .sidebar-menu {
@@ -129,20 +142,22 @@ const collapsed = computed(() => props.collapsed);
 }
 
 :deep(.sidebar-menu .el-menu-item) {
-  height: 38px;
+  height: 39px;
   margin: 4px 0;
-  border-radius: 10px;
-  color: rgba(234, 242, 255, 0.84);
+  border-radius: 12px;
+  color: rgba(233, 246, 251, 0.84);
+  font-weight: 500;
 }
 
 :deep(.sidebar-menu .el-menu-item:hover) {
   color: #fff;
-  background: rgba(111, 149, 255, 0.2);
+  background: rgba(86, 173, 198, 0.2);
 }
 
 :deep(.sidebar-menu .el-menu-item.is-active) {
   color: #fff;
-  background: linear-gradient(90deg, rgba(95, 149, 255, 0.34), rgba(52, 113, 228, 0.45));
+  box-shadow: inset 0 0 0 1px rgba(162, 229, 213, 0.28);
+  background: linear-gradient(90deg, rgba(59, 171, 144, 0.35), rgba(43, 114, 169, 0.45));
 }
 
 :deep(.sidebar-menu .el-menu-item .el-icon) {

@@ -1,7 +1,7 @@
 /**
  * @input apiClient and ApiResponse from shared HTTP infra
- * @output Node-15 report-final-review API wrappers and types
- * @position Frontend service layer for report final-review assignment and submit stages
+ * @output Node-15 report-final-review list/detail/candidate/save API wrappers and types with displayStatus
+ * @position Frontend service layer for report final-review assignment and task visibility stage
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 import { apiClient, type ApiResponse } from "./api";
@@ -20,6 +20,7 @@ export interface ReportFinalReviewRecord {
   finishedAt?: string;
   taskId?: number;
   taskStatus?: string;
+  displayStatus?: string;
   workflowNode?: string;
   workflowStatus?: string;
 }
@@ -60,15 +61,6 @@ export async function saveReportFinalReview(
   const response = await apiClient.put<ApiResponse<ReportFinalReviewRecord>>(
     `/report-final-reviews/${projectId}`,
     payload
-  );
-  return response.data.data;
-}
-
-export async function submitReportFinalReview(
-  projectId: number
-): Promise<ReportFinalReviewRecord> {
-  const response = await apiClient.post<ApiResponse<ReportFinalReviewRecord>>(
-    `/report-final-reviews/${projectId}/submit`
   );
   return response.data.data;
 }

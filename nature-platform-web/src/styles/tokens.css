@@ -1,39 +1,49 @@
 :root {
-  --np-font-sans: "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --np-font-sans: "HarmonyOS Sans SC", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --np-font-display: "STZhongsong", "Source Han Sans SC", "PingFang SC", serif;
+  --np-font-mono: "JetBrains Mono", "Cascadia Code", "Consolas", monospace;
 
-  --np-color-brand-50: #f0f4ff;
-  --np-color-brand-100: #dce6ff;
-  --np-color-brand-200: #c1d2ff;
-  --np-color-brand-300: #99b7ff;
-  --np-color-brand-400: #6f99ff;
-  --np-color-brand-500: #4c7ff4;
-  --np-color-brand-600: #2f67df;
-  --np-color-brand-700: #2351b6;
+  --np-color-brand-50: #ecfbf7;
+  --np-color-brand-100: #d6f5ed;
+  --np-color-brand-200: #afe8d9;
+  --np-color-brand-300: #85dcc3;
+  --np-color-brand-400: #57cda9;
+  --np-color-brand-500: #2db892;
+  --np-color-brand-600: #1f987a;
+  --np-color-brand-700: #197760;
 
-  --np-color-bg-app: #f1f5fb;
-  --np-color-bg-soft: #e7eef8;
+  --np-color-ink-900: #0f2432;
+  --np-color-ink-800: #183244;
+  --np-color-ink-700: #28485c;
+
+  --np-color-bg-app: #f3f7f8;
+  --np-color-bg-soft: #edf4f6;
   --np-color-bg-card: #ffffff;
-  --np-color-bg-elevated: #f8fbff;
+  --np-color-bg-elevated: #f8fcfc;
+  --np-color-bg-dark: #152838;
 
-  --np-color-text-primary: #15223a;
-  --np-color-text-secondary: #344964;
-  --np-color-text-muted: #667c98;
+  --np-color-text-primary: #132734;
+  --np-color-text-secondary: #2c4453;
+  --np-color-text-muted: #6c8290;
 
-  --np-color-border: #d0dced;
-  --np-color-border-strong: #bccbe1;
+  --np-color-border: #d2e0e5;
+  --np-color-border-strong: #b6c8d1;
 
-  --np-color-success: #1f9f70;
-  --np-color-warning: #cf8821;
-  --np-color-danger: #c24747;
-  --np-color-info: #4f678c;
+  --np-color-success: #1e9b66;
+  --np-color-warning: #c98822;
+  --np-color-danger: #c94d46;
+  --np-color-info: #2f6ea2;
 
   --np-radius-xs: 8px;
-  --np-radius-sm: 10px;
-  --np-radius-md: 14px;
-  --np-radius-lg: 18px;
+  --np-radius-sm: 12px;
+  --np-radius-md: 18px;
+  --np-radius-lg: 24px;
+  --np-radius-xl: 30px;
 
-  --np-shadow-sm: 0 8px 22px rgba(26, 52, 90, 0.08);
-  --np-shadow-md: 0 20px 44px rgba(24, 44, 74, 0.12);
+  --np-shadow-sm: 0 10px 24px rgba(18, 49, 68, 0.08);
+  --np-shadow-md: 0 22px 46px rgba(15, 44, 62, 0.14);
+  --np-shadow-lg: 0 32px 62px rgba(15, 39, 54, 0.18);
+  --np-shadow-focus: 0 0 0 3px rgba(45, 184, 146, 0.2);
 
   --np-space-1: 4px;
   --np-space-2: 8px;
@@ -41,17 +51,29 @@
   --np-space-4: 16px;
   --np-space-5: 20px;
   --np-space-6: 24px;
+  --np-space-7: 28px;
   --np-space-8: 32px;
+  --np-space-9: 36px;
+  --np-space-10: 42px;
+
+  --np-control-height-sm: 32px;
+  --np-control-height-md: 38px;
+  --np-control-height-lg: 44px;
+  --np-control-padding-x: 12px;
+  --np-card-padding: clamp(14px, 1.2vw, 20px);
+  --np-table-row-height: 44px;
 
   --np-trans-fast: 140ms;
   --np-trans-base: 220ms;
   --np-trans-page: 280ms;
+  --np-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --np-ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
 
-  --np-layout-max: 1480px;
-  --np-content-gutter: clamp(12px, 2vw, 24px);
-  --np-sidebar-width: 268px;
-  --np-sidebar-width-collapsed: 84px;
-  --np-topbar-height: 58px;
+  --np-layout-max: 1520px;
+  --np-content-gutter: clamp(12px, 1.8vw, 24px);
+  --np-sidebar-width: 280px;
+  --np-sidebar-width-collapsed: 86px;
+  --np-topbar-height: 64px;
 
   --el-font-family: var(--np-font-sans);
   --el-font-size-base: 13px;
@@ -60,7 +82,22 @@
   --el-color-warning: var(--np-color-warning);
   --el-color-danger: var(--np-color-danger);
   --el-color-info: var(--np-color-info);
+  --el-text-color-primary: var(--np-color-text-primary);
+  --el-text-color-regular: var(--np-color-text-secondary);
+  --el-text-color-secondary: var(--np-color-text-muted);
   --el-border-radius-base: var(--np-radius-sm);
+  --el-border-radius-small: var(--np-radius-xs);
+  --el-border-radius-round: 999px;
   --el-border-color: var(--np-color-border);
+  --el-border-color-light: #dce8ed;
+  --el-border-color-lighter: #e6eff3;
   --el-bg-color-page: var(--np-color-bg-app);
+  --el-bg-color: #ffffff;
+  --el-fill-color-blank: #ffffff;
+  --el-fill-color-light: #f5fafb;
+  --el-fill-color-lighter: #f8fcfd;
+  --el-fill-color-dark: #e4eef1;
+  --el-mask-color: rgba(17, 39, 53, 0.46);
+  --el-transition-duration: var(--np-trans-base);
+  --el-transition-function: var(--np-ease-standard);
 }

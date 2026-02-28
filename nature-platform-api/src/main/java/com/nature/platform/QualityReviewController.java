@@ -1,7 +1,7 @@
 /**
- * @input QualityReviewService operations, assignment/request DTOs, and auth principal context
- * @output /api/v1/quality-reviews endpoints for assignment, submit, detail/list, and candidate lookup
- * @position HTTP adapter for node-9/10 quality review apply and reviewer assignment workflows
+ * @input QualityReviewService operations, AdminAccessService permission checks, assignment/request DTOs, and auth principal context
+ * @output /api/v1/quality-reviews endpoints for assignment, submit, detail/list, and candidate lookup with action-level authorization
+ * @position HTTP adapter for node-9/10 quality review apply and reviewer assignment workflows with RBAC guards
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 package com.nature.platform;
@@ -23,18 +23,26 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/quality-reviews")
 public class QualityReviewController {
   private final QualityReviewService qualityReviewService;
+  private final AdminAccessService adminAccessService;
 
-  public QualityReviewController(QualityReviewService qualityReviewService) {
+  public QualityReviewController(
+      QualityReviewService qualityReviewService, AdminAccessService adminAccessService) {
     this.qualityReviewService = qualityReviewService;
+    this.adminAccessService = adminAccessService;
   }
 
   @GetMapping
-  public ApiResponse<List<QualityReviewRecord>> list() {
+  public ApiResponse<List<QualityReviewRecord>> list(Authentication authentication) {
+    adminAccessService.requirePermission(
+        CurrentUser.username(authentication), BusinessPermissionCodes.QUALITY_REVIEW_VIEW);
     return ApiResponse.success(qualityReviewService.list());
   }
 
   @GetMapping("/{projectId}")
-  public ResponseEntity<ApiResponse<QualityReviewRecord>> detail(@PathVariable long projectId) {
+  public ResponseEntity<ApiResponse<QualityReviewRecord>> detail(
+      Authentication authentication, @PathVariable long projectId) {
+    adminAccessService.requirePermission(
+        CurrentUser.username(authentication), BusinessPermissionCodes.QUALITY_REVIEW_VIEW);
     return qualityReviewService
         .detail(projectId)
         .map(item -> ResponseEntity.ok(ApiResponse.success(item)))
@@ -45,7 +53,9 @@ public class QualityReviewController {
   }
 
   @GetMapping("/candidates")
-  public ApiResponse<List<String>> candidates() {
+  public ApiResponse<List<String>> candidates(Authentication authentication) {
+    adminAccessService.requirePermission(
+        CurrentUser.username(authentication), BusinessPermissionCodes.QUALITY_REVIEW_CANDIDATE_VIEW);
     return ApiResponse.success(qualityReviewService.listCandidates());
   }
 
@@ -54,12 +64,16 @@ public class QualityReviewController {
       Authentication authentication,
       @PathVariable long projectId,
       @Valid @RequestBody QualityReviewAssignmentRequest request) {
+    adminAccessService.requirePermission(
+        CurrentUser.username(authentication), BusinessPermissionCodes.QUALITY_REVIEW_ASSIGN);
     return ApiResponse.success(
         qualityReviewService.saveAssignment(projectId, request, CurrentUser.username(authentication)));
   }
 
   @PostMapping("/{projectId}/submit")
   public ApiResponse<QualityReviewRecord> submit(Authentication authentication, @PathVariable long projectId) {
+    adminAccessService.requirePermission(
+        CurrentUser.username(authentication), BusinessPermissionCodes.QUALITY_REVIEW_SUBMIT);
     return ApiResponse.success(qualityReviewService.submit(projectId, CurrentUser.username(authentication)));
   }
 }

@@ -1,7 +1,7 @@
 /**
  * @input report_content_review_task row mapping values
  * @output ReportContentReviewTaskRecord task projection for node-12 detail/list APIs
- * @position Node-12 read model describing A/B/C content-review task execution state
+ * @position Node-12 read model describing technical/management/network content-review task execution state
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 package com.nature.platform;

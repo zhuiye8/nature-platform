@@ -1,7 +1,7 @@
 /**
- * @input JwtTokenService and UserAccountService for credential verification, role lookup, and token issue
- * @output login() and currentUserProfile() methods for local account authentication and role-aware profile data
- * @position Authentication application service layer bridging account/role persistence to JWT session flow
+ * @input JwtTokenService, UserAccountService, AdminAccessService, and AdminResourceService for IAM-aware profile aggregation
+ * @output login() and currentUserProfile() methods for local authentication and role/resource/menu bootstrap payloads
+ * @position Authentication application service layer bridging account/role persistence to token session and frontend RBAC context
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 package com.nature.platform;
@@ -14,10 +14,18 @@ import org.springframework.stereotype.Service;
 public class AuthService {
   private final JwtTokenService jwtTokenService;
   private final UserAccountService userAccountService;
+  private final AdminAccessService adminAccessService;
+  private final AdminResourceService adminResourceService;
 
-  public AuthService(JwtTokenService jwtTokenService, UserAccountService userAccountService) {
+  public AuthService(
+      JwtTokenService jwtTokenService,
+      UserAccountService userAccountService,
+      AdminAccessService adminAccessService,
+      AdminResourceService adminResourceService) {
     this.jwtTokenService = jwtTokenService;
     this.userAccountService = userAccountService;
+    this.adminAccessService = adminAccessService;
+    this.adminResourceService = adminResourceService;
   }
 
   public LoginResponse login(LoginRequest request) {
@@ -41,10 +49,15 @@ public class AuthService {
             .findByUsername(username)
             .orElse(new UserAccountService.UserAccount(0L, username, "", username, true));
     List<String> roles = userAccountService.listRoles(username);
+    List<String> resources = adminAccessService.listResources(username);
+    List<AdminResourceRecord> menuTree = adminResourceService.listResourceTreeForUser(username);
     return Map.of(
         "username", username,
         "displayName", userAccount.displayName(),
         "roles", roles,
+        "permissions", resources,
+        "resources", resources,
+        "menuTree", menuTree,
         "timezone", "Asia/Shanghai");
   }
 }

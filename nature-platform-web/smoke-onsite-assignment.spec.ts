@@ -8,11 +8,11 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 
 async function loginAsAdmin(page: Page): Promise<void> {
   await page.goto("/login");
-  const usernameInput = page.locator(".login-card input").first();
-  const passwordInput = page.locator('.login-card input[type="password"]').first();
+  const usernameInput = page.locator("input").first();
+  const passwordInput = page.locator('input[type="password"]').first();
   await usernameInput.fill("admin");
   await passwordInput.fill("admin123");
-  await page.locator(".login-card .el-button--primary").click();
+  await page.locator("button.primary-btn").click();
   await expect(page).toHaveURL(/\/dashboard$/);
 }
 
@@ -49,9 +49,9 @@ test("assignment dialog binds four pools and blocks incomplete save", async ({ p
       status: "DRAFT",
       packageObjectKey: "e2e/demo.zip",
       techReviewer: "",
-      contentReviewerA: "",
-      contentReviewerB: "",
-      contentReviewerC: "",
+      contentReviewerTech: "",
+      contentReviewerManagement: "",
+      contentReviewerNetwork: "",
       assignmentVersionNo: 0,
       workflowNode: "ON_SITE_ASSESSMENT",
       workflowStatus: "IN_PROGRESS"
@@ -59,9 +59,9 @@ test("assignment dialog binds four pools and blocks incomplete save", async ({ p
   ];
   const mockCandidates = {
     techReviewers: ["tech-user-1", "tech-user-2"],
-    contentReviewersA: ["content-a-1", "content-a-2"],
-    contentReviewersB: ["content-b-1", "content-b-2"],
-    contentReviewersC: ["content-c-1", "content-c-2"]
+    contentReviewersTech: ["content-tech-1", "content-tech-2"],
+    contentReviewersManagement: ["content-management-1", "content-management-2"],
+    contentReviewersNetwork: ["content-network-1", "content-network-2"]
   };
   const assignmentRequests: string[] = [];
 
@@ -90,9 +90,9 @@ test("assignment dialog binds four pools and blocks incomplete save", async ({ p
         data: {
           ...mockRows[0],
           techReviewer: "tech-user-1",
-          contentReviewerA: "content-a-1",
-          contentReviewerB: "content-b-1",
-          contentReviewerC: "content-c-1",
+          contentReviewerTech: "content-tech-1",
+          contentReviewerManagement: "content-management-1",
+          contentReviewerNetwork: "content-network-1",
           assignmentVersionNo: 1
         }
       })
@@ -119,20 +119,20 @@ test("assignment dialog binds four pools and blocks incomplete save", async ({ p
 
   await dialog.locator(".el-select").nth(1).click();
   dropdown = page.locator(".el-select-dropdown:visible").last();
-  await expect(dropdown.getByText("content-a-1", { exact: true })).toBeVisible();
-  await expect(dropdown.getByText("content-a-2", { exact: true })).toBeVisible();
+  await expect(dropdown.getByText("content-tech-1", { exact: true })).toBeVisible();
+  await expect(dropdown.getByText("content-tech-2", { exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
 
   await dialog.locator(".el-select").nth(2).click();
   dropdown = page.locator(".el-select-dropdown:visible").last();
-  await expect(dropdown.getByText("content-b-1", { exact: true })).toBeVisible();
-  await expect(dropdown.getByText("content-b-2", { exact: true })).toBeVisible();
+  await expect(dropdown.getByText("content-management-1", { exact: true })).toBeVisible();
+  await expect(dropdown.getByText("content-management-2", { exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
 
   await dialog.locator(".el-select").nth(3).click();
   dropdown = page.locator(".el-select-dropdown:visible").last();
-  await expect(dropdown.getByText("content-c-1", { exact: true })).toBeVisible();
-  await expect(dropdown.getByText("content-c-2", { exact: true })).toBeVisible();
+  await expect(dropdown.getByText("content-network-1", { exact: true })).toBeVisible();
+  await expect(dropdown.getByText("content-network-2", { exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
 
   await chooseSelectValue(page, dialog, 0, "tech-user-1");
@@ -141,14 +141,14 @@ test("assignment dialog binds four pools and blocks incomplete save", async ({ p
   await expect(page.locator(".el-message--warning").last()).toBeVisible();
   await expect.poll(() => assignmentRequests.length).toBe(0);
 
-  await chooseSelectValue(page, dialog, 1, "content-a-1");
-  await chooseSelectValue(page, dialog, 2, "content-b-1");
-  await chooseSelectValue(page, dialog, 3, "content-c-1");
+  await chooseSelectValue(page, dialog, 1, "content-tech-1");
+  await chooseSelectValue(page, dialog, 2, "content-management-1");
+  await chooseSelectValue(page, dialog, 3, "content-network-1");
   await dialog.locator(".el-dialog__footer .el-button--primary").click();
 
   await expect.poll(() => assignmentRequests.length).toBe(1);
   await expect(assignmentRequests[0]).toContain('"techReviewer":"tech-user-1"');
-  await expect(assignmentRequests[0]).toContain('"contentReviewerA":"content-a-1"');
-  await expect(assignmentRequests[0]).toContain('"contentReviewerB":"content-b-1"');
-  await expect(assignmentRequests[0]).toContain('"contentReviewerC":"content-c-1"');
+  await expect(assignmentRequests[0]).toContain('"contentReviewerTech":"content-tech-1"');
+  await expect(assignmentRequests[0]).toContain('"contentReviewerManagement":"content-management-1"');
+  await expect(assignmentRequests[0]).toContain('"contentReviewerNetwork":"content-network-1"');
 });

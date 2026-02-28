@@ -6,8 +6,8 @@
         <p>支持项目登记创建、提审流程审批回写和轨迹追踪</p>
       </div>
       <el-space>
-        <el-button :loading="loading" @click="loadAll">刷新</el-button>
-        <el-button type="primary" @click="openCreate">新建项目登记</el-button>
+        <el-button v-permission="'project-register:view'" :loading="loading" @click="loadAll">刷新</el-button>
+        <el-button v-permission="'project-register:create'" type="primary" @click="openCreate">新建项目登记</el-button>
       </el-space>
     </header>
 
@@ -19,7 +19,7 @@
         title="仅允许选择“已归档合同”；同一合同同一年份只允许存在一条未删除项目登记" />
     </el-card>
 
-    <el-card>
+    <el-card class="table-card">
       <el-table :data="rows" v-loading="loading" empty-text="暂无项目登记数据">
         <el-table-column prop="id" label="ID" width="90" />
         <el-table-column prop="applicationName" label="申请单名称" min-width="280" show-overflow-tooltip />
@@ -39,11 +39,19 @@
         </el-table-column>
         <el-table-column prop="createdBy" label="创建" width="120" />
         <el-table-column prop="createdAt" label="创建时间" min-width="170" />
-        <el-table-column label="操作" min-width="340" fixed="right">
+        <el-table-column label="操作" min-width="430" fixed="right">
           <template #default="{ row }">
             <el-space>
-              <el-button size="small" :disabled="!canEdit(row.status)" @click="openEdit(row)">编辑</el-button>
               <el-button
+                v-permission="'project-register:update'"
+                size="small"
+                :disabled="!canEdit(row.status)"
+                @click="openEdit(row)"
+              >
+                编辑
+              </el-button>
+              <el-button
+                v-permission="'project-register:submit'"
                 size="small"
                 type="success"
                 :disabled="!canSubmit(row.status)"
@@ -51,8 +59,17 @@
               >
                 提交审核
               </el-button>
-              <el-button size="small" @click="openTrace(row)">流程轨迹</el-button>
-              <el-button size="small" type="danger" :disabled="!canDelete(row.status)" @click="removeRow(row)">
+              <el-button v-permission="'project-register:trace:view'" size="small" @click="openTrace(row)">
+                流程轨迹
+              </el-button>
+              <el-button size="small" @click="openProcessOverview(row.id)">流程详情</el-button>
+              <el-button
+                v-permission="'project-register:delete'"
+                size="small"
+                type="danger"
+                :disabled="!canDelete(row.status)"
+                @click="removeRow(row)"
+              >
                 删除
               </el-button>
             </el-space>
@@ -62,13 +79,19 @@
     </el-card>
 
     <el-dialog v-model="dialogVisible" :title="editingId ? '编辑项目登记' : '新建项目登记'" width="1180px">
-      <el-form label-width="112px">
+      <el-form ref="formRef" :model="form" label-width="112px" status-icon>
         <el-row :gutter="12">
           <el-col :span="12">
-            <el-form-item label="合同" required>
+            <el-form-item
+              label="合同"
+              prop="contractId"
+              :rules="requiredRule('请选择合同', 'change')"
+              required
+            >
               <el-select
                 v-model="form.contractId"
                 filterable
+                :loading="contractOptionsLoading"
                 placeholder="请选择已归档合同" style="width: 100%"
               >
                 <el-option
@@ -81,8 +104,18 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="合同年份" required>
-              <el-select v-model="form.contractYear" placeholder="请选择年份" style="width: 100%">
+            <el-form-item
+              label="合同年份"
+              prop="contractYear"
+              :rules="requiredRule('请选择合同年份', 'change')"
+              required
+            >
+              <el-select
+                v-model="form.contractYear"
+                placeholder="请选择年份"
+                :disabled="!form.contractId"
+                style="width: 100%"
+              >
                 <el-option
                   v-for="year in yearOptions"
                   :key="year"
@@ -94,6 +127,14 @@
             </el-form-item>
           </el-col>
         </el-row>
+
+        <el-alert
+          v-if="archivedContracts.length === 0"
+          type="warning"
+          show-icon
+          :closable="false"
+          title="当前无可选已归档合同。请先在“合同归档”页面完成归档后再创建项目登记。"
+        />
 
         <el-alert
           type="warning"
@@ -108,6 +149,7 @@
               <div class="system-card-header">
                 <strong>系统明细 {{ index + 1 }}</strong>
                 <el-button
+                  v-permission="['project-register:create', 'project-register:update']"
                   type="danger"
                   plain
                   :disabled="form.systemItems.length <= 1"
@@ -120,12 +162,22 @@
 
             <el-row :gutter="12">
               <el-col :span="12">
-                <el-form-item label="系统名称" required>
+                <el-form-item
+                  label="系统名称"
+                  :prop="`systemItems.${index}.systemName`"
+                  :rules="requiredRule('请输入系统名称', 'blur')"
+                  required
+                >
                   <el-input v-model="item.systemName" placeholder="请输入系统名" />
                 </el-form-item>
               </el-col>
               <el-col :span="12">
-                <el-form-item label="备案机关" required>
+                <el-form-item
+                  label="备案机关"
+                  :prop="`systemItems.${index}.filingAgency`"
+                  :rules="requiredRule('请输入备案机关', 'blur')"
+                  required
+                >
                   <el-input v-model="item.filingAgency" placeholder="请输入备案机关" />
                 </el-form-item>
               </el-col>
@@ -133,7 +185,12 @@
 
             <el-row :gutter="12">
               <el-col :span="8">
-                <el-form-item label="安全保护等级" required>
+                <el-form-item
+                  label="安全保护等级"
+                  :prop="`systemItems.${index}.securityLevel`"
+                  :rules="requiredRule('请选择安全保护等级', 'change')"
+                  required
+                >
                   <el-select v-model="item.securityLevel" style="width: 100%">
                     <el-option label="第二" value="SECOND_LEVEL" />
                     <el-option label="第三" value="THIRD_LEVEL" />
@@ -142,7 +199,12 @@
                 </el-form-item>
               </el-col>
               <el-col :span="8">
-                <el-form-item label="是否复测" required>
+                <el-form-item
+                  label="是否复测"
+                  :prop="`systemItems.${index}.reassessment`"
+                  :rules="requiredBooleanRule('请选择是否复测')"
+                  required
+                >
                   <el-select v-model="item.reassessment" style="width: 100%">
                     <el-option label="是" :value="true" />
                     <el-option label="否" :value="false" />
@@ -150,7 +212,12 @@
                 </el-form-item>
               </el-col>
               <el-col :span="8">
-                <el-form-item label="要求入场时间" required>
+                <el-form-item
+                  label="要求入场时间"
+                  :prop="`systemItems.${index}.requiredEntryDate`"
+                  :rules="requiredRule('请选择要求入场时间', 'change')"
+                  required
+                >
                   <el-date-picker
                     v-model="item.requiredEntryDate"
                     type="date"
@@ -164,7 +231,12 @@
 
             <el-row :gutter="12">
               <el-col :span="8">
-                <el-form-item label="报告交付日期" required>
+                <el-form-item
+                  label="报告交付日期"
+                  :prop="`systemItems.${index}.requiredReportDeliveryDate`"
+                  :rules="requiredRule('请选择报告交付日期', 'change')"
+                  required
+                >
                   <el-date-picker
                     v-model="item.requiredReportDeliveryDate"
                     type="date"
@@ -175,12 +247,22 @@
                 </el-form-item>
               </el-col>
               <el-col :span="8">
-                <el-form-item label="被测单位名称" required>
+                <el-form-item
+                  label="被测单位名称"
+                  :prop="`systemItems.${index}.assessedUnitName`"
+                  :rules="requiredRule('请输入被测单位名称', 'blur')"
+                  required
+                >
                   <el-input v-model="item.assessedUnitName" placeholder="请输入被测单位名称" />
                 </el-form-item>
               </el-col>
               <el-col :span="8">
-                <el-form-item label="被测单位行业" required>
+                <el-form-item
+                  label="被测单位行业"
+                  :prop="`systemItems.${index}.assessedUnitIndustry`"
+                  :rules="requiredRule('请输入被测单位行业', 'blur')"
+                  required
+                >
                   <el-input v-model="item.assessedUnitIndustry" placeholder="请输入行业" />
                 </el-form-item>
               </el-col>
@@ -188,17 +270,32 @@
 
             <el-row :gutter="12">
               <el-col :span="8">
-                <el-form-item label="被测单位联系" required>
+                <el-form-item
+                  label="被测单位联系"
+                  :prop="`systemItems.${index}.assessedUnitContact`"
+                  :rules="requiredRule('请输入被测单位联系人', 'blur')"
+                  required
+                >
                   <el-input v-model="item.assessedUnitContact" placeholder="请输入联系人" />
                 </el-form-item>
               </el-col>
               <el-col :span="8">
-                <el-form-item label="联系方式" required>
+                <el-form-item
+                  label="联系方式"
+                  :prop="`systemItems.${index}.assessedUnitMobile`"
+                  :rules="requiredRule('请输入联系方式', 'blur')"
+                  required
+                >
                   <el-input v-model="item.assessedUnitMobile" placeholder="请输入联系方式" />
                 </el-form-item>
               </el-col>
               <el-col :span="8">
-                <el-form-item label="项目地址" required>
+                <el-form-item
+                  label="项目地址"
+                  :prop="`systemItems.${index}.assessedUnitAddress`"
+                  :rules="requiredRule('请输入项目地址', 'blur')"
+                  required
+                >
                   <el-input v-model="item.assessedUnitAddress" placeholder="请输入地址" />
                 </el-form-item>
               </el-col>
@@ -206,7 +303,12 @@
 
             <el-row :gutter="12">
               <el-col :span="8">
-                <el-form-item label="是否有备案证" required>
+                <el-form-item
+                  label="是否有备案证"
+                  :prop="`systemItems.${index}.hasFilingCertificate`"
+                  :rules="requiredBooleanRule('请选择是否有备案证')"
+                  required
+                >
                   <el-select v-model="item.hasFilingCertificate" style="width: 100%">
                     <el-option label="是" :value="true" />
                     <el-option label="否" :value="false" />
@@ -248,7 +350,12 @@
 
             <el-row :gutter="12">
               <el-col :span="12">
-                <el-form-item label="是否有备案表" required>
+                <el-form-item
+                  label="是否有备案表"
+                  :prop="`systemItems.${index}.hasFilingForm`"
+                  :rules="requiredBooleanRule('请选择是否有备案表')"
+                  required
+                >
                   <el-select v-model="item.hasFilingForm" style="width: 100%">
                     <el-option label="是" :value="true" />
                     <el-option label="否" :value="false" />
@@ -270,7 +377,12 @@
 
             <el-row :gutter="12">
               <el-col :span="12">
-                <el-form-item label="是否有定级报告" required>
+                <el-form-item
+                  label="是否有定级报告"
+                  :prop="`systemItems.${index}.hasClassificationReport`"
+                  :rules="requiredBooleanRule('请选择是否有定级报告')"
+                  required
+                >
                   <el-select v-model="item.hasClassificationReport" style="width: 100%">
                     <el-option label="是" :value="true" />
                     <el-option label="否" :value="false" />
@@ -292,49 +404,62 @@
           </el-card>
         </div>
 
-        <el-button plain @click="addSystemItem">新增系统明细</el-button>
+        <el-button v-permission="['project-register:create', 'project-register:update']" plain @click="addSystemItem">
+          新增系统明细
+        </el-button>
       </el-form>
 
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="saveRow">保存</el-button>
+        <el-button
+          v-permission="['project-register:create', 'project-register:update']"
+          type="primary"
+          :loading="submitting"
+          @click="saveRow"
+        >
+          保存
+        </el-button>
       </template>
     </el-dialog>
 
-    <el-drawer v-model="traceVisible" title="流程轨迹" size="600px">
-      <el-empty v-if="traceRows.length === 0" description="暂无流程轨迹" />
-      <el-timeline v-else>
-        <el-timeline-item
-          v-for="item in traceRows"
-          :key="item.id"
-          :timestamp="item.createdAt"
-          :type="traceType(item.action)"
-        >
-          <div class="trace-title">{{ traceActionLabel(item.action) }}</div>
-          <div class="trace-line">
-            状态流转：{{ statusLabel(item.fromStatus || "-") }} -> {{ statusLabel(item.toStatus || "-") }}
-          </div>
-          <div class="trace-line">流程状态：{{ workflowStatusLabel(item.workflowStatus) }}</div>
-          <div class="trace-line">处理人：{{ item.operator }}</div>
-          <div class="trace-line" v-if="item.remark">备注：{{ item.remark }}</div>
-        </el-timeline-item>
-      </el-timeline>
-    </el-drawer>
+    <el-dialog v-model="traceDialogVisible" title="流程轨迹" width="min(760px, 94vw)" top="6vh">
+      <div class="trace-panel">
+        <el-empty v-if="traceRows.length === 0" description="暂无流程轨迹" />
+        <el-timeline v-else>
+          <el-timeline-item
+            v-for="item in traceRows"
+            :key="item.id"
+            :timestamp="item.createdAt"
+            :type="traceType(item.action)"
+          >
+            <div class="trace-title">{{ traceActionLabel(item.action) }}</div>
+            <div class="trace-line">
+              状态流转：{{ statusLabel(item.fromStatus || "-") }} -> {{ statusLabel(item.toStatus || "-") }}
+            </div>
+            <div class="trace-line">流程状态：{{ workflowStatusLabel(item.workflowStatus) }}</div>
+            <div class="trace-line">处理人：{{ item.operator }}</div>
+            <div class="trace-line" v-if="item.remark">备注：{{ item.remark }}</div>
+          </el-timeline-item>
+        </el-timeline>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 /**
- * @input Project register APIs, contract archive list, and workflow trace APIs for full node-5 lifecycle handling
- * @output Node-5 project register UI with create/edit/submit/delete actions and workflow trace visualization
- * @position Project registration stage page enforcing archived-contract selection and system-detail completeness
+ * @input Project-register APIs, project-register contract options, permission helpers, and workflow trace APIs
+ * @output Node-5 project register UI with action-level button permissions, archived-contract selectable options, and built-in form validation feedback
+ * @position Project registration stage page enforcing archived-contract selection, explicit validation feedback, and system-detail completeness
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
-import { computed, onMounted, reactive, ref, watch } from "vue";
-import { ElMessage, ElMessageBox } from "element-plus";
+import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
+import { useRouter } from "vue-router";
+import { ElMessage, ElMessageBox, type FormInstance, type FormItemRule } from "element-plus";
 import {
   createProjectRegister,
   deleteProjectRegister,
+  fetchProjectRegisterContractOptions,
   fetchProjectRegisterDetail,
   fetchProjectRegisterTrace,
   fetchProjectRegisters,
@@ -345,32 +470,45 @@ import {
   type ProjectSystemItemPayload,
   type WorkflowTraceRecord
 } from "./project-register-service";
-import { fetchContracts, type ContractRecord } from "./contract-service";
+import { toProcessOverviewPath } from "./process-overview-service";
+import type { ContractRecord } from "./contract-service";
+import { hasPermission } from "./permission";
 
-interface FormSystemItem extends ProjectSystemItemPayload {
+interface FormSystemItem
+  extends Omit<
+    ProjectSystemItemPayload,
+    "reassessment" | "hasFilingCertificate" | "hasFilingForm" | "hasClassificationReport"
+  > {
+  reassessment: boolean | null;
+  hasFilingCertificate: boolean | null;
+  hasFilingForm: boolean | null;
+  hasClassificationReport: boolean | null;
   filingCertificateFilesText: string;
   filingFormFilesText: string;
   classificationReportFilesText: string;
 }
 
 interface FormState {
-  contractId: number;
-  contractYear: number;
+  contractId: number | null;
+  contractYear: number | null;
   systemItems: FormSystemItem[];
 }
 
+const router = useRouter();
 const loading = ref(false);
 const submitting = ref(false);
+const contractOptionsLoading = ref(false);
+const formRef = ref<FormInstance>();
 const rows = ref<ProjectRegisterRecord[]>([]);
 const contracts = ref<ContractRecord[]>([]);
 const dialogVisible = ref(false);
 const editingId = ref<number | null>(null);
-const traceVisible = ref(false);
+const traceDialogVisible = ref(false);
 const traceRows = ref<WorkflowTraceRecord[]>([]);
 
 const form = reactive<FormState>({
-  contractId: 0,
-  contractYear: 0,
+  contractId: null,
+  contractYear: null,
   systemItems: [newSystemItem()]
 });
 
@@ -402,12 +540,12 @@ watch(
   () => form.contractId,
   (value) => {
     if (!value) {
-      form.contractYear = 0;
+      form.contractYear = null;
       return;
     }
     const options = yearOptions.value.filter((year) => !isYearDisabled(year));
-    if (!options.includes(form.contractYear)) {
-      form.contractYear = options[0] ?? 0;
+    if (form.contractYear === null || !options.includes(form.contractYear)) {
+      form.contractYear = options[0] ?? null;
     }
     form.systemItems.forEach((item) => applyContractPreset(item));
   }
@@ -418,7 +556,7 @@ function newSystemItem(): FormSystemItem {
     systemName: "",
     filingAgency: "",
     securityLevel: "",
-    reassessment: false,
+    reassessment: null,
     requiredEntryDate: "",
     requiredReportDeliveryDate: "",
     assessedUnitName: "",
@@ -426,18 +564,37 @@ function newSystemItem(): FormSystemItem {
     assessedUnitContact: "",
     assessedUnitMobile: "",
     assessedUnitAddress: "",
-    hasFilingCertificate: false,
+    hasFilingCertificate: null,
     filingCertificateFiles: [],
     filingCertificateNo: "",
     filingCertificateIssuedAt: "",
-    hasFilingForm: false,
+    hasFilingForm: null,
     filingFormFiles: [],
-    hasClassificationReport: false,
+    hasClassificationReport: null,
     classificationReportFiles: [],
     filingCertificateFilesText: "",
     filingFormFilesText: "",
     classificationReportFilesText: ""
   };
+}
+
+function requiredRule(message: string, trigger: "blur" | "change" = "blur"): FormItemRule[] {
+  return [{ required: true, message, trigger }];
+}
+
+function requiredBooleanRule(message: string): FormItemRule[] {
+  return [
+    {
+      trigger: "change",
+      validator: (_rule, value, callback) => {
+        if (value === null || value === undefined) {
+          callback(new Error(message));
+          return;
+        }
+        callback();
+      }
+    }
+  ];
 }
 
 function applyContractPreset(item: FormSystemItem) {
@@ -457,15 +614,21 @@ function applyContractPreset(item: FormSystemItem) {
 }
 
 function resetForm() {
-  form.contractId = 0;
-  form.contractYear = 0;
+  form.contractId = null;
+  form.contractYear = null;
   form.systemItems = [newSystemItem()];
+  formRef.value?.clearValidate();
 }
 
 function openCreate() {
+  if (archivedContracts.value.length === 0) {
+    ElMessage.warning("暂无可选已归档合同，请先在“合同归档”页面完成归档。");
+    return;
+  }
   editingId.value = null;
   resetForm();
   dialogVisible.value = true;
+  nextTick(() => formRef.value?.clearValidate());
 }
 
 async function openEdit(row: ProjectRegisterRecord) {
@@ -484,6 +647,7 @@ async function openEdit(row: ProjectRegisterRecord) {
       form.systemItems = [newSystemItem()];
     }
     dialogVisible.value = true;
+    nextTick(() => formRef.value?.clearValidate());
   } catch (error) {
     ElMessage.error(readErrorMessage(error, "加载项目登记详情失败"));
   }
@@ -493,10 +657,12 @@ function addSystemItem() {
   const item = newSystemItem();
   applyContractPreset(item);
   form.systemItems.push(item);
+  nextTick(() => formRef.value?.clearValidate());
 }
 
 function removeSystemItem(index: number) {
   form.systemItems.splice(index, 1);
+  nextTick(() => formRef.value?.clearValidate());
 }
 
 function parseFileLines(text: string) {
@@ -546,6 +712,9 @@ function normalizeSystemItem(item: FormSystemItem): ProjectSystemItemPayload {
 }
 
 function isYearDisabled(year: number) {
+  if (!form.contractId) {
+    return true;
+  }
   const yearSet = usedYearsByContract.value.get(form.contractId);
   if (!yearSet) {
     return false;
@@ -626,6 +795,7 @@ function validateItem(item: FormSystemItem, index: number) {
   if (!item.systemName.trim()) return `${indexLabel}缺少系统名称`;
   if (!item.filingAgency.trim()) return `${indexLabel}缺少备案机关`;
   if (!item.securityLevel) return `${indexLabel}缺少安全保护等级`;
+  if (item.reassessment === null) return `${indexLabel}缺少是否复测`;
   if (!item.requiredEntryDate) return `${indexLabel}缺少要求入场时间`;
   if (!item.requiredReportDeliveryDate) return `${indexLabel}缺少报告交付日期`;
   if (!item.assessedUnitName.trim()) return `${indexLabel}缺少被测单位名称`;
@@ -633,6 +803,9 @@ function validateItem(item: FormSystemItem, index: number) {
   if (!item.assessedUnitContact.trim()) return `${indexLabel}缺少被测单位联系人`;
   if (!item.assessedUnitMobile.trim()) return `${indexLabel}缺少联系方式`;
   if (!item.assessedUnitAddress.trim()) return `${indexLabel}缺少项目地址`;
+  if (item.hasFilingCertificate === null) return `${indexLabel}缺少是否有备案证`;
+  if (item.hasFilingForm === null) return `${indexLabel}缺少是否有备案表`;
+  if (item.hasClassificationReport === null) return `${indexLabel}缺少是否有定级报告`;
 
   const filingCertificateFiles = parseFileLines(item.filingCertificateFilesText);
   const filingFormFiles = parseFileLines(item.filingFormFilesText);
@@ -654,6 +827,23 @@ function validateItem(item: FormSystemItem, index: number) {
 }
 
 async function saveRow() {
+  if (contractOptionsLoading.value) {
+    ElMessage.info("合同选项加载中，请稍后再保存");
+    return;
+  }
+  if (archivedContracts.value.length === 0) {
+    ElMessage.warning("当前没有可用的已归档合同，无法保存项目登记。");
+    return;
+  }
+  const formInstance = formRef.value;
+  if (formInstance) {
+    try {
+      await formInstance.validate();
+    } catch {
+      ElMessage.warning("请先完善所有必填项后再保存");
+      return;
+    }
+  }
   if (!form.contractId) {
     ElMessage.warning("请选择合同");
     return;
@@ -675,8 +865,8 @@ async function saveRow() {
   submitting.value = true;
   try {
     const payload: ProjectRegisterPayload = {
-      contractId: form.contractId,
-      contractYear: form.contractYear,
+      contractId: Number(form.contractId),
+      contractYear: Number(form.contractYear),
       systemItems: form.systemItems.map(normalizeSystemItem)
     };
     if (editingId.value) {
@@ -733,10 +923,14 @@ async function removeRow(row: ProjectRegisterRecord) {
   }
 }
 
+function openProcessOverview(projectId: number) {
+  void router.push(toProcessOverviewPath(projectId));
+}
+
 async function openTrace(row: ProjectRegisterRecord) {
   try {
     traceRows.value = await fetchProjectRegisterTrace(row.id);
-    traceVisible.value = true;
+    traceDialogVisible.value = true;
   } catch (error) {
     ElMessage.error(readErrorMessage(error, "加载流程轨迹失败"));
   }
@@ -745,16 +939,28 @@ async function openTrace(row: ProjectRegisterRecord) {
 async function loadAll() {
   loading.value = true;
   try {
-    const [projectRows, contractRows] = await Promise.all([
-      fetchProjectRegisters(),
-      fetchContracts()
-    ]);
-    rows.value = projectRows;
-    contracts.value = contractRows;
+    rows.value = await fetchProjectRegisters();
   } catch (error) {
     ElMessage.error(readErrorMessage(error, "加载项目登记数据失败"));
   } finally {
     loading.value = false;
+  }
+  await loadContractOptions();
+}
+
+async function loadContractOptions() {
+  if (!(hasPermission("project-register:create") || hasPermission("project-register:update"))) {
+    contracts.value = [];
+    return;
+  }
+  contractOptionsLoading.value = true;
+  try {
+    contracts.value = await fetchProjectRegisterContractOptions();
+  } catch (error) {
+    contracts.value = [];
+    ElMessage.error(readErrorMessage(error, "加载项目登记可选合同失败"));
+  } finally {
+    contractOptionsLoading.value = false;
   }
 }
 
@@ -764,31 +970,14 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.page {
-  max-width: 1280px;
-  margin: 24px auto;
-  padding: 0 12px;
-}
-
-.page-header {
-  margin-bottom: 16px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-}
-
-.page-header h2 {
-  margin: 0;
-}
-
-.page-header p {
-  margin: 6px 0 0;
-  color: #6f7b8a;
-}
-
 .tip-card {
-  margin-bottom: 16px;
+  border: 1px solid rgba(31, 152, 122, 0.2);
+  background: linear-gradient(92deg, rgba(45, 184, 146, 0.08), rgba(47, 110, 162, 0.05));
+}
+
+.table-card {
+  background: linear-gradient(180deg, #ffffff, #fbfcfc);
+  border: 1px solid rgba(211, 225, 230, 0.88);
 }
 
 .system-list {
@@ -809,8 +998,14 @@ onMounted(() => {
   margin-bottom: 4px;
 }
 
+.trace-panel {
+  max-height: min(66vh, 640px);
+  overflow: auto;
+}
+
 .trace-line {
   line-height: 1.7;
-  color: #4d5b69;
+  color: var(--np-color-text-secondary);
 }
 </style>
+

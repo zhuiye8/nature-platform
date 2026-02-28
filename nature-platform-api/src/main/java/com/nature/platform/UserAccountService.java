@@ -23,9 +23,12 @@ public class UserAccountService {
   public static final String ROLE_SUPER_ADMIN = "ROLE_SUPER_ADMIN";
   public static final String ROLE_REVIEWER = "ROLE_REVIEWER";
   public static final String ROLE_REVIEW_TECH = "ROLE_REVIEW_TECH";
-  public static final String ROLE_REVIEW_CONTENT_A = "ROLE_REVIEW_CONTENT_A";
-  public static final String ROLE_REVIEW_CONTENT_B = "ROLE_REVIEW_CONTENT_B";
-  public static final String ROLE_REVIEW_CONTENT_C = "ROLE_REVIEW_CONTENT_C";
+  public static final String ROLE_REVIEW_CONTENT_TECH = "ROLE_REVIEW_CONTENT_TECH";
+  public static final String ROLE_REVIEW_CONTENT_MANAGEMENT = "ROLE_REVIEW_CONTENT_MANAGEMENT";
+  public static final String ROLE_REVIEW_CONTENT_NETWORK = "ROLE_REVIEW_CONTENT_NETWORK";
+  @Deprecated public static final String ROLE_REVIEW_CONTENT_A = ROLE_REVIEW_CONTENT_TECH;
+  @Deprecated public static final String ROLE_REVIEW_CONTENT_B = ROLE_REVIEW_CONTENT_MANAGEMENT;
+  @Deprecated public static final String ROLE_REVIEW_CONTENT_C = ROLE_REVIEW_CONTENT_NETWORK;
 
   private final JdbcTemplate jdbcTemplate;
 

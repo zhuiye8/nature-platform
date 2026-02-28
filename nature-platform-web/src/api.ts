@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @input Axios client; auth store for bearer token injection; router for auth redirects
  * @output apiClient instance and typed ApiResponse contract for backend communication
  * @position HTTP infrastructure layer centralizing request headers and 401/403 interception

@@ -1,6 +1,6 @@
 /**
- * @input PoliceRegisterService operations, authentication principal, and request validation data
- * @output /api/v1/police-registers endpoints for node-7 list/detail/save/submit operations
+ * @input PoliceRegisterService operations, AdminAccessService guards, authentication principal, and request validation data
+ * @output /api/v1/police-registers endpoints for node-7 list/detail/save/submit operations with action-level guards
  * @position HTTP adapter for police registration stage management in the project workflow chain
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
@@ -23,18 +23,26 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/police-registers")
 public class PoliceRegisterController {
   private final PoliceRegisterService policeRegisterService;
+  private final AdminAccessService adminAccessService;
 
-  public PoliceRegisterController(PoliceRegisterService policeRegisterService) {
+  public PoliceRegisterController(
+      PoliceRegisterService policeRegisterService, AdminAccessService adminAccessService) {
     this.policeRegisterService = policeRegisterService;
+    this.adminAccessService = adminAccessService;
   }
 
   @GetMapping
-  public ApiResponse<List<PoliceRegisterRecord>> list() {
+  public ApiResponse<List<PoliceRegisterRecord>> list(Authentication authentication) {
+    adminAccessService.requirePermission(
+        CurrentUser.username(authentication), BusinessPermissionCodes.POLICE_REGISTER_VIEW);
     return ApiResponse.success(policeRegisterService.list());
   }
 
   @GetMapping("/{projectId}")
-  public ResponseEntity<ApiResponse<PoliceRegisterRecord>> detail(@PathVariable long projectId) {
+  public ResponseEntity<ApiResponse<PoliceRegisterRecord>> detail(
+      Authentication authentication, @PathVariable long projectId) {
+    adminAccessService.requirePermission(
+        CurrentUser.username(authentication), BusinessPermissionCodes.POLICE_REGISTER_VIEW);
     return policeRegisterService
         .detail(projectId)
         .map(item -> ResponseEntity.ok(ApiResponse.success(item)))
@@ -49,12 +57,16 @@ public class PoliceRegisterController {
       Authentication authentication,
       @PathVariable long projectId,
       @Valid @RequestBody PoliceRegisterRequest request) {
+    adminAccessService.requirePermission(
+        CurrentUser.username(authentication), BusinessPermissionCodes.POLICE_REGISTER_SAVE);
     return ApiResponse.success(
         policeRegisterService.save(projectId, request, CurrentUser.username(authentication)));
   }
 
   @PostMapping("/{projectId}/submit")
   public ApiResponse<PoliceRegisterRecord> submit(Authentication authentication, @PathVariable long projectId) {
+    adminAccessService.requirePermission(
+        CurrentUser.username(authentication), BusinessPermissionCodes.POLICE_REGISTER_SUBMIT);
     return ApiResponse.success(policeRegisterService.submit(projectId, CurrentUser.username(authentication)));
   }
 }

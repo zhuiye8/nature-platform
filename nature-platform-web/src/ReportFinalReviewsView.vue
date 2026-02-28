@@ -1,17 +1,26 @@
-<template>
+﻿<template>
   <div class="page-shell page section-stack">
     <header class="page-header">
       <div>
         <h2>报告最终审核</h2>
-        <p>节点 15：设置最终审核人并提交，审核动作在待办审批中处理</p>
+        <p>节点 15：设置最终审核人后自动进入待办任务，审核动作可在待办审批或详情页处理</p>
       </div>
       <el-space>
         <el-button :loading="loading" @click="loadRows">刷新</el-button>
-        <el-button type="primary" @click="goWorkflow">打开待办审批</el-button>
+        <el-button v-permission="'workflow-task:view'" type="primary" @click="goWorkflow">打开待办审批</el-button>
       </el-space>
     </header>
 
-    <el-card>
+    <el-card class="tip-card">
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        title="最终审核人配置保存后将自动同步待办任务，本页不再提供手工提交入口。"
+      />
+    </el-card>
+
+    <el-card class="table-card">
       <el-table :data="rows" v-loading="loading" empty-text="暂无可处理项">
         <el-table-column prop="projectRegisterId" label="项目ID" width="90" />
         <el-table-column prop="applicationName" label="申请单名称" min-width="240" show-overflow-tooltip />
@@ -21,25 +30,20 @@
           </template>
         </el-table-column>
         <el-table-column prop="reviewer" label="最终审核人" width="140" />
-        <el-table-column prop="status" label="状态" width="120">
+        <el-table-column label="任务状态" width="120">
           <template #default="{ row }">
-            <el-tag :type="statusTagType(row.status)">{{ statusLabel(row.status) }}</el-tag>
+            <el-tag :type="statusTagType(resolveStatus(row))">{{ statusLabel(resolveStatus(row)) }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="versionNo" label="版本" width="80" />
         <el-table-column prop="workflowNode" label="流程节点" width="180" show-overflow-tooltip />
-        <el-table-column label="操作" width="250" fixed="right">
+        <el-table-column label="操作" width="260" fixed="right">
           <template #default="{ row }">
             <el-space>
-              <el-button size="small" @click="openDialog(row)">编辑</el-button>
-              <el-button
-                size="small"
-                type="success"
-                :disabled="!canSubmit(row.status)"
-                @click="submitRow(row)"
-              >
-                提交审核
+              <el-button v-permission="'report-final-review:save'" size="small" @click="openDialog(row)">
+                编辑
               </el-button>
+              <el-button size="small" @click="openDetail(row)">详情</el-button>
             </el-space>
           </template>
         </el-table-column>
@@ -68,7 +72,14 @@
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="saveForm">保存</el-button>
+        <el-button
+          v-permission="'report-final-review:save'"
+          type="primary"
+          :loading="saving"
+          @click="saveForm"
+        >
+          保存
+        </el-button>
       </template>
     </el-dialog>
   </div>
@@ -76,21 +87,22 @@
 
 <script setup lang="ts">
 /**
- * @input Report final review APIs and candidate user pool for assignment and submission operations
- * @output Node-15 final review management UI supporting reviewer assignment save and submit transitions
- * @position Report final review page orchestrating last-stage reviewer config before workflow task handling
+ * @input Report final review APIs, permission helper, and conditional candidate user-pool query for assignment operations
+ * @output Node-15 final review management UI supporting permission-gated reviewer assignment save and unified detail-page jump
+ * @position Report final review page orchestrating last-stage reviewer config with auto task-sync and task-detail route entry
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
-import { onMounted, reactive, ref } from "vue";
-import { ElMessage, ElMessageBox } from "element-plus";
+import { computed, onMounted, reactive, ref } from "vue";
+import { ElMessage } from "element-plus";
 import { useRouter } from "vue-router";
+import { hasPermission } from "./permission";
 import {
   fetchReportFinalReviewCandidates,
   fetchReportFinalReviews,
   saveReportFinalReview,
-  submitReportFinalReview,
   type ReportFinalReviewRecord
 } from "./report-final-review-service";
+import { toTaskDetailPath } from "./task-detail-service";
 
 interface FormState {
   projectRegisterId: number;
@@ -105,6 +117,7 @@ const saving = ref(false);
 const dialogVisible = ref(false);
 const rows = ref<ReportFinalReviewRecord[]>([]);
 const candidates = ref<string[]>([]);
+const canLoadCandidates = computed(() => hasPermission("report-final-review:candidate:view"));
 
 const form = reactive<FormState>({
   projectRegisterId: 0,
@@ -115,21 +128,28 @@ const form = reactive<FormState>({
 
 function statusLabel(status?: string) {
   if (status === "DRAFT") return "草稿";
-  if (status === "SUBMITTED") return "已提交";
+  if (status === "SUBMITTED" || status === "PENDING") return "待审核";
   if (status === "APPROVED") return "已通过";
-  if (status === "REJECTED") return "已驳回";
+  if (status === "REJECTED") return "需整改";
+  if (status === "CLOSED") return "已关闭";
   return status || "-";
 }
 
 function statusTagType(status?: string) {
   if (status === "APPROVED") return "success";
-  if (status === "SUBMITTED") return "warning";
+  if (status === "SUBMITTED" || status === "PENDING") return "warning";
   if (status === "REJECTED") return "danger";
   return "info";
 }
 
-function canSubmit(status: string) {
-  return status !== "SUBMITTED";
+function resolveStatus(row: ReportFinalReviewRecord) {
+  if (row.displayStatus) {
+    return row.displayStatus;
+  }
+  if (row.taskStatus) {
+    return row.taskStatus;
+  }
+  return row.status;
 }
 
 function readErrorMessage(error: unknown, fallback: string) {
@@ -142,7 +162,7 @@ async function loadRows() {
   try {
     const [list, users] = await Promise.all([
       fetchReportFinalReviews(),
-      fetchReportFinalReviewCandidates()
+      canLoadCandidates.value ? fetchReportFinalReviewCandidates() : Promise.resolve([])
     ]);
     rows.value = list;
     candidates.value = users;
@@ -173,7 +193,7 @@ async function saveForm() {
       remark: form.remark.trim(),
       versionNo: form.versionNo
     });
-    ElMessage.success("最终审核配置已保存");
+    ElMessage.success("最终审核配置已保存，并已同步待办任务");
     dialogVisible.value = false;
     await loadRows();
   } catch (error) {
@@ -183,28 +203,13 @@ async function saveForm() {
   }
 }
 
-async function submitRow(row: ReportFinalReviewRecord) {
-  try {
-    await ElMessageBox.confirm(`确认提交项目 ${row.projectRegisterId} 的最终审核吗？`, "提交确认", {
-      type: "warning",
-      confirmButtonText: "确认",
-      cancelButtonText: "取消"
-    });
-  } catch {
-    return;
-  }
-
-  try {
-    await submitReportFinalReview(row.projectRegisterId);
-    ElMessage.success("最终审核已提交");
-    await loadRows();
-  } catch (error) {
-    ElMessage.error(readErrorMessage(error, "提交最终审核失败"));
-  }
-}
-
 function goWorkflow() {
   void router.push("/workflow");
+}
+
+function openDetail(row: ReportFinalReviewRecord) {
+  const taskKey = row.taskId ? `REPORT_FINAL_REVIEW:${row.taskId}` : undefined;
+  void router.push(toTaskDetailPath("REPORT_FINAL_REVIEW", row.projectRegisterId, taskKey));
 }
 
 onMounted(() => {
@@ -213,26 +218,14 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.page {
-  max-width: 1320px;
-  margin: 24px auto;
-  padding: 0 12px;
+.tip-card {
+  border: 1px solid rgba(31, 152, 122, 0.2);
+  background: linear-gradient(92deg, rgba(45, 184, 146, 0.08), rgba(47, 110, 162, 0.05));
 }
 
-.page-header {
-  margin-bottom: 16px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-}
-
-.page-header h2 {
-  margin: 0;
-}
-
-.page-header p {
-  margin: 6px 0 0;
-  color: #6f7b8a;
+.table-card {
+  background: linear-gradient(180deg, #ffffff, #fbfcfc);
+  border: 1px solid rgba(211, 225, 230, 0.88);
 }
 </style>
+

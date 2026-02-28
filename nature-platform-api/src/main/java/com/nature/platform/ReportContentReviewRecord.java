@@ -1,7 +1,7 @@
 /**
  * @input report_content_review_apply/task with workflow and project assignment joins
- * @output ReportContentReviewRecord response model for node-12 list/detail APIs
- * @position Node-12 read model aggregating A/B/C reviewers and multi-task review outcomes
+ * @output ReportContentReviewRecord response model for node-12 list/detail APIs with unified displayStatus
+ * @position Node-12 read model aggregating technical/management/network reviewers and multi-task review outcomes
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 package com.nature.platform;
@@ -18,6 +18,7 @@ public class ReportContentReviewRecord {
   private String reviewerB;
   private String reviewerC;
   private String status;
+  private String displayStatus;
   private String appliedBy;
   private String submittedAt;
   private String finishedAt;
@@ -81,12 +82,44 @@ public class ReportContentReviewRecord {
     this.reviewerC = reviewerC;
   }
 
+  public String getReviewerTech() {
+    return reviewerA;
+  }
+
+  public void setReviewerTech(String reviewerTech) {
+    this.reviewerA = reviewerTech;
+  }
+
+  public String getReviewerManagement() {
+    return reviewerB;
+  }
+
+  public void setReviewerManagement(String reviewerManagement) {
+    this.reviewerB = reviewerManagement;
+  }
+
+  public String getReviewerNetwork() {
+    return reviewerC;
+  }
+
+  public void setReviewerNetwork(String reviewerNetwork) {
+    this.reviewerC = reviewerNetwork;
+  }
+
   public String getStatus() {
     return status;
   }
 
   public void setStatus(String status) {
     this.status = status;
+  }
+
+  public String getDisplayStatus() {
+    return displayStatus;
+  }
+
+  public void setDisplayStatus(String displayStatus) {
+    this.displayStatus = displayStatus;
   }
 
   public String getAppliedBy() {

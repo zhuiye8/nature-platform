@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$BaseUrl = "http://127.0.0.1:18080"
 )
 
@@ -178,10 +178,19 @@ try {
     -Pass ($projectSubmitResp.status -eq 200) `
     -Detail $projectSubmitResp.raw
 
+  $projectTodoResp =
+    Invoke-E2EApi -Context $context `
+      -Method "Get" `
+      -Path "/api/v1/workflow/tasks/todo?type=PROJECT_REGISTER" `
+      -Token $adminToken
+  $projectTodoRows = @($projectTodoResp.body.data | Where-Object { [long]$_.bizId -eq [long]$projectId })
+  if ($projectTodoRows.Count -lt 1) {
+    throw "project register todo task not found for hp02"
+  }
   $projectApproveResp =
     Invoke-E2EApi -Context $context `
       -Method "Post" `
-      -Path "/api/v1/workflow/tasks/PROJECT_REGISTER:$projectId/approve" `
+      -Path "/api/v1/workflow/tasks/$([string]$projectTodoRows[0].taskId)/approve" `
       -Token $adminToken
   Add-E2EResult -Context $context `
     -CaseName "approve_project_register_review" `
@@ -275,9 +284,9 @@ try {
       -Token $adminToken
   $candidatesData = $candidatesResp.body.data
   $techUsers = @($candidatesData.techReviewers)
-  $aUsers = @($candidatesData.contentReviewersA)
-  $bUsers = @($candidatesData.contentReviewersB)
-  $cUsers = @($candidatesData.contentReviewersC)
+  $aUsers = @($candidatesData.contentReviewersTech)
+  $bUsers = @($candidatesData.contentReviewersManagement)
+  $cUsers = @($candidatesData.contentReviewersNetwork)
   $candidatePass =
     $candidatesResp.status -eq 200 -and
     $techUsers.Count -gt 0 -and
@@ -286,7 +295,7 @@ try {
     $cUsers.Count -gt 0
   Add-E2EResult -Context $context `
     -CaseName "on_site_reviewer_candidates_ready" `
-    -Expected "200 + tech/A/B/C all non-empty" `
+    -Expected "200 + tech+内容技术/管理/网络 all non-empty" `
     -Actual "status=$($candidatesResp.status), tech=$($techUsers.Count), A=$($aUsers.Count), B=$($bUsers.Count), C=$($cUsers.Count)" `
     -Pass $candidatePass `
     -Detail $candidatesResp.raw
@@ -296,9 +305,9 @@ try {
 
   $assignPayload = @{
     techReviewer = [string]$techUsers[0]
-    contentReviewerA = [string]$aUsers[0]
-    contentReviewerB = [string]$bUsers[0]
-    contentReviewerC = [string]$cUsers[0]
+    contentReviewerTech = [string]$aUsers[0]
+    contentReviewerManagement = [string]$bUsers[0]
+    contentReviewerNetwork = [string]$cUsers[0]
     versionNo = 0
   }
   $assignResp =
@@ -324,13 +333,13 @@ try {
   $detailPass =
     $onSiteDetailResp.status -eq 200 -and
     [string]$detailData.techReviewer -eq $assignPayload.techReviewer -and
-    [string]$detailData.contentReviewerA -eq $assignPayload.contentReviewerA -and
-    [string]$detailData.contentReviewerB -eq $assignPayload.contentReviewerB -and
-    [string]$detailData.contentReviewerC -eq $assignPayload.contentReviewerC
+    [string]$detailData.contentReviewerTech -eq $assignPayload.contentReviewerTech -and
+    [string]$detailData.contentReviewerManagement -eq $assignPayload.contentReviewerManagement -and
+    [string]$detailData.contentReviewerNetwork -eq $assignPayload.contentReviewerNetwork
   Add-E2EResult -Context $context `
     -CaseName "on_site_assignment_detail_assertion" `
     -Expected "200 + reviewer fields matched" `
-    -Actual "status=$($onSiteDetailResp.status), tech=$($detailData.techReviewer), A=$($detailData.contentReviewerA), B=$($detailData.contentReviewerB), C=$($detailData.contentReviewerC)" `
+    -Actual "status=$($onSiteDetailResp.status), tech=$($detailData.techReviewer), A=$($detailData.contentReviewerTech), B=$($detailData.contentReviewerManagement), C=$($detailData.contentReviewerNetwork)" `
     -Pass $detailPass `
     -Detail $onSiteDetailResp.raw
 
@@ -355,9 +364,9 @@ try {
   $onSiteWorkflowNode = [string]$onSiteAfterSubmitResp.body.data.workflowNode
   Add-E2EResult -Context $context `
     -CaseName "on_site_workflow_to_report_tech" `
-    -Expected "200 + workflowNode=REPORT_TECH_REVIEW_APPLY" `
+    -Expected "200 + workflowNode=REPORT_TECH_REVIEW_TASK" `
     -Actual "status=$($onSiteAfterSubmitResp.status), workflowNode=$onSiteWorkflowNode" `
-    -Pass ($onSiteAfterSubmitResp.status -eq 200 -and $onSiteWorkflowNode -eq "REPORT_TECH_REVIEW_APPLY") `
+    -Pass ($onSiteAfterSubmitResp.status -eq 200 -and $onSiteWorkflowNode -eq "REPORT_TECH_REVIEW_TASK") `
     -Detail $onSiteAfterSubmitResp.raw
 
   $qualityDetailResp =
@@ -403,3 +412,6 @@ try {
 }
 
 Complete-E2EResults -Context $context
+
+
+

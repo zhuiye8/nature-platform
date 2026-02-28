@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @input apiClient and ApiResponse from shared HTTP infrastructure
  * @output Node-9/10 quality-review list/detail/assignment/submit API wrappers and types
  * @position Frontend service layer for quality-review assignment and apply submission workflows
@@ -24,6 +24,9 @@ export interface QualityReviewRecord {
   onSitePackageObjectKey?: string;
   status: string;
   techReviewer?: string;
+  contentReviewerTech?: string;
+  contentReviewerManagement?: string;
+  contentReviewerNetwork?: string;
   contentReviewerA?: string;
   contentReviewerB?: string;
   contentReviewerC?: string;
@@ -38,22 +41,39 @@ export interface QualityReviewRecord {
 
 export interface QualityReviewAssignmentPayload {
   techReviewer: string;
-  contentReviewerA: string;
-  contentReviewerB: string;
-  contentReviewerC: string;
+  contentReviewerTech: string;
+  contentReviewerManagement: string;
+  contentReviewerNetwork: string;
   versionNo: number;
+}
+
+function normalizeRecord(record: QualityReviewRecord): QualityReviewRecord {
+  const contentReviewerTech = record.contentReviewerTech ?? record.contentReviewerA;
+  const contentReviewerManagement =
+    record.contentReviewerManagement ?? record.contentReviewerB;
+  const contentReviewerNetwork = record.contentReviewerNetwork ?? record.contentReviewerC;
+
+  return {
+    ...record,
+    contentReviewerTech,
+    contentReviewerManagement,
+    contentReviewerNetwork,
+    contentReviewerA: contentReviewerTech,
+    contentReviewerB: contentReviewerManagement,
+    contentReviewerC: contentReviewerNetwork
+  };
 }
 
 export async function fetchQualityReviews(): Promise<QualityReviewRecord[]> {
   const response = await apiClient.get<ApiResponse<QualityReviewRecord[]>>("/quality-reviews");
-  return response.data.data;
+  return response.data.data.map(normalizeRecord);
 }
 
 export async function fetchQualityReviewDetail(projectId: number): Promise<QualityReviewRecord> {
   const response = await apiClient.get<ApiResponse<QualityReviewRecord>>(
     `/quality-reviews/${projectId}`
   );
-  return response.data.data;
+  return normalizeRecord(response.data.data);
 }
 
 export async function fetchQualityReviewCandidates(): Promise<string[]> {
@@ -69,12 +89,12 @@ export async function saveQualityReviewAssignment(
     `/quality-reviews/${projectId}/assignment`,
     payload
   );
-  return response.data.data;
+  return normalizeRecord(response.data.data);
 }
 
 export async function submitQualityReview(projectId: number): Promise<QualityReviewRecord> {
   const response = await apiClient.post<ApiResponse<QualityReviewRecord>>(
     `/quality-reviews/${projectId}/submit`
   );
-  return response.data.data;
+  return normalizeRecord(response.data.data);
 }

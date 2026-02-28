@@ -10,12 +10,12 @@ import jakarta.validation.constraints.NotBlank;
 
 public class CustomerRequest {
   @NotBlank private String fullName;
-  private String industry;
-  private String region;
-  private String addressDetail;
-  private String uscc;
-  private String contactName;
-  private String mobilePhone;
+  @NotBlank private String industry;
+  @NotBlank private String region;
+  @NotBlank private String addressDetail;
+  @NotBlank private String uscc;
+  @NotBlank private String contactName;
+  @NotBlank private String mobilePhone;
   private String remark;
 
   public String getFullName() {
@@ -82,4 +82,3 @@ public class CustomerRequest {
     this.remark = remark;
   }
 }
-

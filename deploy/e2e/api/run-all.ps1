@@ -1,8 +1,18 @@
-param(
+﻿param(
   [string]$BaseUrl = "http://127.0.0.1:18080"
 )
 
 $ErrorActionPreference = "Stop"
+. "$PSScriptRoot\..\lib\common.ps1"
+
+$bootstrapContext = New-E2EContext -SuiteName "api-run-all-bootstrap" -BaseUrl $BaseUrl
+Assert-E2EApiReady -Context $bootstrapContext
+Ensure-E2EUserByAdminApi `
+  -Context $bootstrapContext `
+  -Username "normal" `
+  -Password "normal123" `
+  -DisplayName "普通用户" `
+  -Roles @("ROLE_USER")
 
 $failed = @()
 $jobs = @(
@@ -33,3 +43,6 @@ if ($failed.Count -gt 0) {
 
 Write-Output ""
 Write-Output "api e2e passed"
+
+
+
