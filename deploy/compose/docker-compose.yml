@@ -1,7 +1,6 @@
 services:
   mysql:
     image: mysql:8.4
-    container_name: nature-platform-mysql
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123456}
@@ -17,7 +16,6 @@ services:
 
   redis:
     image: redis:8.4
-    container_name: nature-platform-redis
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     ports:
@@ -27,7 +25,6 @@ services:
 
   minio:
     image: minio/minio:latest
-    container_name: nature-platform-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -43,7 +40,6 @@ services:
   api:
     build:
       context: ../../nature-platform-api
-    container_name: nature-platform-api
     restart: unless-stopped
     environment:
       SERVER_PORT: 18080
@@ -58,10 +54,13 @@ services:
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
       MINIO_BUCKET: nature-files
       JWT_SECRET: ${JWT_SECRET:-replace-with-at-least-32-bytes-secret-in-production-please}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+      CORS_ALLOWED_ORIGIN_PATTERNS: ${CORS_ALLOWED_ORIGIN_PATTERNS:-https://frp-bus.com:[*],https://frp-way.com:[*],http://localhost:[*],http://127.0.0.1:[*]}
       DINGTALK_APP_KEY: ${DINGTALK_APP_KEY:-}
       DINGTALK_APP_SECRET: ${DINGTALK_APP_SECRET:-}
       DINGTALK_CORP_ID: ${DINGTALK_CORP_ID:-}
       DINGTALK_REDIRECT_URI: ${DINGTALK_REDIRECT_URI:-http://localhost/api/v1/auth/dingtalk/callback}
+      DINGTALK_FRONTEND_REDIRECT_ORIGINS: ${DINGTALK_FRONTEND_REDIRECT_ORIGINS:-https://frp-bus.com:57970,http://localhost:5173,http://127.0.0.1:5173}
     depends_on:
       - mysql
       - redis
@@ -72,14 +71,12 @@ services:
   web:
     build:
       context: ../../nature-platform-web
-    container_name: nature-platform-web
     restart: unless-stopped
     depends_on:
       - api
 
   gateway:
     image: nginx:1.27-alpine
-    container_name: nature-platform-gateway
     restart: unless-stopped
     depends_on:
       - api

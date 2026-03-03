@@ -155,21 +155,6 @@
             <el-switch v-model="row.requiredFlag" />
           </template>
         </el-table-column>
-        <el-table-column label="最小" width="90">
-          <template #default="{ row }">
-            <el-input-number v-model="row.minCount" :min="0" :max="10" />
-          </template>
-        </el-table-column>
-        <el-table-column label="最大" width="90">
-          <template #default="{ row }">
-            <el-input-number v-model="row.maxCount" :min="1" :max="10" />
-          </template>
-        </el-table-column>
-        <el-table-column label="排序" width="90">
-          <template #default="{ row }">
-            <el-input-number v-model="row.sortOrder" :min="0" :max="999" />
-          </template>
-        </el-table-column>
         <el-table-column label="操作" width="90" fixed="right">
           <template #default="{ $index }">
             <el-button v-permission="'workflow-node-rule:manage'" link type="danger" @click="removeRuleItem($index)">
@@ -292,10 +277,7 @@ function createEmptyRuleItem(): WorkflowNodeRuleItemRecord {
     slotKey: "",
     slotLabel: "",
     roleCode: "",
-    requiredFlag: true,
-    minCount: 1,
-    maxCount: 1,
-    sortOrder: 0
+    requiredFlag: true
   };
 }
 
@@ -487,10 +469,6 @@ function validateRuleForm(): boolean {
       ElMessage.warning("规则项的槽位编码/名称/角色编码不能为空");
       return false;
     }
-    if (item.minCount < 0 || item.maxCount <= 0 || item.minCount > item.maxCount) {
-      ElMessage.warning("规则项最小/最大人数配置不合法");
-      return false;
-    }
   }
   return true;
 }
@@ -509,10 +487,7 @@ async function saveRule() {
         slotKey: item.slotKey.trim(),
         slotLabel: item.slotLabel.trim(),
         roleCode: item.roleCode.trim(),
-        requiredFlag: item.requiredFlag,
-        minCount: item.minCount,
-        maxCount: item.maxCount,
-        sortOrder: item.sortOrder
+        requiredFlag: item.requiredFlag
       }))
     });
     ElMessage.success("节点规则保存成功");

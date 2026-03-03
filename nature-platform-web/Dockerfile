@@ -1,8 +1,9 @@
 FROM node:22-alpine AS build
 WORKDIR /app
 RUN corepack enable
+ENV NODE_ENV=development
 COPY package.json pnpm-lock.yaml* ./
-RUN pnpm install --frozen-lockfile=false
+RUN pnpm install --frozen-lockfile=false --prod=false
 COPY . .
 RUN pnpm build
 
@@ -10,4 +11,3 @@ FROM nginx:1.27-alpine
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY docker/default.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
-

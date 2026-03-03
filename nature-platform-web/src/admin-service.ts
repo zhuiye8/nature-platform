@@ -192,9 +192,6 @@ export interface WorkflowNodeRuleItemRecord {
   slotLabel: string;
   roleCode: string;
   requiredFlag: boolean;
-  minCount: number;
-  maxCount: number;
-  sortOrder: number;
 }
 
 export interface WorkflowNodeRuleRecord {

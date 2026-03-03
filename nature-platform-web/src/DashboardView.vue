@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="page-shell dashboard-page section-stack">
     <header class="page-header">
       <div class="page-title-group">
@@ -25,14 +25,14 @@
       </el-card>
       <el-card class="stat-card stat-card-c" shadow="hover">
         <p class="stat-label">快捷入口</p>
-        <strong class="stat-value">{{ quickEntries.length }}</strong>
-        <span class="stat-desc">覆盖核心业务路径</span>
+        <strong class="stat-value">{{ visibleQuickEntries.length }}</strong>
+        <span class="stat-desc">按权限显示可访问业务入口</span>
       </el-card>
     </section>
 
     <el-row :gutter="12" class="entry-row">
-      <el-col v-for="item in quickEntries" :key="item.path" :xs="24" :sm="12" :md="6">
-        <el-card class="entry-card" shadow="hover" @click="go(item.path)">
+      <el-col v-for="item in visibleQuickEntries" :key="item.path" :xs="24" :sm="12" :md="6">
+        <el-card class="entry-card" shadow="hover" @click="go(item)">
           <div class="entry-head">
             <h3>{{ item.title }}</h3>
             <el-tag size="small" effect="plain">{{ item.tag }}</el-tag>
@@ -75,11 +75,11 @@
 <script setup lang="ts">
 /**
  * @input Notification APIs, router navigation helpers, and time-format utility for dashboard orchestration
- * @output Dashboard widgets for unread counters, quick entries, and recent notifications with read/delete actions
+ * @output Dashboard widgets for unread counters, permission-filtered quick entries, and recent notifications with read/delete actions
  * @position Landing workspace page that surfaces system health signals and high-frequency operation shortcuts
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { ElMessage } from "element-plus";
 import { useRouter } from "vue-router";
 import {
@@ -90,6 +90,7 @@ import {
   markAsRead,
   type NotificationRecord
 } from "./notification-service";
+import { hasPermission } from "./permission";
 import { formatShanghaiDateTime } from "./time";
 
 interface QuickEntry {
@@ -97,30 +98,52 @@ interface QuickEntry {
   title: string;
   tag: string;
   desc: string;
+  permissions: string | string[];
 }
 
 const quickEntries: QuickEntry[] = [
-  { path: "/customers", title: "客户管理", tag: "基础", desc: "维护客户基础信息与联系人。" },
+  {
+    path: "/customers",
+    title: "客户管理",
+    tag: "基础",
+    desc: "维护客户基础信息与联系人。",
+    permissions: "page.customers"
+  },
   {
     path: "/contract-submissions",
     title: "合同提审",
     tag: "主流程",
-    desc: "创建合同、编辑草稿并提交审核。"
+    desc: "创建合同、编辑草稿并提交审核。",
+    permissions: "page.contract-submissions"
   },
   {
     path: "/contract-archives",
     title: "合同归档",
     tag: "主流程",
-    desc: "对审核通过合同补录归档信息并完成归档。"
+    desc: "对审核通过合同补录归档信息并完成归档。",
+    permissions: "page.contract-archives"
   },
-  { path: "/project-registers", title: "项目登记", tag: "节点 5", desc: "基于已归档合同发起项目登记。" },
-  { path: "/workflow", title: "待办审批", tag: "任务", desc: "集中处理合同、项目与报告审核任务。" }
+  {
+    path: "/project-registers",
+    title: "项目登记",
+    tag: "节点 5",
+    desc: "基于已归档合同发起项目登记。",
+    permissions: "page.project-registers"
+  },
+  {
+    path: "/workflow",
+    title: "待办审批",
+    tag: "任务",
+    desc: "集中处理合同、项目与报告审核任务。",
+    permissions: "page.workflow"
+  }
 ];
 
 const router = useRouter();
 const unreadCount = ref(0);
 const notifications = ref<NotificationRecord[]>([]);
 const refreshing = ref(false);
+const visibleQuickEntries = computed(() => quickEntries.filter((item) => hasPermission(item.permissions)));
 
 function readErrorMessage(error: unknown, fallback: string) {
   const msg = (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
@@ -133,8 +156,12 @@ async function refresh() {
   notifications.value = list;
 }
 
-function go(path: string) {
-  void router.push(path);
+function go(item: QuickEntry) {
+  if (!hasPermission(item.permissions)) {
+    ElMessage.warning("暂无该入口访问权限");
+    return;
+  }
+  void router.push(item.path);
 }
 
 async function handleRefresh() {

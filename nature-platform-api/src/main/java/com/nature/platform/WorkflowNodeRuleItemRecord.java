@@ -11,9 +11,6 @@ public class WorkflowNodeRuleItemRecord {
   private String slotLabel;
   private String roleCode;
   private boolean requiredFlag;
-  private int minCount;
-  private int maxCount;
-  private int sortOrder;
 
   public String getSlotKey() {
     return slotKey;
@@ -45,29 +42,5 @@ public class WorkflowNodeRuleItemRecord {
 
   public void setRequiredFlag(boolean requiredFlag) {
     this.requiredFlag = requiredFlag;
-  }
-
-  public int getMinCount() {
-    return minCount;
-  }
-
-  public void setMinCount(int minCount) {
-    this.minCount = minCount;
-  }
-
-  public int getMaxCount() {
-    return maxCount;
-  }
-
-  public void setMaxCount(int maxCount) {
-    this.maxCount = maxCount;
-  }
-
-  public int getSortOrder() {
-    return sortOrder;
-  }
-
-  public void setSortOrder(int sortOrder) {
-    this.sortOrder = sortOrder;
   }
 }

@@ -146,10 +146,10 @@ public class WorkflowConfigService {
     String placeholders = String.join(",", Collections.nCopies(ruleIds.size(), "?"));
     String itemSql =
         """
-        SELECT rule_id, slot_key, slot_label, role_code, required_flag, min_count, max_count, sort_order
+        SELECT rule_id, slot_key, slot_label, role_code, required_flag
         FROM workflow_node_rule_item
         WHERE rule_id IN (%s)
-        ORDER BY rule_id ASC, sort_order ASC, id ASC
+        ORDER BY rule_id ASC, id ASC
         """
             .formatted(placeholders);
 
@@ -165,9 +165,6 @@ public class WorkflowConfigService {
       item.setSlotLabel(row.slotLabel());
       item.setRoleCode(row.roleCode());
       item.setRequiredFlag(row.requiredFlag());
-      item.setMinCount(row.minCount());
-      item.setMaxCount(row.maxCount());
-      item.setSortOrder(row.sortOrder());
       record.getItems().add(item);
     }
 
@@ -199,10 +196,10 @@ public class WorkflowConfigService {
     record.setItems(
         jdbcTemplate.query(
             """
-            SELECT slot_key, slot_label, role_code, required_flag, min_count, max_count, sort_order
+            SELECT slot_key, slot_label, role_code, required_flag
             FROM workflow_node_rule_item
             WHERE rule_id = ?
-            ORDER BY sort_order ASC, id ASC
+            ORDER BY id ASC
             """,
             (rs, rowNum) -> {
               WorkflowNodeRuleItemRecord item = new WorkflowNodeRuleItemRecord();
@@ -210,9 +207,6 @@ public class WorkflowConfigService {
               item.setSlotLabel(rs.getString("slot_label"));
               item.setRoleCode(rs.getString("role_code"));
               item.setRequiredFlag(rs.getBoolean("required_flag"));
-              item.setMinCount(rs.getInt("min_count"));
-              item.setMaxCount(rs.getInt("max_count"));
-              item.setSortOrder(rs.getInt("sort_order"));
               return item;
             },
             row.id()));
@@ -262,23 +256,18 @@ public class WorkflowConfigService {
       jdbcTemplate.update("DELETE FROM workflow_node_rule_item WHERE rule_id = ?", ruleId);
     }
 
-    int index = 0;
     for (WorkflowNodeRuleItemRequest item : items) {
       jdbcTemplate.update(
           """
           INSERT INTO workflow_node_rule_item (
-            rule_id, slot_key, slot_label, role_code, required_flag, min_count, max_count, sort_order
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            rule_id, slot_key, slot_label, role_code, required_flag
+          ) VALUES (?, ?, ?, ?, ?)
           """,
           ruleId,
           item.getSlotKey(),
           item.getSlotLabel(),
           item.getRoleCode(),
-          item.getRequiredFlag() ? 1 : 0,
-          item.getMinCount(),
-          item.getMaxCount(),
-          item.getSortOrder() == null ? index * 10 : item.getSortOrder());
-      index++;
+          item.getRequiredFlag() ? 1 : 0);
     }
 
     adminAuditService.logAction(
@@ -318,7 +307,7 @@ public class WorkflowConfigService {
             WHERE r.node_key = ?
               AND r.enabled = 1
               AND i.slot_key = ?
-            ORDER BY i.sort_order ASC, i.id ASC
+            ORDER BY i.id ASC
             """,
             String.class,
             normalizedNodeKey,
@@ -372,21 +361,11 @@ public class WorkflowConfigService {
       item.setSlotLabel(normalizeRequired(raw.getSlotLabel(), "slotLabel is required"));
       item.setRoleCode(normalizeRequired(raw.getRoleCode(), "roleCode is required").toUpperCase(Locale.ROOT));
       item.setRequiredFlag(raw.getRequiredFlag() == null || raw.getRequiredFlag());
-      int minCount = raw.getMinCount() == null ? 1 : raw.getMinCount();
-      int maxCount = raw.getMaxCount() == null ? 1 : raw.getMaxCount();
-      if (minCount < 0 || maxCount <= 0 || minCount > maxCount) {
-        throw new ResponseStatusException(
-            HttpStatus.BAD_REQUEST, "invalid min/max count for rule item: " + item.getSlotKey());
-      }
-      item.setMinCount(minCount);
-      item.setMaxCount(maxCount);
-      item.setSortOrder(raw.getSortOrder() == null ? 0 : raw.getSortOrder());
       normalized.add(item);
     }
 
     normalized.sort(
-        java.util.Comparator.comparingInt(WorkflowNodeRuleItemRequest::getSortOrder)
-            .thenComparing(WorkflowNodeRuleItemRequest::getSlotKey)
+        java.util.Comparator.comparing(WorkflowNodeRuleItemRequest::getSlotKey)
             .thenComparing(WorkflowNodeRuleItemRequest::getRoleCode));
     return normalized;
   }
@@ -458,10 +437,7 @@ public class WorkflowConfigService {
           rs.getString("slot_key"),
           rs.getString("slot_label"),
           rs.getString("role_code"),
-          rs.getBoolean("required_flag"),
-          rs.getInt("min_count"),
-          rs.getInt("max_count"),
-          rs.getInt("sort_order"));
+          rs.getBoolean("required_flag"));
     }
   }
 
@@ -473,8 +449,5 @@ public class WorkflowConfigService {
       String slotKey,
       String slotLabel,
       String roleCode,
-      boolean requiredFlag,
-      int minCount,
-      int maxCount,
-      int sortOrder) {}
+      boolean requiredFlag) {}
 }

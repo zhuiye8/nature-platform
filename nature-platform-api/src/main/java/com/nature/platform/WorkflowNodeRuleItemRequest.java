@@ -6,7 +6,6 @@
  */
 package com.nature.platform;
 
-import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
@@ -22,18 +21,6 @@ public class WorkflowNodeRuleItemRequest {
 
   @NotNull
   private Boolean requiredFlag;
-
-  @NotNull
-  @Min(0)
-  private Integer minCount;
-
-  @NotNull
-  @Min(1)
-  private Integer maxCount;
-
-  @NotNull
-  @Min(0)
-  private Integer sortOrder;
 
   public String getSlotKey() {
     return slotKey;
@@ -65,29 +52,5 @@ public class WorkflowNodeRuleItemRequest {
 
   public void setRequiredFlag(Boolean requiredFlag) {
     this.requiredFlag = requiredFlag;
-  }
-
-  public Integer getMinCount() {
-    return minCount;
-  }
-
-  public void setMinCount(Integer minCount) {
-    this.minCount = minCount;
-  }
-
-  public Integer getMaxCount() {
-    return maxCount;
-  }
-
-  public void setMaxCount(Integer maxCount) {
-    this.maxCount = maxCount;
-  }
-
-  public Integer getSortOrder() {
-    return sortOrder;
-  }
-
-  public void setSortOrder(Integer sortOrder) {
-    this.sortOrder = sortOrder;
   }
 }

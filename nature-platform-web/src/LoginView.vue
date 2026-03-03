@@ -134,8 +134,8 @@ const particleCanvas = ref<HTMLCanvasElement | null>(null);
 const year = new Date().getFullYear();
 
 const form = reactive({
-  username: "admin",
-  password: "admin123"
+  username: "",
+  password: ""
 });
 
 let animationFrame = 0;
