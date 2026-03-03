@@ -54,7 +54,6 @@ test("normal user cannot see or open report-chain/workflow pages without view pe
 
   const hiddenMenus = [
     "待办审批",
-    "质量审核",
     "技术审核",
     "内容审核",
     "编制分配",
@@ -68,7 +67,6 @@ test("normal user cannot see or open report-chain/workflow pages without view pe
 
   const blockedPaths = [
     "/workflow",
-    "/quality-reviews",
     "/report-tech-reviews",
     "/report-content-reviews",
     "/report-compile-assignments",

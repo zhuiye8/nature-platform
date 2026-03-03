@@ -11,6 +11,9 @@ export interface AdminUserRecord {
   displayName: string;
   enabled: boolean;
   sourceType: string;
+  deptId?: number;
+  deptName?: string;
+  dingUserId?: string;
   roles: string[];
 }
 
@@ -19,6 +22,7 @@ export interface AdminUserCreatePayload {
   displayName: string;
   password: string;
   enabled: boolean;
+  deptId?: number;
   roles: string[];
 }
 
@@ -26,6 +30,7 @@ export interface AdminUserUpdatePayload {
   displayName: string;
   password?: string;
   enabled: boolean;
+  deptId?: number;
   roles: string[];
 }
 
@@ -35,6 +40,10 @@ export interface AdminRoleRecord {
   description?: string;
   systemFlag: boolean;
   enabled: boolean;
+  dataScope: "SELF" | "DEPT" | "DEPT_AND_SUB" | "CUSTOM" | "ALL";
+  projectViewAll: boolean;
+  peerSalesLimited: boolean;
+  dataScopeDeptIds: number[];
   resourceKeys: string[];
   permissionCodes?: string[];
 }
@@ -43,6 +52,8 @@ export interface AdminRoleUserOptionRecord {
   username: string;
   displayName: string;
   enabled: boolean;
+  deptId?: number;
+  deptName?: string;
 }
 
 export interface AdminRoleUpsertPayload {
@@ -50,7 +61,45 @@ export interface AdminRoleUpsertPayload {
   roleName: string;
   description?: string;
   enabled: boolean;
+  dataScope: "SELF" | "DEPT" | "DEPT_AND_SUB" | "CUSTOM" | "ALL";
+  projectViewAll: boolean;
+  peerSalesLimited: boolean;
+  dataScopeDeptIds: number[];
   resourceKeys: string[];
+}
+
+export interface AdminDepartmentRecord {
+  id: number;
+  deptCode: string;
+  deptName: string;
+  parentId?: number;
+  parentName?: string;
+  sourceType: "LOCAL" | "DINGTALK";
+  dingDeptId?: string;
+  defaultRoleCode?: string;
+  defaultRoleName?: string;
+  enabled: boolean;
+  sortOrder: number;
+  children: AdminDepartmentRecord[];
+}
+
+export interface AdminDepartmentUpsertPayload {
+  deptCode: string;
+  deptName: string;
+  parentId?: number;
+  enabled: boolean;
+  sortOrder: number;
+  defaultRoleCode?: string;
+}
+
+export interface AdminDingTalkSyncResult {
+  departmentTotal: number;
+  departmentInserted: number;
+  departmentUpdated: number;
+  userTotal: number;
+  userInserted: number;
+  userUpdated: number;
+  userDisabled: number;
 }
 
 export interface AdminResourceRecord {
@@ -179,8 +228,16 @@ function normalizeRoleRecord(row: AdminRoleRecord): AdminRoleRecord {
     : Array.isArray(row.permissionCodes)
       ? row.permissionCodes
       : [];
+  const dataScope = row.dataScope || "SELF";
+  const projectViewAll = Boolean(row.projectViewAll);
+  const peerSalesLimited = Boolean((row as { peerSalesLimited?: boolean }).peerSalesLimited);
+  const dataScopeDeptIds = Array.isArray(row.dataScopeDeptIds) ? row.dataScopeDeptIds : [];
   return {
     ...row,
+    dataScope,
+    projectViewAll,
+    peerSalesLimited,
+    dataScopeDeptIds,
     resourceKeys,
     permissionCodes: resourceKeys
   };
@@ -226,6 +283,36 @@ export async function fetchAdminRoleUserOptions(): Promise<AdminRoleUserOptionRe
 
 export async function updateAdminRoleUsers(roleCode: string, usernames: string[]): Promise<string[]> {
   const response = await apiClient.put<ApiResponse<string[]>>(`/admin/roles/${roleCode}/users`, { usernames });
+  return response.data.data;
+}
+
+export async function fetchAdminDepartments(): Promise<AdminDepartmentRecord[]> {
+  const response = await apiClient.get<ApiResponse<AdminDepartmentRecord[]>>("/admin/departments");
+  return response.data.data;
+}
+
+export async function fetchAdminDepartmentTree(): Promise<AdminDepartmentRecord[]> {
+  const response = await apiClient.get<ApiResponse<AdminDepartmentRecord[]>>("/admin/departments/tree");
+  return response.data.data;
+}
+
+export async function createAdminDepartment(
+  payload: AdminDepartmentUpsertPayload
+): Promise<AdminDepartmentRecord> {
+  const response = await apiClient.post<ApiResponse<AdminDepartmentRecord>>("/admin/departments", payload);
+  return response.data.data;
+}
+
+export async function updateAdminDepartment(
+  id: number,
+  payload: AdminDepartmentUpsertPayload
+): Promise<AdminDepartmentRecord> {
+  const response = await apiClient.put<ApiResponse<AdminDepartmentRecord>>(`/admin/departments/${id}`, payload);
+  return response.data.data;
+}
+
+export async function syncAdminDingTalkOrg(): Promise<AdminDingTalkSyncResult> {
+  const response = await apiClient.post<ApiResponse<AdminDingTalkSyncResult>>("/admin/dingtalk/sync");
   return response.data.data;
 }
 

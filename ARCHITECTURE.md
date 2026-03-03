@@ -1,4 +1,4 @@
-﻿<!-- FORMAT-DOC: Update when project structure or architecture changes -->
+<!-- FORMAT-DOC: Update when project structure or architecture changes -->
 
 # Architecture
 
@@ -80,10 +80,9 @@ Nature Platform 鍦?`codex` 鐩綍閲囩敤鍓嶅悗绔垎绂绘灦鏋勶�
 
 
 ## Process Overview Detail (2026-02-27)
-- Backend adds aggregate endpoint `GET /api/v1/process-overview/{projectId}` via `ProcessOverviewController` + `ProcessOverviewService`, unifying node snapshots from project register through material archive.
+- Backend keeps aggregate endpoint `GET /api/v1/process-overview/{projectId}` via `ProcessOverviewController` + `ProcessOverviewService`, unifying node snapshots from project register through material archive.
 - The aggregate model `ProcessOverviewRecord` includes per-node current-state sections and normalized attachment summaries (`stage`, `field`, `objectKey`, `fileName`).
-- Frontend adds route `/process-overview/:projectId` and page `ProcessOverviewView.vue` for read-only incremental detail display.
-- Workflow-related pages (project/police/on-site/quality/report/final/archive/workflow center) now provide a direct “流程详情” entry for project-level drill-down.
+- Frontend removes standalone `/process-overview/:projectId` route and `ProcessOverviewView.vue`; all business/review pages now route to unified `TaskDetailView.vue` for context + action.
 
 ## Contract Page Split (2026-02-27)
 - Frontend business route `/contracts` is split into two pages:
@@ -104,3 +103,30 @@ Nature Platform 鍦?`codex` 鐩綍閲囩敤鍓嶅悗绔垎绂绘灦鏋勶�
   - in-page approve/reject actions when current user has an active pending task.
 - Backend adds `GET /api/v1/workflow/tasks/contracts/{id}/detail` for contract review detail, so reviewers can read submitted contracts without opening contract management pages.
 - Backend `FileAssetController` upgrades download API to `GET /api/v1/files/download-url?objectKey=...&taskType=...&bizId=...` and validates attachment ownership against current task context before issuing signed URLs.
+
+## Final Reviewer Preassignment (2026-02-28)
+- Final reviewer ownership is moved to final-review node rules (`REPORT_FINAL_REVIEW_TASK` + `FINAL_REVIEWER` slot), no longer configured in node-8 assignment.
+- `OnSiteAssessmentService` now enforces four assignees only (tech + content-tech/content-management/content-network) and blocks edit/assignment while under review (except rectification).
+- `ReportCompileService` no longer reads `workflow_assignment.final_reviewer`; final-review task creation delegates to node-rule based assignee resolution in `ReportFinalReviewService`.
+- `ReportFinalReviewService` resolves final reviewer from node-rule role bindings and requires a unique enabled reviewer candidate.
+- Frontend `ReportFinalReviewsView.vue` aligns with tech-review interactions by adding list-level approve/reject plus unified detail entry.
+
+## IAM Department & Data Scope (2026-03-02)
+- Backend migration adds organization and data-range schema: `iam_department`, `iam_role_data_scope_dept`, `iam_role.data_scope`, `iam_role.project_view_all`, `user_account.dept_id/ding_*`, `user_role.sort_order`.
+- Admin module adds department management APIs (`/api/v1/admin/departments`) and DingTalk organization sync API (`/api/v1/admin/dingtalk/sync`).
+- Role management extends to data scope (`SELF/DEPT/DEPT_AND_SUB/CUSTOM/ALL`) and project-wide visibility switch; role-user bindings now persist order.
+- Business lists for contracts, project registers, police registers, and on-site assessments apply creator-based data filtering through `UserDataScopeService`.
+- Frontend adds `/admin-departments` page and updates user/role management forms to maintain department binding and role data-scope settings.
+
+## Legacy Quality-Review Cleanup (2026-03-03)
+- Removed obsolete quality-review UI and API stack that was superseded by the direct report review chain.
+- Backend deleted `/api/v1/quality-reviews` controller/service and related DTO/models.
+- Frontend deleted `QualityReviewsView.vue`, removed `/quality-reviews` route, and removed `quality-review-service.ts`.
+- Task detail aggregate schema no longer exposes `qualityReview`; now only keeps active nodes in current workflow.
+- Permission vocabulary and resource mapping removed `quality-review:*` and `page.quality-reviews` entries from runtime code.
+
+## Detail and Evidence Model Upgrade (2026-03-03)
+- On-site assessment is upgraded from single `package_object_key` to multi-file evidence (`evidence_files_json`) with explicit remark (`assessment_remark`), while keeping legacy `package_object_key` as compatibility mirror.
+- Material archive adds formal checklist enum storage (`material_status_codes_json`) and is validated against fixed business codes on save.
+- Workflow task center removes list-level approve/reject actions; approval actions are now unified in `/task-detail/:taskType/:bizId`.
+- Frontend adds read-only business detail route `/entity-detail/:entityType/:id` for customer/contract/project/report/material viewing without entering audit actions.

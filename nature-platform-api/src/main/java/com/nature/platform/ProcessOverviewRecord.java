@@ -1,6 +1,6 @@
 /**
  * @input Aggregated node-stage read models and attachment object keys across project workflow
- * @output ProcessOverviewRecord response model for process-overview aggregate query endpoint
+ * @output ProcessOverviewRecord response model for task-detail aggregate query endpoint
  * @position Project workflow read model unifying node snapshots and attachment filename summaries
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
@@ -18,7 +18,6 @@ public class ProcessOverviewRecord {
   private ProjectRegisterRecord projectRegister;
   private PoliceRegisterRecord policeRegister;
   private OnSiteAssessmentRecord onSiteAssessment;
-  private QualityReviewRecord qualityReview;
   private ReportTechReviewRecord reportTechReview;
   private ReportContentReviewRecord reportContentReview;
   private ReportCompileAssignmentRecord reportCompileAssignment;
@@ -89,14 +88,6 @@ public class ProcessOverviewRecord {
 
   public void setOnSiteAssessment(OnSiteAssessmentRecord onSiteAssessment) {
     this.onSiteAssessment = onSiteAssessment;
-  }
-
-  public QualityReviewRecord getQualityReview() {
-    return qualityReview;
-  }
-
-  public void setQualityReview(QualityReviewRecord qualityReview) {
-    this.qualityReview = qualityReview;
   }
 
   public ReportTechReviewRecord getReportTechReview() {

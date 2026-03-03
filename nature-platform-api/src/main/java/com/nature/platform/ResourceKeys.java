@@ -19,8 +19,9 @@ public final class ResourceKeys {
   public static final String PAGE_CONTRACT_ARCHIVES = "page.contract-archives";
   public static final String PAGE_PROJECT_REGISTERS = "page.project-registers";
   public static final String PAGE_POLICE_REGISTERS = "page.police-registers";
-  public static final String PAGE_ON_SITE_ASSESSMENTS = "page.on-site-assessments";
-  public static final String PAGE_QUALITY_REVIEWS = "page.quality-reviews";
+  public static final String PAGE_ON_SITE_ASSESSMENT_EXECUTIONS = "page.on-site-assessment-executions";
+  public static final String PAGE_ON_SITE_ASSESSMENT_RESULTS = "page.on-site-assessment-results";
+  @Deprecated public static final String PAGE_ON_SITE_ASSESSMENTS = "page.on-site-assessments";
   public static final String PAGE_REPORT_TECH_REVIEWS = "page.report-tech-reviews";
   public static final String PAGE_REPORT_CONTENT_REVIEWS = "page.report-content-reviews";
   public static final String PAGE_REPORT_COMPILE_ASSIGNMENTS = "page.report-compile-assignments";
@@ -28,6 +29,7 @@ public final class ResourceKeys {
   public static final String PAGE_REPORT_FINAL_REVIEWS = "page.report-final-reviews";
   public static final String PAGE_MATERIAL_ARCHIVES = "page.material-archives";
   public static final String PAGE_ADMIN_USERS = "page.admin-users";
+  public static final String PAGE_ADMIN_DEPARTMENTS = "page.admin-departments";
   public static final String PAGE_ADMIN_ROLES = "page.admin-roles";
   public static final String PAGE_ADMIN_RESOURCES = "page.admin-resources";
   public static final String PAGE_ADMIN_WORKFLOW = "page.admin-workflow";

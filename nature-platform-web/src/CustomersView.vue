@@ -32,6 +32,7 @@
         <el-table-column label="操作" width="180" fixed="right">
           <template #default="{ row }">
             <el-space>
+              <el-button size="small" @click="openEntityDetail(row.id)">详情</el-button>
               <el-button v-permission="'customer:update'" size="small" @click="openEdit(row)">编辑</el-button>
               <el-button v-permission="'customer:delete'" size="small" type="danger" @click="removeCustomer(row.id)">
                 删除
@@ -130,6 +131,7 @@
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 import { onMounted, reactive, ref } from "vue";
+import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { codeToText, regionData } from "element-china-area-data";
 import {
@@ -156,6 +158,7 @@ const submitting = ref(false);
 const dialogVisible = ref(false);
 const editingId = ref<number | null>(null);
 const customers = ref<CustomerRecord[]>([]);
+const router = useRouter();
 const regionOptions = regionData as unknown as CascaderOption[];
 const nameToCode = new Map<string, string>(Object.entries(codeToText).map(([code, name]) => [String(name), code]));
 
@@ -303,6 +306,10 @@ async function removeCustomer(id: number) {
   } catch (error) {
     ElMessage.error(readErrorMessage(error, "删除客户失败"));
   }
+}
+
+function openEntityDetail(id: number) {
+  void router.push(`/entity-detail/customer/${id}`);
 }
 
 onMounted(() => {

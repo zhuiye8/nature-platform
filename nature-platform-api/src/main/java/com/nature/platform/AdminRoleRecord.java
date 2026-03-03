@@ -17,6 +17,10 @@ public class AdminRoleRecord {
   private String description;
   private boolean systemFlag;
   private boolean enabled;
+  private String dataScope = RoleDataScopeTypes.SELF;
+  private boolean projectViewAll;
+  private boolean peerSalesLimited;
+  private List<Long> dataScopeDeptIds = new ArrayList<>();
   private List<String> resourceKeys = new ArrayList<>();
 
   public String getRoleCode() {
@@ -57,6 +61,38 @@ public class AdminRoleRecord {
 
   public void setEnabled(boolean enabled) {
     this.enabled = enabled;
+  }
+
+  public String getDataScope() {
+    return dataScope;
+  }
+
+  public void setDataScope(String dataScope) {
+    this.dataScope = dataScope;
+  }
+
+  public boolean isProjectViewAll() {
+    return projectViewAll;
+  }
+
+  public void setProjectViewAll(boolean projectViewAll) {
+    this.projectViewAll = projectViewAll;
+  }
+
+  public boolean isPeerSalesLimited() {
+    return peerSalesLimited;
+  }
+
+  public void setPeerSalesLimited(boolean peerSalesLimited) {
+    this.peerSalesLimited = peerSalesLimited;
+  }
+
+  public List<Long> getDataScopeDeptIds() {
+    return dataScopeDeptIds;
+  }
+
+  public void setDataScopeDeptIds(List<Long> dataScopeDeptIds) {
+    this.dataScopeDeptIds = dataScopeDeptIds == null ? new ArrayList<>() : dataScopeDeptIds;
   }
 
   public List<String> getResourceKeys() {

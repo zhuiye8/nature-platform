@@ -16,6 +16,8 @@ public class PoliceRegisterRecord {
   private String filingAgency;
   private String contactName;
   private String contactPhone;
+  private String projectManagerUsername;
+  private String projectManagerDisplayName;
   private String remark;
   private String createdBy;
   private String createdAt;
@@ -101,6 +103,22 @@ public class PoliceRegisterRecord {
 
   public void setRemark(String remark) {
     this.remark = remark;
+  }
+
+  public String getProjectManagerUsername() {
+    return projectManagerUsername;
+  }
+
+  public void setProjectManagerUsername(String projectManagerUsername) {
+    this.projectManagerUsername = projectManagerUsername;
+  }
+
+  public String getProjectManagerDisplayName() {
+    return projectManagerDisplayName;
+  }
+
+  public void setProjectManagerDisplayName(String projectManagerDisplayName) {
+    this.projectManagerDisplayName = projectManagerDisplayName;
   }
 
   public String getCreatedBy() {

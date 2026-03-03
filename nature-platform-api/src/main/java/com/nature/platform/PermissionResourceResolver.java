@@ -18,6 +18,8 @@ public final class PermissionResourceResolver {
           Map.entry(AdminPermissionCodes.WORKFLOW_MANAGE, ResourceKeys.PAGE_ADMIN_WORKFLOW),
           Map.entry(AdminPermissionCodes.NODE_RULE_MANAGE, ResourceKeys.PAGE_ADMIN_WORKFLOW),
           Map.entry(AdminPermissionCodes.AUDIT_VIEW, ResourceKeys.PAGE_ADMIN_AUDIT_LOGS),
+          Map.entry(AdminPermissionCodes.DEPARTMENT_MANAGE, ResourceKeys.PAGE_ADMIN_DEPARTMENTS),
+          Map.entry(AdminPermissionCodes.DINGTALK_SYNC, ResourceKeys.PAGE_ADMIN_DEPARTMENTS),
           Map.entry(BusinessPermissionCodes.WORKFLOW_TASK_VIEW, ResourceKeys.PAGE_WORKFLOW),
           Map.entry(BusinessPermissionCodes.WORKFLOW_TASK_APPROVE, ResourceKeys.PAGE_WORKFLOW),
           Map.entry(BusinessPermissionCodes.WORKFLOW_TASK_REJECT, ResourceKeys.PAGE_WORKFLOW));
@@ -56,9 +58,6 @@ public final class PermissionResourceResolver {
     }
     if (normalized.startsWith("on-site-assessment:")) {
       return ResourceKeys.PAGE_ON_SITE_ASSESSMENTS;
-    }
-    if (normalized.startsWith("quality-review:")) {
-      return ResourceKeys.PAGE_QUALITY_REVIEWS;
     }
     if (normalized.startsWith("report-tech-review:")) {
       return ResourceKeys.PAGE_REPORT_TECH_REVIEWS;

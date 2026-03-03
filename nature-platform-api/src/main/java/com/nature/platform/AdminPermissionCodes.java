@@ -13,6 +13,8 @@ public final class AdminPermissionCodes {
   public static final String WORKFLOW_MANAGE = "workflow:manage";
   public static final String NODE_RULE_MANAGE = "workflow-node-rule:manage";
   public static final String AUDIT_VIEW = "audit:view";
+  public static final String DEPARTMENT_MANAGE = "department:manage";
+  public static final String DINGTALK_SYNC = "dingtalk:sync";
 
   private AdminPermissionCodes() {}
 }

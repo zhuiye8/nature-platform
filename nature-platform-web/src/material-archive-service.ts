@@ -11,6 +11,7 @@ export interface MaterialArchiveRecord {
   applicationName: string;
   finalReviewStatus: string;
   onSitePackageObjectKey?: string;
+  materialStatusCodes: string[];
   reportFiles: string[];
   formFiles: string[];
   remark?: string;
@@ -22,6 +23,7 @@ export interface MaterialArchiveRecord {
 }
 
 export interface MaterialArchivePayload {
+  materialStatusCodes: string[];
   reportFiles: string[];
   formFiles: string[];
   remark?: string;

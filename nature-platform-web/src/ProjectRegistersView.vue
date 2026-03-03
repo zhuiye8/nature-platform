@@ -62,7 +62,8 @@
               <el-button v-permission="'project-register:trace:view'" size="small" @click="openTrace(row)">
                 流程轨迹
               </el-button>
-              <el-button size="small" @click="openProcessOverview(row.id)">流程详情</el-button>
+              <el-button size="small" @click="openEntityDetail(row.id)">业务详情</el-button>
+              <el-button size="small" @click="openTaskDetail(row.id)">详情</el-button>
               <el-button
                 v-permission="'project-register:delete'"
                 size="small"
@@ -470,7 +471,7 @@ import {
   type ProjectSystemItemPayload,
   type WorkflowTraceRecord
 } from "./project-register-service";
-import { toProcessOverviewPath } from "./process-overview-service";
+import { toTaskDetailPath } from "./task-detail-service";
 import type { ContractRecord } from "./contract-service";
 import { hasPermission } from "./permission";
 
@@ -772,14 +773,11 @@ function traceActionLabel(action: string) {
   if (action === "POLICE_REGISTER_SUBMIT") return "公安登记提交";
   if (action === "ON_SITE_ASSESSMENT_SAVE") return "现场测评保存";
   if (action === "ON_SITE_ASSESSMENT_SUBMIT") return "现场测评提交";
-  if (action === "QUALITY_ASSIGN_SAVE") return "质量审核人分配";
-  if (action === "QUALITY_REVIEW_APPLY_SUBMIT") return "质量审核申请提交";
-  if (action === "QUALITY_REVIEW_FINISH") return "质量审核完成";
   return action;
 }
 
 function traceType(action: string) {
-  if (action === "APPROVE" || action.endsWith("_APPROVE") || action === "QUALITY_REVIEW_FINISH") {
+  if (action === "APPROVE" || action.endsWith("_APPROVE")) {
     return "success";
   }
   if (action === "REJECT" || action.endsWith("_REJECT")) return "danger";
@@ -923,8 +921,12 @@ async function removeRow(row: ProjectRegisterRecord) {
   }
 }
 
-function openProcessOverview(projectId: number) {
-  void router.push(toProcessOverviewPath(projectId));
+function openTaskDetail(projectId: number) {
+  void router.push(toTaskDetailPath("PROJECT_REGISTER", projectId));
+}
+
+function openEntityDetail(projectId: number) {
+  void router.push(`/entity-detail/project/${projectId}`);
 }
 
 async function openTrace(row: ProjectRegisterRecord) {
@@ -1008,4 +1010,3 @@ onMounted(() => {
   color: var(--np-color-text-secondary);
 }
 </style>
-

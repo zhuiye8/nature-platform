@@ -14,6 +14,9 @@ public class DingTalkProperties {
   private String appSecret = "";
   private String corpId = "";
   private String redirectUri = "";
+  private String callbackBase = "";
+  private String frontendRedirectUri = "";
+  private String frontendRedirectOrigins = "";
 
   public String getAppKey() {
     return appKey;
@@ -46,5 +49,28 @@ public class DingTalkProperties {
   public void setRedirectUri(String redirectUri) {
     this.redirectUri = redirectUri;
   }
-}
 
+  public String getCallbackBase() {
+    return callbackBase;
+  }
+
+  public void setCallbackBase(String callbackBase) {
+    this.callbackBase = callbackBase;
+  }
+
+  public String getFrontendRedirectUri() {
+    return frontendRedirectUri;
+  }
+
+  public void setFrontendRedirectUri(String frontendRedirectUri) {
+    this.frontendRedirectUri = frontendRedirectUri;
+  }
+
+  public String getFrontendRedirectOrigins() {
+    return frontendRedirectOrigins;
+  }
+
+  public void setFrontendRedirectOrigins(String frontendRedirectOrigins) {
+    this.frontendRedirectOrigins = frontendRedirectOrigins;
+  }
+}

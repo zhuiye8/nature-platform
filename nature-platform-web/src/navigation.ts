@@ -73,20 +73,20 @@ export const navItems: NavItem[] = [
     resourceKey: "page.police-registers"
   },
   {
-    path: "/on-site-assessments",
-    label: "现场测评",
+    path: "/on-site-assessment-executions",
+    label: "现场测评实施",
     icon: Connection,
     group: "业务流程",
     order: 140,
-    resourceKey: "page.on-site-assessments"
+    resourceKey: "page.on-site-assessment-executions"
   },
   {
-    path: "/quality-reviews",
-    label: "质量审核",
+    path: "/on-site-assessment-results",
+    label: "现场测评结果",
     icon: CircleCheck,
     group: "业务流程",
-    order: 150,
-    resourceKey: "page.quality-reviews"
+    order: 145,
+    resourceKey: "page.on-site-assessment-results"
   },
 
   {
@@ -139,6 +139,14 @@ export const navItems: NavItem[] = [
   },
 
   { path: "/admin-users", label: "用户管理", icon: User, group: "系统", order: 300, resourceKey: "page.admin-users" },
+  {
+    path: "/admin-departments",
+    label: "部门管理",
+    icon: OfficeBuilding,
+    group: "系统",
+    order: 305,
+    resourceKey: "page.admin-departments"
+  },
   { path: "/admin-roles", label: "角色管理", icon: Management, group: "系统", order: 310, resourceKey: "page.admin-roles" },
   {
     path: "/admin-resources",

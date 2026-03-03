@@ -37,15 +37,19 @@ flowable:
 
 app:
   cors:
-    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+    allowed-origin-patterns: ${CORS_ALLOWED_ORIGIN_PATTERNS:https://frp-bus.com:[*],https://frp-way.com:[*],http://localhost:[*],http://127.0.0.1:[*]}
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:}
   security:
     jwt-secret: ${JWT_SECRET:replace-with-at-least-32-bytes-secret-in-production-please}
     token-expire-minutes: ${TOKEN_EXPIRE_MINUTES:120}
   dingtalk:
-    app-key: ${DINGTALK_APP_KEY:}
-    app-secret: ${DINGTALK_APP_SECRET:}
+    app-key: ${DINGTALK_APP_KEY:dingls9sgp4an4hbljai}
+    app-secret: ${DINGTALK_APP_SECRET:M-F1nid6T7_feVWfdb89ubviSo2cRI-taek-T8gJADWw6Y9hFOtMMbksEiI8bgif}
     corp-id: ${DINGTALK_CORP_ID:}
     redirect-uri: ${DINGTALK_REDIRECT_URI:http://localhost:18080/api/v1/auth/dingtalk/callback}
+    callback-base: ${DINGTALK_CALLBACK_BASE:https://frp-way.com:55149}
+    frontend-redirect-uri: ${DINGTALK_FRONTEND_REDIRECT_URI:https://frp-bus.com:57970/login}
+    frontend-redirect-origins: ${DINGTALK_FRONTEND_REDIRECT_ORIGINS:https://frp-bus.com:57970,http://localhost:5173,http://127.0.0.1:5173}
   minio:
     enabled: ${MINIO_ENABLED:false}
     endpoint: ${MINIO_ENDPOINT:http://localhost:9000}

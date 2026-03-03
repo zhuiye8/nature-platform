@@ -1,6 +1,6 @@
 /**
  * @input WorkflowTaskService with mocked JdbcTemplate/Flowable and contract/project domain dependencies
- * @output Unit tests for workflow task permission checks, contract review-detail guard, access validation, and task-id fallback rules
+ * @output Unit tests for workflow task permission checks, contract/project review guards, and task-id fallback rules
  * @position Workflow task service test layer preventing review-action regression
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
@@ -35,8 +35,6 @@ class WorkflowTaskServiceTests {
   private final ContractService contractService = org.mockito.Mockito.mock(ContractService.class);
   private final ProjectRegisterService projectRegisterService =
       org.mockito.Mockito.mock(ProjectRegisterService.class);
-  private final QualityReviewService qualityReviewService =
-      org.mockito.Mockito.mock(QualityReviewService.class);
   private final ReportTechReviewService reportTechReviewService =
       org.mockito.Mockito.mock(ReportTechReviewService.class);
   private final ReportContentReviewService reportContentReviewService =
@@ -51,7 +49,6 @@ class WorkflowTaskServiceTests {
           jdbcTemplate,
           contractService,
           projectRegisterService,
-          qualityReviewService,
           reportTechReviewService,
           reportContentReviewService,
           reportFinalReviewService,
@@ -68,17 +65,6 @@ class WorkflowTaskServiceTests {
             () -> workflowTaskService.approve("CONTRACT:1", "normal-user"));
 
     assertEquals(HttpStatus.FORBIDDEN, ex.getStatusCode());
-  }
-
-  @Test
-  void shouldAllowQualityTodoForNonReviewer() {
-    when(qualityReviewService.listTodoTasks("normal-user", null)).thenReturn(java.util.List.of());
-
-    java.util.List<WorkflowTaskDto> rows =
-        workflowTaskService.listTodo("normal-user", "QUALITY_REVIEW", null);
-
-    assertEquals(0, rows.size());
-    verify(qualityReviewService).listTodoTasks("normal-user", null);
   }
 
   @Test
@@ -172,16 +158,6 @@ class WorkflowTaskServiceTests {
   }
 
   @Test
-  void shouldDelegateApproveQualityTask() {
-    mockNoFlowableTask("QUALITY_REVIEW:45");
-
-    workflowTaskService.approve("QUALITY_REVIEW:45", "normal-user");
-
-    verify(qualityReviewService).approveTask(45L, "normal-user");
-    verify(contractService, never()).approve(org.mockito.ArgumentMatchers.anyLong(), anyString());
-  }
-
-  @Test
   void shouldLoadContractReviewDetailForReviewer() {
     when(userAccountService.hasAnyRole(eq("reviewer"), anyList())).thenReturn(true);
     ContractRecord contract = new ContractRecord();
@@ -192,18 +168,6 @@ class WorkflowTaskServiceTests {
     ContractRecord actual = workflowTaskService.loadContractReviewDetail(6L, "reviewer");
 
     assertSame(contract, actual);
-  }
-
-  @Test
-  void shouldRejectEnsureTaskAccessibleWhenTaskNotVisible() {
-    when(qualityReviewService.listTodoTasks("normal-user", null)).thenReturn(java.util.List.of());
-
-    ResponseStatusException ex =
-        assertThrows(
-            ResponseStatusException.class,
-            () -> workflowTaskService.ensureTaskAccessible("normal-user", "QUALITY_REVIEW", 88L));
-
-    assertEquals(HttpStatus.FORBIDDEN, ex.getStatusCode());
   }
 
   private void mockNoFlowableTask(String taskId) {

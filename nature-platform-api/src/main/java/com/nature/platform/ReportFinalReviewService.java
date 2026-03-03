@@ -1,6 +1,6 @@
 /**
  * @input JdbcTemplate, user-account service, workflow trace helper, notifications, and compile-stage data
- * @output Node-15 final-review save/auto-submit and task approve/reject operations with unified displayStatus projection
+ * @output Node-15 final-review auto-submit and task approve/reject operations using node-rule assigned reviewer with unified displayStatus projection
  * @position Report final-review service bridging compile submission completion to material archive stage
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
@@ -23,22 +23,26 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class ReportFinalReviewService {
   public static final String NODE_TASK = "REPORT_FINAL_REVIEW_TASK";
+  public static final String SLOT_FINAL_REVIEWER = "FINAL_REVIEWER";
   public static final String NEXT_NODE = "MATERIAL_ARCHIVE";
 
   private final JdbcTemplate jdbcTemplate;
   private final UserAccountService userAccountService;
   private final ProjectWorkflowTraceService workflowTraceService;
   private final NotificationService notificationService;
+  private final WorkflowConfigService workflowConfigService;
 
   public ReportFinalReviewService(
       JdbcTemplate jdbcTemplate,
       UserAccountService userAccountService,
       ProjectWorkflowTraceService workflowTraceService,
-      NotificationService notificationService) {
+      NotificationService notificationService,
+      WorkflowConfigService workflowConfigService) {
     this.jdbcTemplate = jdbcTemplate;
     this.userAccountService = userAccountService;
     this.workflowTraceService = workflowTraceService;
     this.notificationService = notificationService;
+    this.workflowConfigService = workflowConfigService;
   }
 
   public List<ReportFinalReviewRecord> list() {
@@ -54,10 +58,6 @@ public class ReportFinalReviewService {
     Optional<ReportFinalReviewRecord> first = rows.stream().findFirst();
     first.ifPresent(this::applyDisplayStatus);
     return first;
-  }
-
-  public List<String> listCandidates() {
-    return userAccountService.listEnabledUsernames();
   }
 
   public List<ReportFinalTodoTask> listTodoTasks(String operator, String keyword) {
@@ -111,7 +111,7 @@ public class ReportFinalReviewService {
   @Transactional
   public ReportFinalReviewRecord save(long projectId, ReportFinalReviewRequest request, String operator) {
     ensureCompileSubmitted(projectId);
-    String reviewer = normalizeUser(request.getReviewer());
+    String reviewer = loadAssignedFinalReviewer();
     ensureEnabledUser(reviewer);
 
     List<ApplyRow> applies =
@@ -180,9 +180,33 @@ public class ReportFinalReviewService {
   @Transactional
   public ReportFinalReviewRecord submit(long projectId, String operator) {
     ensureCompileSubmitted(projectId);
-    ApplyRow apply = loadApply(projectId);
-    if (apply.reviewer() == null || apply.reviewer().isBlank()) {
-      throw new ResponseStatusException(HttpStatus.CONFLICT, "reviewer is required before submit");
+    String reviewer = loadAssignedFinalReviewer();
+    ensureEnabledUser(reviewer);
+
+    ApplyRow apply = findApply(projectId).orElse(null);
+    if (apply == null) {
+      jdbcTemplate.update(
+          """
+          INSERT INTO report_final_review_apply (
+            project_register_id, reviewer, status, remark, version_no, applied_by, submitted_at, finished_at, updated_by
+          ) VALUES (?, ?, 'DRAFT', '', 1, ?, NULL, NULL, ?)
+          """,
+          projectId,
+          reviewer,
+          operator,
+          operator);
+      apply = findApply(projectId).orElseThrow();
+    } else if (!reviewer.equals(apply.reviewer())) {
+      jdbcTemplate.update(
+          """
+          UPDATE report_final_review_apply
+          SET reviewer = ?, updated_by = ?
+          WHERE id = ?
+          """,
+          reviewer,
+          operator,
+          apply.id());
+      apply = findApply(projectId).orElseThrow();
     }
 
     if (!"SUBMITTED".equalsIgnoreCase(apply.status())) {
@@ -211,15 +235,15 @@ public class ReportFinalReviewService {
         """,
         apply.id(),
         projectId,
-        apply.reviewer());
+        reviewer);
 
     workflowTraceService.moveNode(projectId, NODE_TASK, "PENDING", operator);
 
     ProjectRef project = loadProject(projectId);
     notificationService.createForUser(
-        apply.reviewer(),
-        "报告审核待处理",
-        "项目[" + project.applicationName() + "]已进入报告审核阶段。",
+        reviewer,
+        "Final review pending",
+        "Project[" + project.applicationName() + "] entered final review stage.",
         "REPORT_FINAL_REVIEW_ENTER",
         ProjectRegisterService.BIZ_TYPE,
         projectId);
@@ -256,8 +280,8 @@ public class ReportFinalReviewService {
 
     notificationService.createForUser(
         task.appliedBy(),
-        "报告审核通过",
-        "项目[" + task.applicationName() + "]报告审核已通过，请进行材料归档。",
+        "Final review approved",
+        "Project[" + task.applicationName() + "] final review approved; proceed to material archive.",
         "REPORT_FINAL_REVIEW_APPROVED",
         ProjectRegisterService.BIZ_TYPE,
         task.projectId());
@@ -294,8 +318,8 @@ public class ReportFinalReviewService {
 
     notificationService.createForUser(
         task.appliedBy(),
-        "报告审核驳回",
-        "项目[" + task.applicationName() + "]报告审核已驳回。",
+        "Final review rejected",
+        "Project[" + task.applicationName() + "] final review rejected.",
         "REPORT_FINAL_REVIEW_REJECTED",
         ProjectRegisterService.BIZ_TYPE,
         task.projectId());
@@ -304,8 +328,8 @@ public class ReportFinalReviewService {
     if (compileAssignee != null && !compileAssignee.isBlank()) {
       notificationService.createForUser(
           compileAssignee,
-          "报告需重新编制",
-          "项目[" + task.applicationName() + "]报告审核驳回，请调整后重新提交。",
+          "Report rework required",
+          "Project[" + task.applicationName() + "] final review rejected; please update and resubmit.",
           "REPORT_COMPILE_REWORK_REQUIRED",
           ProjectRegisterService.BIZ_TYPE,
           task.projectId());
@@ -334,7 +358,7 @@ public class ReportFinalReviewService {
     }
   }
 
-  private ApplyRow loadApply(long projectId) {
+  private Optional<ApplyRow> findApply(long projectId) {
     List<ApplyRow> rows =
         jdbcTemplate.query(
             """
@@ -350,10 +374,35 @@ public class ReportFinalReviewService {
                     rs.getString("reviewer"),
                     rs.getString("applied_by")),
             projectId);
-    if (rows.isEmpty()) {
-      throw new ResponseStatusException(HttpStatus.CONFLICT, "report final review draft is required");
+    return rows.stream().findFirst();
+  }
+
+  private ApplyRow loadApply(long projectId) {
+    return findApply(projectId)
+        .orElseThrow(
+            () -> new ResponseStatusException(HttpStatus.CONFLICT, "report final review draft is required"));
+  }
+
+  private String loadAssignedFinalReviewer() {
+    List<String> roleCodes =
+        workflowConfigService.listRoleCodesBySlot(NODE_TASK, SLOT_FINAL_REVIEWER, List.of());
+    if (roleCodes.isEmpty()) {
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT,
+          "final review slot not configured: set FINAL_REVIEWER in workflow node rule REPORT_FINAL_REVIEW_TASK");
     }
-    return rows.get(0);
+    List<String> reviewers =
+        userAccountService.listEnabledUsernamesByRoles(roleCodes).stream()
+            .map(this::normalizeUser)
+            .filter(item -> item != null && !item.isBlank())
+            .distinct()
+            .toList();
+    if (reviewers.isEmpty()) {
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT, "no enabled final reviewer found; check role assignment and user status");
+    }
+    // Use role-user sort order to choose a deterministic final reviewer.
+    return reviewers.get(0);
   }
 
   private TaskContext loadTask(long taskId) {
@@ -575,4 +624,3 @@ public class ReportFinalReviewService {
 
   private record ProjectRef(long id, String applicationName) {}
 }
-

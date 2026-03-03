@@ -177,6 +177,29 @@ try {
     -Pass ($projectSubmitResp.status -eq 200) `
     -Detail $projectSubmitResp.raw
 
+  $assessmentMemberPayload = @{
+    usernames = @("admin")
+  }
+  $assessmentMemberResp =
+    Invoke-E2EApi -Context $context `
+      -Method "Put" `
+      -Path "/api/v1/project-registers/$projectId/assessment-members" `
+      -Token $adminToken `
+      -Body $assessmentMemberPayload
+  $assessmentMembers = @()
+  if ($assessmentMemberResp.status -eq 200 -and
+      $null -ne $assessmentMemberResp.body -and
+      $null -ne $assessmentMemberResp.body.data -and
+      $assessmentMemberResp.body.data.PSObject.Properties.Name -contains "usernames") {
+    $assessmentMembers = @($assessmentMemberResp.body.data.usernames)
+  }
+  Add-E2EResult -Context $context `
+    -CaseName "project_assessment_members_saved_hp04" `
+    -Expected "200 + usernames non-empty" `
+    -Actual "status=$($assessmentMemberResp.status), count=$($assessmentMembers.Count)" `
+    -Pass ($assessmentMemberResp.status -eq 200 -and $assessmentMembers.Count -gt 0) `
+    -Detail $assessmentMemberResp.raw
+
   $projectTodoResp =
     Invoke-E2EApi -Context $context `
       -Method "Get" `
@@ -203,6 +226,7 @@ try {
     filingAgency = "agency-police"
     contactName = "officer"
     contactPhone = "13600136000"
+    projectManagerUsername = "reviewer"
     remark = "saved by hp04"
   }
   Invoke-E2EApi -Context $context -Method "Put" -Path "/api/v1/police-registers/$projectId" -Token $adminToken -Body $policePayload | Out-Null
@@ -214,45 +238,6 @@ try {
   }
   Invoke-E2EApi -Context $context -Method "Put" -Path "/api/v1/on-site-assessments/$projectId" -Token $adminToken -Body $onSitePayload | Out-Null
 
-  $candidatesResp =
-    Invoke-E2EApi -Context $context `
-      -Method "Get" `
-      -Path "/api/v1/on-site-assessments/reviewer-candidates" `
-      -Token $adminToken
-  $candidatesData = $candidatesResp.body.data
-  $techUsers = @($candidatesData.techReviewers)
-  $aUsers = @($candidatesData.contentReviewersTech)
-  $bUsers = @($candidatesData.contentReviewersManagement)
-  $cUsers = @($candidatesData.contentReviewersNetwork)
-  $candidatePass =
-    $candidatesResp.status -eq 200 -and
-    $techUsers.Count -gt 0 -and
-    $aUsers.Count -gt 0 -and
-    $bUsers.Count -gt 0 -and
-    $cUsers.Count -gt 0
-  Add-E2EResult -Context $context `
-    -CaseName "on_site_reviewer_candidates_ready_hp04" `
-    -Expected "200 + tech+内容技术/管理/网络 all non-empty" `
-    -Actual "status=$($candidatesResp.status), tech=$($techUsers.Count), A=$($aUsers.Count), B=$($bUsers.Count), C=$($cUsers.Count)" `
-    -Pass $candidatePass `
-    -Detail $candidatesResp.raw
-  if (-not $candidatePass) {
-    throw "reviewer candidates are not ready for hp04"
-  }
-
-  $techAssignee = "admin"
-  $contentTechAssignee = "admin"
-  $contentManagementAssignee = "admin"
-  $contentNetworkAssignee = "admin"
-
-  $assignPayload = @{
-    techReviewer = $techAssignee
-    contentReviewerTech = $contentTechAssignee
-    contentReviewerManagement = $contentManagementAssignee
-    contentReviewerNetwork = $contentNetworkAssignee
-    versionNo = 0
-  }
-  Invoke-E2EApi -Context $context -Method "Put" -Path "/api/v1/on-site-assessments/$projectId/review-assignment" -Token $adminToken -Body $assignPayload | Out-Null
   Invoke-E2EApi -Context $context -Method "Post" -Path "/api/v1/on-site-assessments/$projectId/submit" -Token $adminToken | Out-Null
 
   $techTodoResp = Invoke-E2EApi -Context $context -Method "Get" -Path "/api/v1/workflow/tasks/todo?type=REPORT_TECH_REVIEW" -Token $adminToken
@@ -304,28 +289,22 @@ try {
       -Token $adminToken
   Add-E2EResult -Context $context `
     -CaseName "report_compile_ready_for_final_review_hp04" `
-    -Expected "200 + status=SUBMITTED + workflowNode=REPORT_FINAL_REVIEW" `
+    -Expected "200 + status=SUBMITTED + workflowNode=REPORT_FINAL_REVIEW_TASK" `
     -Actual "status=$($compileSubmissionDetailResp.status), submitStatus=$([string]$compileSubmissionDetailResp.body.data.status), workflowNode=$([string]$compileSubmissionDetailResp.body.data.workflowNode)" `
-    -Pass ($compileSubmissionDetailResp.status -eq 200 -and [string]$compileSubmissionDetailResp.body.data.status -eq "SUBMITTED" -and [string]$compileSubmissionDetailResp.body.data.workflowNode -eq "REPORT_FINAL_REVIEW") `
+    -Pass ($compileSubmissionDetailResp.status -eq 200 -and [string]$compileSubmissionDetailResp.body.data.status -eq "SUBMITTED" -and [string]$compileSubmissionDetailResp.body.data.workflowNode -eq "REPORT_FINAL_REVIEW_TASK") `
     -Detail $compileSubmissionDetailResp.raw
 
-  $finalSavePayload = @{
-    reviewer = "admin"
-    remark = "final review draft by hp04"
-    versionNo = 0
-  }
-  $finalSaveResp =
+  $finalDetailBeforeApproveResp =
     Invoke-E2EApi -Context $context `
-      -Method "Put" `
+      -Method "Get" `
       -Path "/api/v1/report-final-reviews/$projectId" `
-      -Token $adminToken `
-      -Body $finalSavePayload
+      -Token $adminToken
   Add-E2EResult -Context $context `
-    -CaseName "report_final_review_save_success" `
-    -Expected "200 + status=SUBMITTED + reviewer=admin" `
-    -Actual "status=$($finalSaveResp.status), reviewStatus=$([string]$finalSaveResp.body.data.status), reviewer=$([string]$finalSaveResp.body.data.reviewer)" `
-    -Pass ($finalSaveResp.status -eq 200 -and [string]$finalSaveResp.body.data.status -eq "SUBMITTED" -and [string]$finalSaveResp.body.data.reviewer -eq "admin") `
-    -Detail $finalSaveResp.raw
+    -CaseName "report_final_review_auto_submit_success" `
+    -Expected "200 + status=SUBMITTED + workflowNode=REPORT_FINAL_REVIEW_TASK" `
+    -Actual "status=$($finalDetailBeforeApproveResp.status), reviewStatus=$([string]$finalDetailBeforeApproveResp.body.data.status), workflowNode=$([string]$finalDetailBeforeApproveResp.body.data.workflowNode)" `
+    -Pass ($finalDetailBeforeApproveResp.status -eq 200 -and [string]$finalDetailBeforeApproveResp.body.data.status -eq "SUBMITTED" -and [string]$finalDetailBeforeApproveResp.body.data.workflowNode -eq "REPORT_FINAL_REVIEW_TASK") `
+    -Detail $finalDetailBeforeApproveResp.raw
 
   $finalTodoResp =
     Invoke-E2EApi -Context $context `
@@ -421,9 +400,7 @@ try {
     $cleanupSqlLines.Add("DELETE FROM report_content_review_apply WHERE project_register_id = $projectId;") | Out-Null
     $cleanupSqlLines.Add("DELETE FROM report_tech_review_task WHERE project_register_id = $projectId;") | Out-Null
     $cleanupSqlLines.Add("DELETE FROM report_tech_review_apply WHERE project_register_id = $projectId;") | Out-Null
-    $cleanupSqlLines.Add("DELETE FROM quality_review_task WHERE project_register_id = $projectId;") | Out-Null
-    $cleanupSqlLines.Add("DELETE FROM quality_review_apply WHERE project_register_id = $projectId;") | Out-Null
-    $cleanupSqlLines.Add("DELETE FROM workflow_assignment WHERE project_register_id = $projectId;") | Out-Null
+    $cleanupSqlLines.Add("DELETE FROM project_assessment_member WHERE project_register_id = $projectId;") | Out-Null
     $cleanupSqlLines.Add("DELETE FROM on_site_assessment WHERE project_register_id = $projectId;") | Out-Null
     $cleanupSqlLines.Add("DELETE FROM police_register WHERE project_register_id = $projectId;") | Out-Null
     $cleanupSqlLines.Add("DELETE FROM project_system_item WHERE project_register_id = $projectId;") | Out-Null

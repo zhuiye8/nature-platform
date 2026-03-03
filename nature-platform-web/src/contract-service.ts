@@ -1,6 +1,6 @@
 /**
  * @input apiClient and ApiResponse from local HTTP infrastructure
- * @output Contract submission/archive split API wrappers and contract domain types for management pages
+ * @output Contract submission/archive split API wrappers and contract domain types (including canViewDetail visibility flag)
  * @position Frontend contract service layer encapsulating contract lifecycle REST contracts
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
@@ -20,6 +20,7 @@ export interface ContractRecord {
   contractNo?: string;
   reviewStatus: string;
   archiveStatus: string;
+  canViewDetail?: boolean;
   createdBy: string;
   createdAt: string;
   serviceYears: number[];
@@ -69,6 +70,11 @@ export interface ContractArchivePayload {
   archiveScanObjectKey?: string;
 }
 
+export interface ContractProjectNameSuggestionResponse {
+  items: string[];
+  exactExists: boolean;
+}
+
 export async function fetchContracts(): Promise<ContractRecord[]> {
   const response = await apiClient.get<ApiResponse<ContractRecord[]>>("/contracts");
   return response.data.data;
@@ -81,6 +87,24 @@ export async function fetchContractSubmissionList(): Promise<ContractRecord[]> {
 
 export async function fetchContractArchiveList(): Promise<ContractRecord[]> {
   const response = await apiClient.get<ApiResponse<ContractRecord[]>>("/contracts/archive-list");
+  return response.data.data;
+}
+
+export async function fetchContractDetail(id: number): Promise<ContractRecord> {
+  const response = await apiClient.get<ApiResponse<ContractRecord>>(`/contracts/${id}`);
+  return response.data.data;
+}
+
+export async function fetchContractProjectNameSuggestions(
+  keyword: string,
+  limit = 5
+): Promise<ContractProjectNameSuggestionResponse> {
+  const response = await apiClient.get<ApiResponse<ContractProjectNameSuggestionResponse>>(
+    "/contracts/project-name-suggestions",
+    {
+      params: { keyword, limit }
+    }
+  );
   return response.data.data;
 }
 

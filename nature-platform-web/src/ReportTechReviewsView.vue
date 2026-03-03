@@ -1,9 +1,9 @@
 ﻿<template>
   <div class="page-shell page section-stack">
     <header class="page-header">
-      <div>
-        <h2>报告技术审核</h2>
-        <p>节点 11：审核任务由现场测评提交自动创建，本页用于查看技术审核状态与详情信息。</p>
+      <div class="page-title-group">
+        <h2 class="page-title">报告技术审核</h2>
+        <p class="page-subtitle">节点 11：现场测评提交后自动生成技术审核任务。</p>
       </div>
       <el-space>
         <el-button :loading="loading" @click="loadRows">刷新</el-button>
@@ -11,12 +11,12 @@
       </el-space>
     </header>
 
-    <el-card class="tip-card">
+    <el-card class="tip-card np-info-strip">
       <el-alert
         type="info"
         :closable="false"
         show-icon
-        title="技术审核任务已自动入待办，本页不再提供手工提交入口。"
+        title="本页用于查看技术审核状态，审核动作统一在“详情页”处理。"
       />
     </el-card>
 
@@ -36,28 +36,11 @@
           </template>
         </el-table-column>
         <el-table-column prop="workflowNode" label="流程节点" width="200" show-overflow-tooltip />
-        <el-table-column label="操作" width="280" fixed="right">
+        <el-table-column label="操作" width="220" fixed="right">
           <template #default="{ row }">
             <el-space>
-              <el-button
-                v-if="canReview(row)"
-                size="small"
-                type="success"
-                :loading="actionLoading && actionTaskKey === buildTaskKey(row)"
-                @click="approveRow(row)"
-              >
-                通过
-              </el-button>
-              <el-button
-                v-if="canReview(row)"
-                size="small"
-                type="danger"
-                :loading="actionLoading && actionTaskKey === buildTaskKey(row)"
-                @click="rejectRow(row)"
-              >
-                需要整改
-              </el-button>
-              <el-button size="small" @click="openDetail(row)">详情</el-button>
+              <el-button size="small" @click="openEntityDetail(row.projectRegisterId)">业务详情</el-button>
+              <el-button size="small" @click="openDetail(row)">审核详情</el-button>
             </el-space>
           </template>
         </el-table-column>
@@ -68,25 +51,20 @@
 
 <script setup lang="ts">
 /**
- * @input Report tech review list API and router navigation for workflow/task inspection
- * @output Node-11 technical review task board with displayStatus-based rendering, approve/reject actions, and unified detail-page entry
- * @position Report technical review page for reviewing auto-created task progress with task-detail route handoff
+ * @input Report tech review list API, workflow todo API, and router navigation helper
+ * @output Node-11 technical review board with status projection and detail-page handoff
+ * @position Report technical review page for viewing tasks and entering unified review detail page
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 import { onMounted, ref } from "vue";
-import { ElMessage, ElMessageBox } from "element-plus";
+import { ElMessage } from "element-plus";
 import { useRouter } from "vue-router";
-import {
-  fetchReportTechReviews,
-  type ReportTechReviewRecord
-} from "./report-tech-review-service";
-import { approveTask, fetchTodoTasks, rejectTask } from "./workflow-service";
+import { fetchReportTechReviews, type ReportTechReviewRecord } from "./report-tech-review-service";
+import { fetchTodoTasks } from "./workflow-service";
 import { toTaskDetailPath } from "./task-detail-service";
 
 const router = useRouter();
 const loading = ref(false);
-const actionLoading = ref(false);
-const actionTaskKey = ref("");
 const rows = ref<ReportTechReviewRecord[]>([]);
 const todoTaskKeyByProject = ref<Record<number, string>>({});
 
@@ -116,115 +94,11 @@ function resolveStatus(row: ReportTechReviewRecord) {
   return row.status;
 }
 
-function canReview(row: ReportTechReviewRecord) {
-  if (!resolveTaskKey(row)) {
-    return false;
-  }
-  const status = normalizeStatusValue(resolveStatus(row));
-  if (status === "PENDING" || status === "SUBMITTED" || status === "待审核") {
-    return true;
-  }
-  if (status === "") {
-    const workflow = normalizeStatusValue(row.workflowStatus);
-    const node = normalizeStatusValue(row.workflowNode);
-    return workflow === "PENDING" && node.includes("REPORT_TECH_REVIEW_TASK");
-  }
-  return false;
-}
-
-function hasTaskId(row: ReportTechReviewRecord) {
-  return row.taskId !== null && row.taskId !== undefined && String(row.taskId).trim().length > 0;
-}
-
 function resolveTaskKey(row: ReportTechReviewRecord) {
-  if (hasTaskId(row)) {
-    return `REPORT_TECH_REVIEW:${row.taskId ?? ""}`;
+  if (row.taskId !== null && row.taskId !== undefined && String(row.taskId).trim().length > 0) {
+    return `REPORT_TECH_REVIEW:${row.taskId}`;
   }
   return todoTaskKeyByProject.value[row.projectRegisterId] ?? "";
-}
-
-function normalizeStatusValue(value?: string) {
-  if (!value) {
-    return "";
-  }
-  return String(value).trim().toUpperCase();
-}
-
-function buildTaskKey(row: ReportTechReviewRecord) {
-  return resolveTaskKey(row);
-}
-
-async function approveRow(row: ReportTechReviewRecord) {
-  if (!canReview(row)) {
-    return;
-  }
-  const taskKey = buildTaskKey(row);
-  if (!taskKey) {
-    ElMessage.error("未找到技术审核任务编号，请在待办审批中处理");
-    return;
-  }
-  try {
-    await ElMessageBox.confirm("通过后流程将推进到下一节点，当前操作不可撤销。", "审核通过确认", {
-      type: "warning",
-      confirmButtonText: "确认通过",
-      cancelButtonText: "取消"
-    });
-  } catch {
-    return;
-  }
-  actionLoading.value = true;
-  actionTaskKey.value = taskKey;
-  try {
-    await approveTask(taskKey);
-    ElMessage.success("技术审核已通过");
-    await loadRows();
-  } catch (error) {
-    ElMessage.error(readErrorMessage(error, "技术审核通过失败"));
-  } finally {
-    actionLoading.value = false;
-    actionTaskKey.value = "";
-  }
-}
-
-async function rejectRow(row: ReportTechReviewRecord) {
-  if (!canReview(row)) {
-    return;
-  }
-  const taskKey = buildTaskKey(row);
-  if (!taskKey) {
-    ElMessage.error("未找到技术审核任务编号，请在待办审批中处理");
-    return;
-  }
-  let remark = "";
-  try {
-    const prompt = await ElMessageBox.prompt("请填写整改要求", "标记需要整改", {
-      inputType: "textarea",
-      inputPlaceholder: "请输入整改要求",
-      inputValidator: (value) => {
-        if (!value || !value.trim()) {
-          return "整改要求不能为空";
-        }
-        return true;
-      },
-      confirmButtonText: "确认整改",
-      cancelButtonText: "取消"
-    });
-    remark = prompt.value.trim();
-  } catch {
-    return;
-  }
-  actionLoading.value = true;
-  actionTaskKey.value = taskKey;
-  try {
-    await rejectTask(taskKey, remark);
-    ElMessage.success("已标记需要整改");
-    await loadRows();
-  } catch (error) {
-    ElMessage.error(readErrorMessage(error, "提交整改要求失败"));
-  } finally {
-    actionLoading.value = false;
-    actionTaskKey.value = "";
-  }
 }
 
 function readErrorMessage(error: unknown, fallback: string) {
@@ -259,8 +133,12 @@ function goWorkflow() {
 }
 
 function openDetail(row: ReportTechReviewRecord) {
-  const taskKey = buildTaskKey(row);
+  const taskKey = resolveTaskKey(row);
   void router.push(toTaskDetailPath("REPORT_TECH_REVIEW", row.projectRegisterId, taskKey || undefined));
+}
+
+function openEntityDetail(projectId: number) {
+  void router.push(`/entity-detail/report/${projectId}`);
 }
 
 onMounted(() => {

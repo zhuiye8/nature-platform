@@ -35,6 +35,7 @@ public class ContractRecord {
   private String archiveStatus;
   private String createdBy;
   private String createdAt;
+  private boolean canViewDetail = true;
   private List<Integer> serviceYears = new ArrayList<>();
   private List<ContractSystemItemPayload> systemItems = new ArrayList<>();
 
@@ -230,6 +231,14 @@ public class ContractRecord {
     this.createdAt = createdAt;
   }
 
+  public boolean isCanViewDetail() {
+    return canViewDetail;
+  }
+
+  public void setCanViewDetail(boolean canViewDetail) {
+    this.canViewDetail = canViewDetail;
+  }
+
   public List<Integer> getServiceYears() {
     return serviceYears;
   }
@@ -246,4 +255,3 @@ public class ContractRecord {
     this.systemItems = systemItems;
   }
 }
-

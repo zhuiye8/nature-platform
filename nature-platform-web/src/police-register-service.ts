@@ -16,6 +16,8 @@ export interface PoliceRegisterRecord {
   filingAgency?: string;
   contactName?: string;
   contactPhone?: string;
+  projectManagerUsername?: string;
+  projectManagerDisplayName?: string;
   remark?: string;
   createdBy?: string;
   createdAt?: string;
@@ -29,7 +31,13 @@ export interface PoliceRegisterPayload {
   filingAgency?: string;
   contactName?: string;
   contactPhone?: string;
+  projectManagerUsername?: string;
   remark?: string;
+}
+
+export async function fetchPoliceRegisterProjectManagers(): Promise<string[]> {
+  const response = await apiClient.get<ApiResponse<string[]>>("/police-registers/project-managers");
+  return response.data.data;
 }
 
 export async function fetchPoliceRegisters(): Promise<PoliceRegisterRecord[]> {

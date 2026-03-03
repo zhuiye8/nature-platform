@@ -226,6 +226,17 @@ const stageOptions = [
   { label: "系统管理", value: "SYSTEM" }
 ] as const;
 
+const SLOT_LABEL_MAP: Record<string, string> = {
+  TECH_REVIEWER: "技术审核人",
+  CONTENT_REVIEWER_A: "内容审核-技术",
+  CONTENT_REVIEWER_B: "内容审核-管理",
+  CONTENT_REVIEWER_C: "内容审核-网络",
+  CONTENT_REVIEWER_TECH: "内容审核-技术",
+  CONTENT_REVIEWER_MANAGEMENT: "内容审核-管理",
+  CONTENT_REVIEWER_NETWORK: "内容审核-网络",
+  FINAL_REVIEWER: "最终审核人"
+};
+
 const loading = ref(false);
 const submittingDefinition = ref(false);
 const submittingRule = ref(false);
@@ -324,6 +335,35 @@ function resetRuleForm() {
   ruleForm.items = [createEmptyRuleItem()];
 }
 
+function isBrokenSlotLabel(label?: string) {
+  if (!label) {
+    return true;
+  }
+  const trimmed = label.trim();
+  if (!trimmed) {
+    return true;
+  }
+  return trimmed.includes("???") || trimmed.includes("�");
+}
+
+function resolveSlotLabel(slotKey?: string, slotLabel?: string) {
+  const normalizedKey = (slotKey || "").trim().toUpperCase();
+  if (!isBrokenSlotLabel(slotLabel)) {
+    return slotLabel!.trim();
+  }
+  return SLOT_LABEL_MAP[normalizedKey] || (slotLabel || "");
+}
+
+function normalizeRuleRows(ruleRows: WorkflowNodeRuleRecord[]): WorkflowNodeRuleRecord[] {
+  return ruleRows.map((row) => ({
+    ...row,
+    items: row.items.map((item) => ({
+      ...item,
+      slotLabel: resolveSlotLabel(item.slotKey, item.slotLabel)
+    }))
+  }));
+}
+
 function openCreateDefinition() {
   definitionEditing.value = false;
   resetDefinitionForm();
@@ -354,7 +394,10 @@ function openEditRule(row: WorkflowNodeRuleRecord) {
   ruleForm.enabled = row.enabled;
   ruleForm.updatedBy = row.updatedBy || "";
   ruleForm.updatedAt = row.updatedAt || "";
-  ruleForm.items = row.items.map((item) => ({ ...item }));
+  ruleForm.items = row.items.map((item) => ({
+    ...item,
+    slotLabel: resolveSlotLabel(item.slotKey, item.slotLabel)
+  }));
   if (!ruleForm.items.length) {
     ruleForm.items = [createEmptyRuleItem()];
   }
@@ -382,8 +425,9 @@ async function loadAll() {
       fetchAdminRoles()
     ]);
     definitions.value = definitionRows;
-    rules.value = ruleRows;
-    roleOptions.value = buildRoleOptions(workflowRoleCodeRows, adminRoleRows, ruleRows);
+    const normalizedRuleRows = normalizeRuleRows(ruleRows);
+    rules.value = normalizedRuleRows;
+    roleOptions.value = buildRoleOptions(workflowRoleCodeRows, adminRoleRows, normalizedRuleRows);
   } catch (error) {
     ElMessage.error(readErrorMessage(error, "加载流程配置失败"));
   } finally {

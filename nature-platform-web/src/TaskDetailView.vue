@@ -1,318 +1,167 @@
-<template>
-  <div class="page-shell page section-stack">
+﻿<template>
+  <div class="task-detail page-shell page section-stack">
     <header class="page-header">
       <div class="page-title-group">
         <h2 class="page-title">审核详情</h2>
-        <p class="page-subtitle">展示截至当前节点的完整上下文信息，供审核与复核参考。</p>
+        <p class="page-subtitle">聚焦业务信息与附件，审核操作统一在本页完成。</p>
       </div>
-      <el-space>
+      <el-space wrap>
+        <el-button
+          v-if="canReview"
+          type="success"
+          :loading="actionLoading === 'approve'"
+          @click="approveCurrentTask"
+        >
+          通过
+        </el-button>
+        <el-button
+          v-if="canReview"
+          type="danger"
+          :loading="actionLoading === 'reject'"
+          @click="rejectDialogVisible = true"
+        >
+          需要整改
+        </el-button>
         <el-button :loading="loading" @click="loadDetail">刷新</el-button>
         <el-button @click="goBack">返回</el-button>
       </el-space>
     </header>
 
-    <el-card class="summary-card" v-loading="loading">
-      <el-alert
-        v-if="errorText"
-        type="error"
-        :closable="false"
-        show-icon
-        :title="errorText"
-      />
-      <template v-else>
-        <el-descriptions :column="2" border>
-          <el-descriptions-item label="任务类型">{{ taskTypeLabel(taskType) }}</el-descriptions-item>
-          <el-descriptions-item label="业务ID">{{ bizId }}</el-descriptions-item>
-          <el-descriptions-item label="任务ID">{{ activeTaskId || "-" }}</el-descriptions-item>
-          <el-descriptions-item label="任务状态">
-            <el-tag :type="statusTagType(taskStatus)">{{ statusLabel(taskStatus) }}</el-tag>
-          </el-descriptions-item>
-          <el-descriptions-item label="流程节点">{{ currentNode || "-" }}</el-descriptions-item>
-          <el-descriptions-item label="提交时间">{{ activeTask?.submittedAt || "-" }}</el-descriptions-item>
-          <el-descriptions-item label="提交人">{{ activeTask?.submittedBy || "-" }}</el-descriptions-item>
-          <el-descriptions-item label="标题">{{ activeTask?.bizTitle || summaryTitle || "-" }}</el-descriptions-item>
-        </el-descriptions>
-      </template>
+    <el-alert v-if="errorText" type="error" :closable="false" show-icon :title="errorText" />
+
+    <el-card class="progress-card" shadow="never" v-loading="loading">
+      <div class="progress-head">
+        <div class="progress-title-group">
+          <h3>审核流程</h3>
+          <p>当前节点：{{ currentStepLabel }}</p>
+        </div>
+        <el-tag :type="statusTagType(taskStatus)">{{ statusLabel(taskStatus) }}</el-tag>
+      </div>
+      <el-steps :active="stepActiveIndex" finish-status="success" align-center>
+        <el-step v-for="step in displaySteps" :key="step.key" :title="step.label" />
+      </el-steps>
     </el-card>
 
-    <el-card v-if="isContractTask && contractDetail" class="section-card" header="合同详情">
-      <el-descriptions :column="2" border>
-        <el-descriptions-item label="合同ID">{{ contractDetail.id }}</el-descriptions-item>
-        <el-descriptions-item label="合同编号">{{ contractDetail.contractNo || "-" }}</el-descriptions-item>
-        <el-descriptions-item label="合同名称">{{ contractDetail.contractName || "-" }}</el-descriptions-item>
-        <el-descriptions-item label="项目名称">{{ contractDetail.projectName || "-" }}</el-descriptions-item>
-        <el-descriptions-item label="客户名称">{{ contractDetail.customerName || "-" }}</el-descriptions-item>
-        <el-descriptions-item label="审核状态">{{ statusLabel(contractDetail.reviewStatus) }}</el-descriptions-item>
-        <el-descriptions-item label="归档状态">{{ statusLabel(contractDetail.archiveStatus) }}</el-descriptions-item>
-        <el-descriptions-item label="创建人">{{ contractDetail.createdBy || "-" }}</el-descriptions-item>
-        <el-descriptions-item label="创建时间">{{ contractDetail.createdAt || "-" }}</el-descriptions-item>
-        <el-descriptions-item label="服务年份">
-          {{ contractDetail.serviceYears?.join("、") || "-" }}
-        </el-descriptions-item>
-        <el-descriptions-item label="备注">{{ contractDetail.remark || "-" }}</el-descriptions-item>
+    <el-card class="summary-card" shadow="never" v-loading="loading">
+      <el-descriptions :column="2" border size="small">
+        <el-descriptions-item label="业务标题">{{ activeTask?.bizTitle || summaryTitle || "-" }}</el-descriptions-item>
+        <el-descriptions-item label="任务类型">{{ taskTypeLabel(taskType) }}</el-descriptions-item>
+        <el-descriptions-item label="业务ID">{{ bizId }}</el-descriptions-item>
+        <el-descriptions-item label="任务ID">{{ activeTaskId || "-" }}</el-descriptions-item>
+        <el-descriptions-item label="提交人">{{ activeTask?.submittedBy || "-" }}</el-descriptions-item>
+        <el-descriptions-item label="提交时间">{{ activeTask?.submittedAt || "-" }}</el-descriptions-item>
       </el-descriptions>
     </el-card>
 
-    <template v-if="isProjectTask && overview">
-      <el-card class="section-card" header="项目登记" v-if="shouldShowSection(1)">
-        <template v-if="overview.projectRegister">
-          <el-descriptions :column="2" border>
-            <el-descriptions-item label="申请单名称">{{ overview.applicationName || "-" }}</el-descriptions-item>
-            <el-descriptions-item label="项目状态">{{ statusLabel(overview.projectStatus) }}</el-descriptions-item>
-            <el-descriptions-item label="合同名称">{{ overview.projectRegister.contractName || "-" }}</el-descriptions-item>
-            <el-descriptions-item label="合同年份">{{ overview.projectRegister.contractYear || "-" }}</el-descriptions-item>
-            <el-descriptions-item label="创建人">{{ overview.projectRegister.createdBy || "-" }}</el-descriptions-item>
-            <el-descriptions-item label="创建时间">{{ overview.projectRegister.createdAt || "-" }}</el-descriptions-item>
-          </el-descriptions>
-        </template>
-        <el-empty v-else description="尚未产生数据" :image-size="70" />
-      </el-card>
+    <el-tabs class="detail-tabs">
+      <el-tab-pane label="业务信息">
+        <template v-if="isContractTask && contractDetail">
+          <el-card class="section-card" header="合同业务信息" shadow="never">
+            <el-descriptions :column="2" border size="small">
+              <el-descriptions-item v-for="field in contractFieldItems" :key="field.label" :label="field.label">
+                {{ field.value }}
+              </el-descriptions-item>
+            </el-descriptions>
+          </el-card>
 
-      <el-card class="section-card" header="公安登记" v-if="shouldShowSection(2)">
-        <template v-if="overview.policeRegister">
-          <el-descriptions :column="2" border>
-            <el-descriptions-item label="状态">
-              <el-tag :type="statusTagType(overview.policeRegister.status)">
-                {{ statusLabel(overview.policeRegister.status) }}
-              </el-tag>
-            </el-descriptions-item>
-            <el-descriptions-item label="登记编号">{{ overview.policeRegister.registerNo || "-" }}</el-descriptions-item>
-            <el-descriptions-item label="备案机关">{{ overview.policeRegister.filingAgency || "-" }}</el-descriptions-item>
-            <el-descriptions-item label="联系人">{{ overview.policeRegister.contactName || "-" }}</el-descriptions-item>
-            <el-descriptions-item label="联系电话">{{ overview.policeRegister.contactPhone || "-" }}</el-descriptions-item>
-            <el-descriptions-item label="备注">{{ overview.policeRegister.remark || "-" }}</el-descriptions-item>
-          </el-descriptions>
+          <el-card v-if="contractSystemItems.length" class="section-card" header="系统清单" shadow="never">
+            <el-table :data="contractSystemItems" empty-text="暂无系统清单">
+              <el-table-column prop="systemLevel" label="系统级别" width="140" />
+              <el-table-column prop="systemName" label="系统名称" min-width="260" />
+            </el-table>
+          </el-card>
         </template>
-        <el-empty v-else description="尚未产生数据" :image-size="70" />
-      </el-card>
 
-      <el-card class="section-card" header="现场测评" v-if="shouldShowSection(3)">
-        <template v-if="overview.onSiteAssessment">
-          <el-descriptions :column="2" border>
-            <el-descriptions-item label="状态">
-              <el-tag :type="statusTagType(overview.onSiteAssessment.status)">
-                {{ statusLabel(overview.onSiteAssessment.status) }}
-              </el-tag>
-            </el-descriptions-item>
-            <el-descriptions-item label="测评压缩包">
-              {{ overview.onSiteAssessment.packageObjectKey || "-" }}
-            </el-descriptions-item>
-            <el-descriptions-item label="技术审核人">{{ overview.onSiteAssessment.techReviewer || "-" }}</el-descriptions-item>
-            <el-descriptions-item label="内容技术">{{ overview.onSiteAssessment.contentReviewerTech || "-" }}</el-descriptions-item>
-            <el-descriptions-item label="内容管理">{{ overview.onSiteAssessment.contentReviewerManagement || "-" }}</el-descriptions-item>
-            <el-descriptions-item label="内容网络">{{ overview.onSiteAssessment.contentReviewerNetwork || "-" }}</el-descriptions-item>
-          </el-descriptions>
-        </template>
-        <el-empty v-else description="尚未产生数据" :image-size="70" />
-      </el-card>
-
-      <el-card class="section-card" header="质量审核" v-if="shouldShowSection(4)">
-        <template v-if="overview.qualityReview">
-          <el-descriptions :column="2" border>
-            <el-descriptions-item label="状态">
-              <el-tag :type="statusTagType(overview.qualityReview.status)">
-                {{ statusLabel(overview.qualityReview.status) }}
-              </el-tag>
-            </el-descriptions-item>
-            <el-descriptions-item label="提交人">{{ overview.qualityReview.appliedBy || "-" }}</el-descriptions-item>
-            <el-descriptions-item label="提交时间">{{ overview.qualityReview.submittedAt || "-" }}</el-descriptions-item>
-            <el-descriptions-item label="完成时间">{{ overview.qualityReview.finishedAt || "-" }}</el-descriptions-item>
-          </el-descriptions>
-          <el-table
-            :data="overview.qualityReview.tasks || []"
-            style="margin-top: 12px"
-            empty-text="暂无任务记录"
+        <template v-else-if="isProjectTask && projectSections.length > 0">
+          <el-card
+            v-for="section in projectSections"
+            :key="section.key"
+            class="section-card"
+            :header="section.title"
+            shadow="never"
           >
-            <el-table-column prop="reviewRole" label="审核角色" width="180" />
-            <el-table-column prop="assignee" label="处理人" width="140" />
-            <el-table-column prop="status" label="状态" width="120">
-              <template #default="{ row }">
-                <el-tag :type="statusTagType(row.status)">{{ statusLabel(row.status) }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column prop="processedBy" label="处理人" width="140" />
-            <el-table-column prop="processedAt" label="处理时间" min-width="170" />
-          </el-table>
-        </template>
-        <el-empty v-else description="尚未产生数据" :image-size="70" />
-      </el-card>
-
-      <el-card class="section-card" header="技术审核" v-if="shouldShowSection(5)">
-        <template v-if="overview.reportTechReview">
-          <el-descriptions :column="2" border>
-            <el-descriptions-item label="状态">
-              <el-tag :type="statusTagType(overview.reportTechReview.status)">
-                {{ statusLabel(overview.reportTechReview.status) }}
-              </el-tag>
-            </el-descriptions-item>
-            <el-descriptions-item label="审核人">{{ overview.reportTechReview.reviewer || "-" }}</el-descriptions-item>
-            <el-descriptions-item label="提交时间">{{ overview.reportTechReview.submittedAt || "-" }}</el-descriptions-item>
-            <el-descriptions-item label="完成时间">{{ overview.reportTechReview.finishedAt || "-" }}</el-descriptions-item>
-            <el-descriptions-item label="备注">{{ overview.reportTechReview.remark || "-" }}</el-descriptions-item>
-          </el-descriptions>
-        </template>
-        <el-empty v-else description="尚未产生数据" :image-size="70" />
-      </el-card>
-
-      <el-card class="section-card" header="内容审核" v-if="shouldShowSection(6)">
-        <template v-if="overview.reportContentReview">
-          <el-descriptions :column="2" border>
-            <el-descriptions-item label="状态">
-              <el-tag :type="statusTagType(overview.reportContentReview.status)">
-                {{ statusLabel(overview.reportContentReview.status) }}
-              </el-tag>
-            </el-descriptions-item>
-            <el-descriptions-item label="技术审核人">{{ overview.reportContentReview.reviewerTech || "-" }}</el-descriptions-item>
-            <el-descriptions-item label="管理审核人">{{ overview.reportContentReview.reviewerManagement || "-" }}</el-descriptions-item>
-            <el-descriptions-item label="网络审核人">{{ overview.reportContentReview.reviewerNetwork || "-" }}</el-descriptions-item>
-            <el-descriptions-item label="提交时间">{{ overview.reportContentReview.submittedAt || "-" }}</el-descriptions-item>
-            <el-descriptions-item label="完成时间">{{ overview.reportContentReview.finishedAt || "-" }}</el-descriptions-item>
-          </el-descriptions>
-          <el-table
-            :data="overview.reportContentReview.tasks || []"
-            style="margin-top: 12px"
-            empty-text="暂无任务记录"
-          >
-            <el-table-column prop="reviewRole" label="审核角色" width="180" />
-            <el-table-column prop="assignee" label="处理人" width="140" />
-            <el-table-column prop="status" label="状态" width="120">
-              <template #default="{ row }">
-                <el-tag :type="statusTagType(row.status)">{{ statusLabel(row.status) }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column prop="processedBy" label="处理人" width="140" />
-            <el-table-column prop="processedAt" label="处理时间" min-width="170" />
-          </el-table>
-        </template>
-        <el-empty v-else description="尚未产生数据" :image-size="70" />
-      </el-card>
-
-      <el-card class="section-card" header="编制分配" v-if="shouldShowSection(7)">
-        <template v-if="overview.reportCompileAssignment">
-          <el-descriptions :column="2" border>
-            <el-descriptions-item label="状态">
-              <el-tag :type="statusTagType(overview.reportCompileAssignment.status)">
-                {{ statusLabel(overview.reportCompileAssignment.status) }}
-              </el-tag>
-            </el-descriptions-item>
-            <el-descriptions-item label="编制人">{{ overview.reportCompileAssignment.assignee || "-" }}</el-descriptions-item>
-            <el-descriptions-item label="版本">{{ overview.reportCompileAssignment.versionNo || "-" }}</el-descriptions-item>
-            <el-descriptions-item label="提交时间">{{ overview.reportCompileAssignment.submittedAt || "-" }}</el-descriptions-item>
-          </el-descriptions>
-        </template>
-        <el-empty v-else description="尚未产生数据" :image-size="70" />
-      </el-card>
-
-      <el-card class="section-card" header="报告编制" v-if="shouldShowSection(8)">
-        <template v-if="overview.reportCompileSubmission">
-          <el-descriptions :column="2" border>
-            <el-descriptions-item label="状态">
-              <el-tag :type="statusTagType(overview.reportCompileSubmission.status)">
-                {{ statusLabel(overview.reportCompileSubmission.status) }}
-              </el-tag>
-            </el-descriptions-item>
-            <el-descriptions-item label="编制人">{{ overview.reportCompileSubmission.assignee || "-" }}</el-descriptions-item>
-            <el-descriptions-item label="报告对象键">{{ overview.reportCompileSubmission.reportObjectKey || "-" }}</el-descriptions-item>
-            <el-descriptions-item label="提交人">{{ overview.reportCompileSubmission.submittedBy || "-" }}</el-descriptions-item>
-            <el-descriptions-item label="提交时间">{{ overview.reportCompileSubmission.submittedAt || "-" }}</el-descriptions-item>
-            <el-descriptions-item label="备注">{{ overview.reportCompileSubmission.reportRemark || "-" }}</el-descriptions-item>
-          </el-descriptions>
-        </template>
-        <el-empty v-else description="尚未产生数据" :image-size="70" />
-      </el-card>
-
-      <el-card class="section-card" header="最终审核" v-if="shouldShowSection(9)">
-        <template v-if="overview.reportFinalReview">
-          <el-descriptions :column="2" border>
-            <el-descriptions-item label="状态">
-              <el-tag :type="statusTagType(overview.reportFinalReview.status)">
-                {{ statusLabel(overview.reportFinalReview.status) }}
-              </el-tag>
-            </el-descriptions-item>
-            <el-descriptions-item label="审核人">{{ overview.reportFinalReview.reviewer || "-" }}</el-descriptions-item>
-            <el-descriptions-item label="提交时间">{{ overview.reportFinalReview.submittedAt || "-" }}</el-descriptions-item>
-            <el-descriptions-item label="完成时间">{{ overview.reportFinalReview.finishedAt || "-" }}</el-descriptions-item>
-            <el-descriptions-item label="备注">{{ overview.reportFinalReview.remark || "-" }}</el-descriptions-item>
-          </el-descriptions>
-        </template>
-        <el-empty v-else description="尚未产生数据" :image-size="70" />
-      </el-card>
-
-      <el-card class="section-card" header="材料归档" v-if="shouldShowSection(10)">
-        <template v-if="overview.materialArchive">
-          <el-descriptions :column="2" border>
-            <el-descriptions-item label="状态">
-              <el-tag :type="statusTagType(overview.materialArchive.status)">
-                {{ statusLabel(overview.materialArchive.status) }}
-              </el-tag>
-            </el-descriptions-item>
-            <el-descriptions-item label="提交人">{{ overview.materialArchive.submittedBy || "-" }}</el-descriptions-item>
-            <el-descriptions-item label="提交时间">{{ overview.materialArchive.submittedAt || "-" }}</el-descriptions-item>
-            <el-descriptions-item label="归档报告">
-              {{ joinText(overview.materialArchive.reportFiles) }}
-            </el-descriptions-item>
-            <el-descriptions-item label="归档表单">
-              {{ joinText(overview.materialArchive.formFiles) }}
-            </el-descriptions-item>
-            <el-descriptions-item label="备注">{{ overview.materialArchive.remark || "-" }}</el-descriptions-item>
-          </el-descriptions>
-        </template>
-        <el-empty v-else description="尚未产生数据" :image-size="70" />
-      </el-card>
-
-      <el-card class="section-card" header="流程轨迹">
-        <el-table :data="traceRows" empty-text="暂无流程轨迹">
-          <el-table-column prop="action" label="动作" min-width="180" show-overflow-tooltip />
-          <el-table-column prop="workflowNode" label="流程节点" width="180" show-overflow-tooltip />
-          <el-table-column prop="workflowStatus" label="流程状态" width="130">
-            <template #default="{ row }">
-              <el-tag :type="statusTagType(row.workflowStatus)">{{ statusLabel(row.workflowStatus) }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="operator" label="处理人" width="120" />
-          <el-table-column prop="createdAt" label="时间" min-width="170" />
-          <el-table-column prop="remark" label="备注" min-width="180" show-overflow-tooltip />
-        </el-table>
-      </el-card>
-
-      <el-card class="section-card" header="附件清单">
-        <el-table :data="visibleAttachments" empty-text="暂无附件">
-          <el-table-column prop="stage" label="来源阶段" width="160" />
-          <el-table-column prop="field" label="字段" width="180" show-overflow-tooltip />
-          <el-table-column prop="fileName" label="文件名" min-width="220" show-overflow-tooltip />
-          <el-table-column prop="objectKey" label="对象键" min-width="320" show-overflow-tooltip />
-          <el-table-column label="操作" width="120" fixed="right">
-            <template #default="{ row }">
-              <el-button
-                size="small"
-                type="primary"
-                :loading="downloadObjectKey === row.objectKey"
-                @click="downloadAttachment(row.objectKey)"
+            <el-descriptions :column="2" border size="small">
+              <el-descriptions-item
+                v-for="field in section.fields"
+                :key="`${section.key}-${field.label}`"
+                :label="field.label"
               >
-                下载
-              </el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-      </el-card>
-    </template>
+                {{ field.value }}
+              </el-descriptions-item>
+            </el-descriptions>
 
-    <el-card v-if="canReview" class="action-card" header="审核操作">
-      <el-alert
-        type="warning"
-        :closable="false"
-        show-icon
-        title="请确认详情数据无误后再执行审核动作。通过后将推进流程，操作不可撤销。"
-      />
-      <div class="action-buttons">
-        <el-button type="success" :loading="actionLoading === 'approve'" @click="approveCurrentTask">
-          通过
-        </el-button>
-        <el-button type="danger" :loading="actionLoading === 'reject'" @click="rejectDialogVisible = true">
-          需要整改
-        </el-button>
-      </div>
-    </el-card>
+            <el-table
+              v-if="section.systemItems?.length"
+              :data="section.systemItems"
+              style="margin-top: 12px"
+              empty-text="暂无系统明细"
+            >
+              <el-table-column prop="systemName" label="系统名称" min-width="180" />
+              <el-table-column prop="filingAgency" label="备案机关" min-width="140" />
+              <el-table-column prop="securityLevel" label="定级" width="90" />
+              <el-table-column prop="reassessment" label="复测" width="80">
+                <template #default="{ row }">{{ booleanLabel(row.reassessment) }}</template>
+              </el-table-column>
+              <el-table-column prop="requiredEntryDate" label="计划进场" width="120" />
+              <el-table-column prop="requiredReportDeliveryDate" label="计划交付" width="120" />
+              <el-table-column prop="assessedUnitName" label="被测单位" min-width="180" />
+              <el-table-column prop="assessedUnitIndustry" label="行业" width="120" />
+              <el-table-column prop="assessedUnitContact" label="联系人" width="120" />
+              <el-table-column prop="assessedUnitMobile" label="联系电话" width="130" />
+              <el-table-column prop="assessedUnitAddress" label="详细地址" min-width="220" show-overflow-tooltip />
+            </el-table>
+
+            <el-table
+              v-if="section.reviewTasks?.length"
+              :data="section.reviewTasks"
+              style="margin-top: 12px"
+              empty-text="暂无任务记录"
+            >
+              <el-table-column prop="reviewRole" label="审核角色" width="180" />
+              <el-table-column prop="assignee" label="待处理人" width="140" />
+              <el-table-column prop="status" label="状态" width="120">
+                <template #default="{ row }">
+                  <el-tag :type="statusTagType(row.status)">{{ statusLabel(row.status) }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="processedBy" label="实际处理人" width="140" />
+              <el-table-column prop="processedAt" label="处理时间" min-width="170" />
+            </el-table>
+          </el-card>
+        </template>
+
+        <el-empty v-else description="暂无业务信息" :image-size="72" />
+      </el-tab-pane>
+
+      <el-tab-pane :label="`附件资料（${attachmentRows.length}）`">
+        <el-card class="section-card" shadow="never">
+          <el-alert
+            type="info"
+            :closable="false"
+            show-icon
+            title="附件下载会根据当前账号与任务上下文进行权限校验。"
+          />
+          <el-table :data="attachmentRows" empty-text="暂无附件" style="margin-top: 12px">
+            <el-table-column prop="stage" label="来源阶段" width="160" />
+            <el-table-column prop="field" label="业务字段" width="180" show-overflow-tooltip />
+            <el-table-column prop="fileName" label="文件名" min-width="220" show-overflow-tooltip />
+            <el-table-column prop="objectKey" label="对象键" min-width="320" show-overflow-tooltip />
+            <el-table-column label="操作" width="120" fixed="right">
+              <template #default="{ row }">
+                <el-button
+                  size="small"
+                  type="primary"
+                  :loading="downloadObjectKey === row.objectKey"
+                  @click="downloadAttachment(row.objectKey)"
+                >
+                  下载
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-card>
+      </el-tab-pane>
+    </el-tabs>
 
     <el-dialog v-model="rejectDialogVisible" title="填写整改要求" width="520px">
       <el-form label-position="top">
@@ -329,9 +178,7 @@
       </el-form>
       <template #footer>
         <el-button @click="rejectDialogVisible = false">取消</el-button>
-        <el-button type="danger" :loading="actionLoading === 'reject'" @click="rejectCurrentTask">
-          确认整改
-        </el-button>
+        <el-button type="danger" :loading="actionLoading === 'reject'" @click="rejectCurrentTask">确认整改</el-button>
       </template>
     </el-dialog>
   </div>
@@ -339,17 +186,16 @@
 
 <script setup lang="ts">
 /**
- * @input Route params/query, workflow/process/contract APIs, file download-url API, and review action APIs
- * @output Unified task-detail page for all workflow task types with stage-limited visibility and in-page approve/reject actions
- * @position Frontend detail-and-review page replacing modal-based inspection in workflow and review modules
+ * @input Route params/query, workflow/contract/task-detail APIs, and file download-url API
+ * @output Unified review detail page with node steps, business sections, attachments, and in-page review actions
+ * @position Frontend review detail page for contract and project-report chains
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 import { computed, onMounted, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useRoute, useRouter } from "vue-router";
 import { fetchFileDownloadUrl } from "./file-service";
-import { fetchProcessOverview, type ProcessOverviewAttachmentItem, type ProcessOverviewRecord } from "./process-overview-service";
-import { fetchProjectRegisterTrace, type WorkflowTraceRecord } from "./project-register-service";
+import { fetchTaskDetail, type TaskDetailAttachmentItem, type TaskDetailRecord } from "./task-details-service";
 import { isProjectWorkflowTask, normalizeTaskType } from "./task-detail-service";
 import {
   approveTask,
@@ -360,13 +206,56 @@ import {
   type WorkflowTask
 } from "./workflow-service";
 
+interface DetailStep {
+  key: string;
+  label: string;
+  order: number;
+}
+
+interface FieldItem {
+  label: string;
+  value: string | number;
+}
+
+interface ProjectSection {
+  key: string;
+  title: string;
+  order: number;
+  fields: FieldItem[];
+  systemItems?: TaskDetailRecord["projectRegister"]["systemItems"];
+  reviewTasks?: Array<{
+    reviewRole?: string;
+    assignee?: string;
+    status?: string;
+    processedBy?: string;
+    processedAt?: string;
+  }>;
+}
+
+const PROJECT_FLOW_STEPS: DetailStep[] = [
+  { key: "project-register", label: "项目登记", order: 1 },
+  { key: "police-register", label: "公安登记", order: 2 },
+  { key: "on-site-assessment", label: "现场测评", order: 3 },
+  { key: "report-tech-review", label: "技术审核", order: 4 },
+  { key: "report-content-review", label: "内容审核", order: 5 },
+  { key: "report-compile-assignment", label: "编制分配", order: 6 },
+  { key: "report-compile-submission", label: "报告编制", order: 7 },
+  { key: "report-final-review", label: "最终审核", order: 8 },
+  { key: "material-archive", label: "材料归档", order: 9 }
+];
+
+const CONTRACT_FLOW_STEPS: DetailStep[] = [
+  { key: "contract-submit", label: "合同提审", order: 1 },
+  { key: "contract-review", label: "合同审核", order: 2 },
+  { key: "contract-archive", label: "合同归档", order: 3 }
+];
+
 const route = useRoute();
 const router = useRouter();
 const loading = ref(false);
 const errorText = ref("");
 const contractDetail = ref<ContractDetail | null>(null);
-const overview = ref<ProcessOverviewRecord | null>(null);
-const traceRows = ref<WorkflowTraceRecord[]>([]);
+const detailRecord = ref<TaskDetailRecord | null>(null);
 const activeTask = ref<WorkflowTask | null>(null);
 const actionLoading = ref<"" | "approve" | "reject">("");
 const rejectDialogVisible = ref(false);
@@ -381,13 +270,24 @@ const bizId = computed(() => {
 const routeTaskId = computed(() => String(route.query.taskId || "").trim());
 const isProjectTask = computed(() => isProjectWorkflowTask(taskType.value));
 const isContractTask = computed(() => taskType.value === "CONTRACT");
-const summaryTitle = computed(() => overview.value?.applicationName || contractDetail.value?.contractName || "");
+const summaryTitle = computed(() => detailRecord.value?.applicationName || contractDetail.value?.contractName || "");
 const activeTaskId = computed(() => activeTask.value?.taskId || routeTaskId.value);
-const taskStatus = computed(() => {
-  return activeTask.value?.displayStatus || activeTask.value?.status || overview.value?.workflowStatus || "";
-});
-const currentNode = computed(() => activeTask.value?.currentNode || overview.value?.workflowNode || "");
+const taskStatus = computed(
+  () =>
+    activeTask.value?.displayStatus ||
+    activeTask.value?.status ||
+    detailRecord.value?.workflowStatus ||
+    contractDetail.value?.reviewStatus ||
+    ""
+);
+const currentNode = computed(() => activeTask.value?.currentNode || detailRecord.value?.workflowNode || "");
 const currentNodeOrder = computed(() => resolveNodeOrder(currentNode.value));
+
+const displaySteps = computed(() => (isContractTask.value ? CONTRACT_FLOW_STEPS : PROJECT_FLOW_STEPS));
+const stepActiveOrder = computed(() => (isContractTask.value ? resolveContractStepOrder() : resolveProjectStepOrder()));
+const stepActiveIndex = computed(() => Math.min(Math.max(stepActiveOrder.value - 1, 0), displaySteps.value.length - 1));
+const currentStepLabel = computed(() => displaySteps.value[stepActiveIndex.value]?.label || "-");
+
 const canReview = computed(() => {
   if (!activeTaskId.value) {
     return false;
@@ -396,26 +296,248 @@ const canReview = computed(() => {
   return normalized === "PENDING" || normalized === "SUBMITTED";
 });
 
-const visibleAttachments = computed(() => {
-  if (!overview.value?.attachments?.length) {
-    return [] as ProcessOverviewAttachmentItem[];
+const contractFieldItems = computed<FieldItem[]>(() => {
+  if (!contractDetail.value) {
+    return [];
+  }
+  const detail = contractDetail.value as unknown as Record<string, unknown>;
+  return [
+    field("合同ID", contractDetail.value.id),
+    field("合同编号", contractDetail.value.contractNo),
+    field("合同名称", contractDetail.value.contractName),
+    field("项目名称", contractDetail.value.projectName),
+    field("客户名称", contractDetail.value.customerName),
+    field("联系人", detail.contactName),
+    field("联系电话", detail.mobilePhone),
+    field("付款单位", detail.paymentCompany),
+    field("付款金额", detail.paymentAmount),
+    field("付款方式", detail.paymentMethod),
+    field("合作方", detail.partnerName),
+    field("销售人员", detail.salesPerson),
+    field("履约城市", detail.performanceCity),
+    field("成交状态", detail.dealStatus),
+    field("合同类型", detail.contractType),
+    field("服务年份", contractDetail.value.serviceYears?.join("、")),
+    field("服务年份明细", detail.serviceYearDetail),
+    field("回款状态", paymentStatusLabel(detail.paymentStatus as string | undefined)),
+    field("审核状态", statusLabel(contractDetail.value.reviewStatus)),
+    field("归档状态", statusLabel(contractDetail.value.archiveStatus)),
+    field("创建人", contractDetail.value.createdBy),
+    field("创建时间", contractDetail.value.createdAt),
+    field("备注", contractDetail.value.remark)
+  ];
+});
+
+const contractSystemItems = computed(() => {
+  const detail = contractDetail.value as unknown as { systemItems?: Array<{ systemLevel: number; systemName: string }> };
+  return Array.isArray(detail?.systemItems) ? detail.systemItems : [];
+});
+
+const projectSections = computed<ProjectSection[]>(() => {
+  if (!detailRecord.value || !isProjectTask.value) {
+    return [];
+  }
+  const maxOrder = currentNodeOrder.value > 0 ? currentNodeOrder.value : 9;
+  const sections: ProjectSection[] = [];
+  const project = detailRecord.value.projectRegister;
+  if (project && maxOrder >= 1) {
+    sections.push({
+      key: "project",
+      title: "项目登记信息",
+      order: 1,
+      fields: [
+        field("申请单名称", detailRecord.value.applicationName),
+        field("项目状态", statusLabel(detailRecord.value.projectStatus)),
+        field("合同名称", project.contractName),
+        field("合同年份", project.contractYear),
+        field("创建人", project.createdBy),
+        field("创建时间", project.createdAt)
+      ],
+      systemItems: project.systemItems
+    });
+  }
+  const police = detailRecord.value.policeRegister;
+  if (police && maxOrder >= 2) {
+    sections.push({
+      key: "police",
+      title: "公安登记信息",
+      order: 2,
+      fields: [
+        field("状态", statusLabel(police.status)),
+        field("登记编号", police.registerNo),
+        field("备案机关", police.filingAgency),
+        field("联系人", police.contactName),
+        field("联系电话", police.contactPhone),
+        field("项目经理", police.projectManagerDisplayName || police.projectManagerUsername),
+        field("创建人", police.createdBy),
+        field("创建时间", police.createdAt),
+        field("更新时间", police.updatedAt),
+        field("备注", police.remark)
+      ]
+    });
+  }
+  const onSite = detailRecord.value.onSiteAssessment;
+  if (onSite && maxOrder >= 3) {
+    sections.push({
+      key: "on-site",
+      title: "现场测评信息",
+      order: 3,
+      fields: [
+        field("状态", statusLabel(onSite.status)),
+        field("测评附件", joinText(onSite.evidenceFiles)),
+        field("测评说明", onSite.assessmentRemark || onSite.assessmentDetail),
+        field("整改节点", onSite.rectificationNode),
+        field("整改要求", onSite.rectificationRemark),
+        field("整改时间", onSite.rectificationAt),
+        field("创建人", onSite.createdBy),
+        field("更新时间", onSite.updatedAt)
+      ]
+    });
+  }
+  const tech = detailRecord.value.reportTechReview;
+  if (tech && maxOrder >= 4) {
+    sections.push({
+      key: "tech-review",
+      title: "技术审核信息",
+      order: 4,
+      fields: [
+        field("状态", statusLabel(tech.status)),
+        field("审核人", tech.reviewer),
+        field("提交时间", tech.submittedAt),
+        field("完成时间", tech.finishedAt),
+        field("备注", tech.remark)
+      ]
+    });
+  }
+  const content = detailRecord.value.reportContentReview;
+  if (content && maxOrder >= 5) {
+    sections.push({
+      key: "content-review",
+      title: "内容审核信息",
+      order: 5,
+      fields: [
+        field("状态", statusLabel(content.status)),
+        field("技术审核人", content.reviewerTech),
+        field("管理审核人", content.reviewerManagement),
+        field("网络审核人", content.reviewerNetwork),
+        field("提交时间", content.submittedAt),
+        field("完成时间", content.finishedAt)
+      ],
+      reviewTasks: content.tasks || []
+    });
+  }
+  const assignment = detailRecord.value.reportCompileAssignment;
+  if (assignment && maxOrder >= 6) {
+    sections.push({
+      key: "compile-assignment",
+      title: "编制分配信息",
+      order: 6,
+      fields: [
+        field("状态", statusLabel(assignment.status)),
+        field("编制人", assignment.assignee),
+        field("版本", assignment.versionNo),
+        field("提交时间", assignment.submittedAt)
+      ]
+    });
+  }
+  const compile = detailRecord.value.reportCompileSubmission;
+  if (compile && maxOrder >= 7) {
+    sections.push({
+      key: "compile",
+      title: "报告编制信息",
+      order: 7,
+      fields: [
+        field("状态", statusLabel(compile.status)),
+        field("编制人", compile.assignee),
+        field("提交人", compile.submittedBy),
+        field("提交时间", compile.submittedAt),
+        field("备注", compile.reportRemark)
+      ]
+    });
+  }
+  const finalReview = detailRecord.value.reportFinalReview;
+  if (finalReview && maxOrder >= 8) {
+    sections.push({
+      key: "final-review",
+      title: "最终审核信息",
+      order: 8,
+      fields: [
+        field("状态", statusLabel(finalReview.status)),
+        field("审核人", finalReview.reviewer),
+        field("提交时间", finalReview.submittedAt),
+        field("完成时间", finalReview.finishedAt),
+        field("备注", finalReview.remark)
+      ]
+    });
+  }
+  const archive = detailRecord.value.materialArchive;
+  if (archive && maxOrder >= 9) {
+    sections.push({
+      key: "archive",
+      title: "材料归档信息",
+      order: 9,
+      fields: [
+        field("状态", statusLabel(archive.status)),
+        field("提交人", archive.submittedBy),
+        field("提交时间", archive.submittedAt),
+        field("材料状态", joinMaterialStatusCodes(archive.materialStatusCodes)),
+        field("归档报告", joinText(archive.reportFiles)),
+        field("归档表单", joinText(archive.formFiles)),
+        field("备注", archive.remark)
+      ]
+    });
+  }
+  return sections;
+});
+
+const attachmentRows = computed<TaskDetailAttachmentItem[]>(() => {
+  if (isContractTask.value) {
+    const objectKey = contractDetail.value?.contractFileObjectKey?.trim();
+    if (!objectKey) {
+      return [];
+    }
+    return [{ stage: "合同提审", field: "合同主文件", objectKey, fileName: resolveFileName(objectKey) }];
+  }
+  if (!detailRecord.value?.attachments?.length) {
+    return [];
   }
   if (currentNodeOrder.value <= 0) {
-    return overview.value.attachments;
+    return detailRecord.value.attachments;
   }
-  return overview.value.attachments.filter(
-    (item) => resolveAttachmentOrder(item.stage) <= currentNodeOrder.value
-  );
+  return detailRecord.value.attachments.filter((item) => resolveAttachmentOrder(item.stage) <= currentNodeOrder.value);
 });
+
+function field(label: string, value: unknown): FieldItem {
+  return { label, value: normalizeValue(value) };
+}
+
+function normalizeValue(value: unknown): string | number {
+  if (value === null || value === undefined || value === "") {
+    return "-";
+  }
+  return typeof value === "number" ? value : String(value);
+}
 
 function taskTypeLabel(value: string) {
   if (value === "CONTRACT") return "合同审核";
   if (value === "PROJECT_REGISTER") return "项目登记审核";
-  if (value === "QUALITY_REVIEW") return "质量审核";
   if (value === "REPORT_TECH_REVIEW") return "报告技术审核";
   if (value === "REPORT_CONTENT_REVIEW") return "报告内容审核";
   if (value === "REPORT_FINAL_REVIEW") return "报告最终审核";
   return value || "-";
+}
+
+function paymentStatusLabel(status?: string) {
+  const normalized = normalizeStatus(status);
+  if (normalized === "PAID") return "已回款";
+  if (normalized === "UNPAID") return "未回款";
+  return status || "-";
+}
+
+function booleanLabel(value: boolean | undefined) {
+  if (value === true) return "是";
+  if (value === false) return "否";
+  return "-";
 }
 
 function statusLabel(status?: string) {
@@ -424,7 +546,7 @@ function statusLabel(status?: string) {
   if (normalized === "DRAFT") return "草稿";
   if (normalized === "PENDING" || normalized === "SUBMITTED") return "待审核";
   if (normalized === "APPROVED") return "已通过";
-  if (normalized === "REJECTED") return "需整改";
+  if (normalized === "REJECTED") return "需要整改";
   if (normalized === "CLOSED") return "已关闭";
   if (normalized === "ARCHIVED") return "已归档";
   return status || "-";
@@ -439,9 +561,7 @@ function statusTagType(status?: string) {
 }
 
 function normalizeStatus(status?: string) {
-  if (!status) {
-    return "";
-  }
+  if (!status) return "";
   return String(status).trim().toUpperCase();
 }
 
@@ -453,70 +573,76 @@ function readErrorMessage(error: unknown, fallback: string) {
 function resolveNodeOrder(node: string) {
   const normalized = node.trim().toUpperCase();
   if (!normalized) return 0;
-  if (normalized.includes("MATERIAL_ARCHIVE")) return 10;
-  if (normalized.includes("MATERIAL")) return 10;
-  if (normalized.includes("REPORT_FINAL_REVIEW")) return 9;
-  if (normalized.includes("FINAL_REVIEW")) return 9;
-  if (normalized.includes("REPORT_COMPILE_SUBMISSION")) return 8;
-  if (normalized.includes("COMPILE_SUBMISSION")) return 8;
-  if (normalized.includes("REPORT_COMPILE_ASSIGNMENT")) return 7;
-  if (normalized.includes("COMPILE_ASSIGNMENT")) return 7;
-  if (normalized.includes("REPORT_CONTENT_REVIEW")) return 6;
-  if (normalized.includes("CONTENT_REVIEW")) return 6;
-  if (normalized.includes("REPORT_TECH_REVIEW")) return 5;
-  if (normalized.includes("TECH_REVIEW")) return 5;
-  if (normalized.includes("QUALITY_REVIEW")) return 4;
-  if (normalized.includes("ON_SITE_ASSESSMENT")) return 3;
-  if (normalized.includes("ON_SITE")) return 3;
-  if (normalized.includes("POLICE_REGISTER")) return 2;
-  if (normalized.includes("POLICE")) return 2;
-  if (normalized.includes("PROJECT_REGISTER")) return 1;
-  if (normalized.includes("PROJECT")) return 1;
+  if (normalized.includes("MATERIAL_ARCHIVE") || normalized.includes("MATERIAL")) return 9;
+  if (normalized.includes("REPORT_FINAL_REVIEW") || normalized.includes("FINAL_REVIEW")) return 8;
+  if (normalized.includes("REPORT_COMPILE_SUBMISSION") || normalized.includes("COMPILE_SUBMISSION")) return 7;
+  if (normalized.includes("REPORT_COMPILE_ASSIGNMENT") || normalized.includes("COMPILE_ASSIGNMENT")) return 6;
+  if (normalized.includes("REPORT_CONTENT_REVIEW") || normalized.includes("CONTENT_REVIEW")) return 5;
+  if (normalized.includes("REPORT_TECH_REVIEW") || normalized.includes("TECH_REVIEW")) return 4;
+  if (normalized.includes("ON_SITE_ASSESSMENT") || normalized.includes("ON_SITE")) return 3;
+  if (normalized.includes("POLICE_REGISTER") || normalized.includes("POLICE")) return 2;
+  if (normalized.includes("PROJECT_REGISTER") || normalized.includes("PROJECT")) return 1;
   return 0;
 }
 
 function resolveAttachmentOrder(stage: string) {
-  const normalized = String(stage || "").trim().toUpperCase();
+  const normalized = String(stage || "").trim();
   if (!normalized) return 0;
-  if (normalized.includes("材料归档".toUpperCase()) || normalized.includes("MATERIAL")) return 10;
-  if (normalized.includes("报告编制")) return 8;
+  if (normalized.includes("材料归档")) return 9;
+  if (normalized.includes("报告编制")) return 7;
   if (normalized.includes("现场测评")) return 3;
   if (normalized.includes("项目登记")) return 1;
   return 0;
 }
 
-function hasDataAtSection(order: number) {
-  if (!overview.value) {
-    return false;
+function resolveProjectStepOrder() {
+  if (currentNodeOrder.value > 0) {
+    return currentNodeOrder.value;
   }
-  if (order === 1) return !!overview.value.projectRegister;
-  if (order === 2) return !!overview.value.policeRegister;
-  if (order === 3) return !!overview.value.onSiteAssessment;
-  if (order === 4) return !!overview.value.qualityReview;
-  if (order === 5) return !!overview.value.reportTechReview;
-  if (order === 6) return !!overview.value.reportContentReview;
-  if (order === 7) return !!overview.value.reportCompileAssignment;
-  if (order === 8) return !!overview.value.reportCompileSubmission;
-  if (order === 9) return !!overview.value.reportFinalReview;
-  if (order === 10) return !!overview.value.materialArchive;
-  return false;
+  const maxOrder = projectSections.value.reduce((acc, item) => Math.max(acc, item.order), 0);
+  return maxOrder > 0 ? maxOrder : 1;
 }
 
-function shouldShowSection(order: number) {
-  if (!isProjectTask.value) {
-    return false;
+function resolveContractStepOrder() {
+  const reviewStatus = normalizeStatus(contractDetail.value?.reviewStatus);
+  const archiveStatus = normalizeStatus(contractDetail.value?.archiveStatus);
+  if (archiveStatus === "ARCHIVED") return 3;
+  if (reviewStatus === "SUBMITTED" || reviewStatus === "APPROVED" || reviewStatus === "REJECTED") return 2;
+  return 1;
+}
+
+function resolveFileName(objectKey: string) {
+  const slashIndex = Math.max(objectKey.lastIndexOf("/"), objectKey.lastIndexOf("\\"));
+  if (slashIndex < 0 || slashIndex === objectKey.length - 1) {
+    return objectKey;
   }
-  if (currentNodeOrder.value <= 0) {
-    return hasDataAtSection(order);
-  }
-  return order <= currentNodeOrder.value;
+  return objectKey.slice(slashIndex + 1);
 }
 
 function joinText(items?: string[]) {
-  if (!items || items.length === 0) {
-    return "-";
-  }
+  if (!items || items.length === 0) return "-";
   return items.join("、");
+}
+
+function joinMaterialStatusCodes(codes?: string[]) {
+  if (!codes || codes.length === 0) return "-";
+  return codes.map(materialStatusLabel).join("、");
+}
+
+function materialStatusLabel(code: string) {
+  const normalized = normalizeStatus(code);
+  if (normalized === "MATERIAL_SUMMARY_PENDING_PRINT") return "待打印材料汇总";
+  if (normalized === "ASSESSMENT_REPORT") return "测评报告";
+  if (normalized === "ASSESSMENT_REPORT_REVIEW_RECORD") return "测评报告评审记录";
+  if (normalized === "VERIFICATION_TEST") return "验证测试";
+  if (normalized === "TOOL_SCAN") return "工具扫描";
+  if (normalized === "ASSESSMENT_PLAN") return "测评方案";
+  if (normalized === "ASSESSMENT_PLAN_REVIEW_RECORD") return "测评方案评审记录";
+  if (normalized === "ON_SITE_ASSESSMENT") return "现场测评";
+  if (normalized === "PROCESS_DOCUMENT") return "过程文档";
+  if (normalized === "INFORMATION_COLLECTION") return "信息收集";
+  if (normalized === "PROJECT_PLAN") return "项目计划书";
+  return code || "-";
 }
 
 async function loadDetail() {
@@ -524,36 +650,24 @@ async function loadDetail() {
     errorText.value = "任务参数无效";
     return;
   }
-
   loading.value = true;
   errorText.value = "";
   contractDetail.value = null;
-  overview.value = null;
-  traceRows.value = [];
+  detailRecord.value = null;
   activeTask.value = null;
-
   try {
     const todoRows = await fetchTodoTasks({ type: taskType.value }).catch(() => []);
-    const byRouteTask = routeTaskId.value
-      ? todoRows.find((item) => item.taskId === routeTaskId.value)
-      : null;
+    const byRouteTask = routeTaskId.value ? todoRows.find((item) => item.taskId === routeTaskId.value) : null;
     activeTask.value = byRouteTask || todoRows.find((item) => item.bizId === bizId.value) || null;
 
     if (isContractTask.value) {
       contractDetail.value = await fetchContractReviewDetail(bizId.value);
       return;
     }
-
     if (!isProjectTask.value) {
       throw new Error(`unsupported task type: ${taskType.value}`);
     }
-
-    const [overviewRecord, workflowTrace] = await Promise.all([
-      fetchProcessOverview(bizId.value),
-      fetchProjectRegisterTrace(bizId.value).catch(() => [])
-    ]);
-    overview.value = overviewRecord;
-    traceRows.value = workflowTrace;
+    detailRecord.value = await fetchTaskDetail(taskType.value, bizId.value);
   } catch (error) {
     errorText.value = readErrorMessage(error, "加载审核详情失败");
     ElMessage.error(errorText.value);
@@ -600,7 +714,7 @@ async function approveCurrentTask() {
   try {
     await approveTask(activeTaskId.value);
     ElMessage.success("审核已通过");
-    await loadDetail();
+    goBack();
   } catch (error) {
     ElMessage.error(readErrorMessage(error, "审核通过失败"));
   } finally {
@@ -645,28 +759,66 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.task-detail {
+  --detail-cyan: #2db892;
+  --detail-blue: #2f6ea2;
+  --detail-line: rgba(45, 184, 146, 0.22);
+}
+
+.progress-card {
+  border: 1px solid var(--detail-line);
+  border-radius: 14px;
+  background: linear-gradient(120deg, rgba(45, 184, 146, 0.14), rgba(47, 110, 162, 0.08));
+}
+
+.progress-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.progress-title-group h3 {
+  margin: 0;
+  color: #103b4f;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.progress-title-group p {
+  margin: 6px 0 0;
+  color: #2f6a85;
+  font-size: 13px;
+}
+
 .summary-card {
-  border: 1px solid rgba(31, 152, 122, 0.2);
-  background: linear-gradient(92deg, rgba(45, 184, 146, 0.08), rgba(47, 110, 162, 0.05));
+  border: 1px solid rgba(31, 152, 122, 0.16);
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.detail-tabs :deep(.el-tabs__item.is-active) {
+  color: #0d7a9d;
+  font-weight: 600;
 }
 
 .section-card {
-  border: 1px solid rgba(205, 220, 230, 0.9);
+  border: 1px solid rgba(205, 220, 230, 0.92);
+  border-radius: 12px;
   background: linear-gradient(180deg, #ffffff, #fbfcfc);
+  margin-bottom: 14px;
 }
 
 .section-card :deep(.el-card__header) {
   font-weight: 600;
+  border-left: 4px solid rgba(45, 184, 146, 0.7);
 }
 
-.action-card {
-  border: 1px solid rgba(201, 136, 34, 0.24);
-  background: linear-gradient(94deg, rgba(255, 226, 153, 0.14), rgba(255, 255, 255, 0.92));
-}
-
-.action-buttons {
-  margin-top: 12px;
-  display: flex;
-  gap: 12px;
+@media (max-width: 960px) {
+  .progress-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
 }
 </style>

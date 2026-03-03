@@ -1,7 +1,7 @@
 /**
- * @input JdbcTemplate, user lookup, workflow trace helper, and notification service
+ * @input JdbcTemplate, user lookup, workflow trace helper, node-rule config, and notification service
  * @output Node-11 report technical-review save/submit and task review operations with unified displayStatus projection
- * @position Report technical-review domain service bridging quality gateway completion to content-review stage
+ * @position Report technical-review service bridging on-site submission completion to content-review stage
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 package com.nature.platform;
@@ -24,25 +24,32 @@ import org.springframework.web.server.ResponseStatusException;
 public class ReportTechReviewService {
   public static final String NODE_APPLY = "REPORT_TECH_REVIEW_APPLY";
   public static final String NODE_TASK = "REPORT_TECH_REVIEW_TASK";
+  public static final String SLOT_TECH_REVIEWER = "TECH_REVIEWER";
   public static final String NEXT_NODE = "REPORT_CONTENT_REVIEW_TASK";
 
   private final JdbcTemplate jdbcTemplate;
+  private final JsonSupport jsonSupport;
   private final UserAccountService userAccountService;
   private final ProjectWorkflowTraceService workflowTraceService;
   private final NotificationService notificationService;
   private final ReportContentReviewService reportContentReviewService;
+  private final WorkflowConfigService workflowConfigService;
 
   public ReportTechReviewService(
       JdbcTemplate jdbcTemplate,
+      JsonSupport jsonSupport,
       UserAccountService userAccountService,
       ProjectWorkflowTraceService workflowTraceService,
       NotificationService notificationService,
-      ReportContentReviewService reportContentReviewService) {
+      ReportContentReviewService reportContentReviewService,
+      WorkflowConfigService workflowConfigService) {
     this.jdbcTemplate = jdbcTemplate;
+    this.jsonSupport = jsonSupport;
     this.userAccountService = userAccountService;
     this.workflowTraceService = workflowTraceService;
     this.notificationService = notificationService;
     this.reportContentReviewService = reportContentReviewService;
+    this.workflowConfigService = workflowConfigService;
   }
 
   public List<ReportTechReviewRecord> list() {
@@ -114,8 +121,8 @@ public class ReportTechReviewService {
 
   @Transactional
   public ReportTechReviewRecord save(long projectId, ReportTechReviewRequest request, String operator) {
-    ensureQualityApproved(projectId);
-    String reviewer = loadAssignedTechReviewer(projectId);
+    ensureOnSiteSubmitted(projectId);
+    String reviewer = loadAssignedTechReviewer();
     ensureEnabledUser(reviewer);
 
     List<ApplyRow> applies =
@@ -181,8 +188,8 @@ public class ReportTechReviewService {
 
   @Transactional
   public ReportTechReviewRecord submit(long projectId, String operator) {
-    ensureQualityApproved(projectId);
-    String reviewer = loadAssignedTechReviewer(projectId);
+    ensureOnSiteSubmitted(projectId);
+    String reviewer = loadAssignedTechReviewer();
     ensureEnabledUser(reviewer);
 
     ApplyRow apply = findApply(projectId).orElse(null);
@@ -244,8 +251,8 @@ public class ReportTechReviewService {
     ProjectRef project = loadProjectRef(projectId);
     notificationService.createForUser(
         reviewer,
-        "报告整体技术审核待处理",
-        "项目[" + project.applicationName() + "]已进入报告整体技术审核。",
+        "技术审核待处理",
+        "项目[" + project.applicationName() + "]已进入技术审核阶段。",
         "REPORT_TECH_REVIEW_ENTER",
         ProjectRegisterService.BIZ_TYPE,
         projectId);
@@ -281,8 +288,8 @@ public class ReportTechReviewService {
 
     notificationService.createForUser(
         task.appliedBy(),
-        "报告整体技术审核通过",
-        "项目[" + task.applicationName() + "]报告整体技术审核已通过。",
+        "技术审核已通过",
+        "项目[" + task.applicationName() + "]技术审核已通过。",
         "REPORT_TECH_REVIEW_APPROVED",
         ProjectRegisterService.BIZ_TYPE,
         task.projectId());
@@ -322,29 +329,52 @@ public class ReportTechReviewService {
 
     notificationService.createForUser(
         task.appliedBy(),
-        "报告整体技术审核驳回",
-        "项目[" + task.applicationName() + "]报告整体技术审核已驳回。",
+        "技术审核驳回",
+        "项目[" + task.applicationName() + "]技术审核已驳回。",
         "REPORT_TECH_REVIEW_REJECTED",
         ProjectRegisterService.BIZ_TYPE,
         task.projectId());
   }
 
-  private void ensureQualityApproved(long projectId) {
-    List<String> rows =
+  private void ensureOnSiteSubmitted(long projectId) {
+    List<OnSitePrerequisite> rows =
         jdbcTemplate.query(
             """
-            SELECT qa.status
+            SELECT p.status project_status,
+                   osa.status on_site_status,
+                   osa.package_object_key package_object_key,
+                   osa.evidence_files_json evidence_files_json
             FROM project_register p
-            LEFT JOIN quality_review_apply qa ON qa.project_register_id = p.id
+            LEFT JOIN on_site_assessment osa ON osa.project_register_id = p.id
             WHERE p.id = ? AND p.deleted_flag = 0
             """,
-            (rs, rowNum) -> rs.getString("status"),
+            (rs, rowNum) ->
+                new OnSitePrerequisite(
+                    rs.getString("project_status"),
+                    rs.getString("on_site_status"),
+                    rs.getString("package_object_key"),
+                    rs.getString("evidence_files_json")),
             projectId);
     if (rows.isEmpty()) {
       throw new ResponseStatusException(HttpStatus.NOT_FOUND, "project register not found");
     }
-    if (!"APPROVED".equalsIgnoreCase(rows.get(0))) {
-      throw new ResponseStatusException(HttpStatus.CONFLICT, "quality review must be approved first");
+    OnSitePrerequisite prerequisite = rows.get(0);
+    if (!"APPROVED".equalsIgnoreCase(prerequisite.projectStatus())) {
+      throw new ResponseStatusException(HttpStatus.CONFLICT, "project register must be approved first");
+    }
+    if (!"SUBMITTED".equalsIgnoreCase(prerequisite.onSiteStatus())) {
+      throw new ResponseStatusException(HttpStatus.CONFLICT, "on-site assessment must be submitted first");
+    }
+    List<String> evidenceFiles = jsonSupport.fromJsonList(prerequisite.evidenceFilesJson());
+    if (evidenceFiles.isEmpty()) {
+      String packageObjectKey = prerequisite.packageObjectKey();
+      if (packageObjectKey != null && !packageObjectKey.isBlank()) {
+        evidenceFiles = List.of(packageObjectKey.trim());
+      }
+    }
+    if (evidenceFiles.isEmpty()) {
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT, "at least one on-site assessment evidence file is required");
     }
   }
 
@@ -400,20 +430,25 @@ public class ReportTechReviewService {
     return rows.get(0);
   }
 
-  private String loadAssignedTechReviewer(long projectId) {
-    List<String> rows =
-        jdbcTemplate.query(
-            "SELECT tech_reviewer FROM workflow_assignment WHERE project_register_id = ?",
-            (rs, rowNum) -> rs.getString("tech_reviewer"),
-            projectId);
-    if (rows.isEmpty()) {
-      throw new ResponseStatusException(HttpStatus.CONFLICT, "review assignment is required before tech review");
+  private String loadAssignedTechReviewer() {
+    List<String> roleCodes =
+        workflowConfigService.listRoleCodesBySlot(NODE_TASK, SLOT_TECH_REVIEWER, List.of());
+    if (roleCodes.isEmpty()) {
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT,
+          "未配置技术审核安插规则，请在“流程管理/节点规则”中为 REPORT_TECH_REVIEW_TASK 配置 TECH_REVIEWER");
     }
-    String reviewer = normalizeUser(rows.get(0));
-    if (reviewer == null) {
-      throw new ResponseStatusException(HttpStatus.CONFLICT, "tech reviewer is required before tech review");
+    List<String> reviewers =
+        userAccountService.listEnabledUsernamesByRoles(roleCodes).stream()
+            .map(this::normalizeUser)
+            .filter(item -> item != null && !item.isBlank())
+            .distinct()
+            .toList();
+    if (reviewers.isEmpty()) {
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT, "技术审核节点没有可用审核人，请检查角色分配与用户启用状态");
     }
-    return reviewer;
+    return reviewers.get(0);
   }
 
   private void ensureTaskPermission(String assignee, String operator) {
@@ -514,9 +549,9 @@ public class ReportTechReviewService {
         SELECT
           p.id project_register_id,
           p.application_name,
-          qa.status quality_status,
+          osa.status on_site_status,
           osa.package_object_key on_site_package_object_key,
-          COALESCE(a.reviewer, wa.tech_reviewer, '') reviewer,
+          COALESCE(a.reviewer, '') reviewer,
           COALESCE(a.status, 'DRAFT') status,
           a.remark,
           COALESCE(a.version_no, 0) version_no,
@@ -528,14 +563,12 @@ public class ReportTechReviewService {
           wi.current_node workflow_node,
           wi.status workflow_status
         FROM project_register p
-        JOIN quality_review_apply qa ON qa.project_register_id = p.id
-        LEFT JOIN on_site_assessment osa ON osa.project_register_id = p.id AND osa.status = 'SUBMITTED'
-        LEFT JOIN workflow_assignment wa ON wa.project_register_id = p.id
+        JOIN on_site_assessment osa ON osa.project_register_id = p.id AND osa.status = 'SUBMITTED'
         LEFT JOIN report_tech_review_apply a ON a.project_register_id = p.id
         LEFT JOIN report_tech_review_task t ON t.project_register_id = p.id
         LEFT JOIN workflow_instance wi ON wi.biz_type = 'PROJECT_REGISTER' AND wi.biz_id = p.id
         WHERE p.deleted_flag = 0
-          AND qa.status = 'APPROVED'
+          AND p.status = 'APPROVED'
         """;
   }
 
@@ -545,7 +578,7 @@ public class ReportTechReviewService {
       ReportTechReviewRecord record = new ReportTechReviewRecord();
       record.setProjectRegisterId(rs.getLong("project_register_id"));
       record.setApplicationName(rs.getString("application_name"));
-      record.setQualityStatus(rs.getString("quality_status"));
+      record.setQualityStatus(rs.getString("on_site_status"));
       record.setOnSitePackageObjectKey(rs.getString("on_site_package_object_key"));
       record.setReviewer(rs.getString("reviewer"));
       record.setStatus(rs.getString("status"));
@@ -579,6 +612,9 @@ public class ReportTechReviewService {
       String assignee,
       String processInstanceId) {}
 
+  private record OnSitePrerequisite(
+      String projectStatus, String onSiteStatus, String packageObjectKey, String evidenceFilesJson) {}
+
   private record ApplyRow(long id, String status, String reviewer, int versionNo, String appliedBy) {
     private ApplyRow(long id, String status, int versionNo) {
       this(id, status, null, versionNo, null);
@@ -596,4 +632,3 @@ public class ReportTechReviewService {
 
   private record ProjectRef(long projectId, String applicationName) {}
 }
-

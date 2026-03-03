@@ -25,18 +25,26 @@ public class PoliceRegisterService {
   private final JdbcTemplate jdbcTemplate;
   private final ProjectWorkflowTraceService workflowTraceService;
   private final NotificationService notificationService;
+  private final UserDataScopeService userDataScopeService;
+  private final UserAccountService userAccountService;
 
   public PoliceRegisterService(
       JdbcTemplate jdbcTemplate,
       ProjectWorkflowTraceService workflowTraceService,
-      NotificationService notificationService) {
+      NotificationService notificationService,
+      UserDataScopeService userDataScopeService,
+      UserAccountService userAccountService) {
     this.jdbcTemplate = jdbcTemplate;
     this.workflowTraceService = workflowTraceService;
     this.notificationService = notificationService;
+    this.userDataScopeService = userDataScopeService;
+    this.userAccountService = userAccountService;
   }
 
-  public List<PoliceRegisterRecord> list() {
-    return jdbcTemplate.query(baseSql() + " ORDER BY p.id DESC", new PoliceRegisterRowMapper());
+  public List<PoliceRegisterRecord> list(String operator) {
+    List<PoliceRegisterRecord> rows =
+        jdbcTemplate.query(baseSql() + " ORDER BY p.id DESC", new PoliceRegisterRowMapper());
+    return userDataScopeService.filterByCreator(operator, rows, PoliceRegisterRecord::getCreatedBy, true);
   }
 
   public Optional<PoliceRegisterRecord> detail(long projectId) {
@@ -45,9 +53,43 @@ public class PoliceRegisterService {
     return rows.stream().findFirst();
   }
 
+  public Optional<PoliceRegisterRecord> detailVisible(long projectId, String operator) {
+    Optional<PoliceRegisterRecord> row = detail(projectId);
+    if (row.isEmpty()) {
+      return Optional.empty();
+    }
+    return userDataScopeService.canAccessByCreator(operator, row.get().getCreatedBy(), true)
+        ? row
+        : Optional.empty();
+  }
+
+  public List<String> listProjectManagerCandidates() {
+    return userAccountService.listEnabledUsernames();
+  }
+
+  public String findProjectManagerUsername(long projectId) {
+    List<String> rows =
+        jdbcTemplate.query(
+            """
+            SELECT project_manager_username
+            FROM police_register
+            WHERE project_register_id = ?
+            """,
+            (rs, rowNum) -> rs.getString("project_manager_username"),
+            projectId);
+    if (rows.isEmpty()) {
+      return null;
+    }
+    String value = trim(rows.get(0));
+    return value == null || value.isBlank() ? null : value;
+  }
+
   @Transactional
   public PoliceRegisterRecord save(long projectId, PoliceRegisterRequest request, String operator) {
     ensureProjectApproved(projectId);
+    String projectManagerUsername = trim(request.getProjectManagerUsername());
+    ensureProjectManagerValid(projectManagerUsername, false);
+
     List<Long> ids =
         jdbcTemplate.query(
             "SELECT id FROM police_register WHERE project_register_id = ?",
@@ -57,14 +99,15 @@ public class PoliceRegisterService {
       jdbcTemplate.update(
           """
           INSERT INTO police_register (
-            project_register_id, register_no, filing_agency, contact_name, contact_phone, remark, status, created_by
-          ) VALUES (?, ?, ?, ?, ?, ?, 'DRAFT', ?)
+            project_register_id, register_no, filing_agency, contact_name, contact_phone, project_manager_username, remark, status, created_by
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?)
           """,
           projectId,
           trim(request.getRegisterNo()),
           trim(request.getFilingAgency()),
           trim(request.getContactName()),
           trim(request.getContactPhone()),
+          projectManagerUsername,
           trim(request.getRemark()),
           operator);
       workflowTraceService.moveNode(projectId, NODE_KEY, "PENDING", operator);
@@ -79,7 +122,7 @@ public class PoliceRegisterService {
       jdbcTemplate.update(
           """
           UPDATE police_register
-          SET register_no = ?, filing_agency = ?, contact_name = ?, contact_phone = ?, remark = ?,
+          SET register_no = ?, filing_agency = ?, contact_name = ?, contact_phone = ?, project_manager_username = ?, remark = ?,
               status = CASE WHEN status = 'SUBMITTED' THEN 'SUBMITTED' ELSE 'DRAFT' END
           WHERE id = ?
           """,
@@ -87,6 +130,7 @@ public class PoliceRegisterService {
           trim(request.getFilingAgency()),
           trim(request.getContactName()),
           trim(request.getContactPhone()),
+          projectManagerUsername,
           trim(request.getRemark()),
           id);
       workflowTraceService.moveNode(projectId, NODE_KEY, "PENDING", operator);
@@ -98,28 +142,24 @@ public class PoliceRegisterService {
   @Transactional
   public PoliceRegisterRecord submit(long projectId, String operator) {
     ensureProjectApproved(projectId);
-    PoliceRegisterRecord detail = detail(projectId).orElse(null);
-    if (detail == null || detail.getId() == null) {
-      jdbcTemplate.update(
-          """
-          INSERT INTO police_register (project_register_id, status, created_by)
-          VALUES (?, 'SUBMITTED', ?)
-          """,
-          projectId,
-          operator);
-      workflowTraceService.appendAction(projectId, "POLICE_REGISTER_SUBMIT", "DRAFT", "SUBMITTED", operator, "");
-    } else {
-      jdbcTemplate.update(
-          "UPDATE police_register SET status = 'SUBMITTED' WHERE project_register_id = ?",
-          projectId);
-      workflowTraceService.appendAction(
-          projectId,
-          "POLICE_REGISTER_SUBMIT",
-          detail.getStatus(),
-          "SUBMITTED",
-          operator,
-          "");
-    }
+    PoliceRegisterRecord detail =
+        detail(projectId)
+            .orElseThrow(
+                () ->
+                    new ResponseStatusException(
+                        HttpStatus.CONFLICT, "请先保存公安登记信息并选择项目经理"));
+    ensureProjectManagerValid(detail.getProjectManagerUsername(), true);
+
+    jdbcTemplate.update(
+        "UPDATE police_register SET status = 'SUBMITTED' WHERE project_register_id = ?",
+        projectId);
+    workflowTraceService.appendAction(
+        projectId,
+        "POLICE_REGISTER_SUBMIT",
+        detail.getStatus(),
+        "SUBMITTED",
+        operator,
+        "");
 
     workflowTraceService.moveNode(projectId, NEXT_NODE_KEY, "PENDING", operator);
 
@@ -127,7 +167,7 @@ public class PoliceRegisterService {
     notificationService.createForUser(
         projectOwner.createdBy(),
         "公安登记已提交",
-        "项目[" + projectOwner.applicationName() + "]已完成公安登记提交，请继续现场测评。",
+        "项目[" + projectOwner.applicationName() + "]已完成公安登记提交，请继续进行现场测评。",
         "POLICE_REGISTER_SUBMITTED",
         ProjectRegisterService.BIZ_TYPE,
         projectId);
@@ -193,14 +233,17 @@ public class PoliceRegisterService {
           pr.filing_agency,
           pr.contact_name,
           pr.contact_phone,
+          pr.project_manager_username,
+          pm.display_name project_manager_display_name,
           pr.remark,
-          pr.created_by,
+          COALESCE(pr.created_by, p.created_by) created_by,
           pr.created_at,
           pr.updated_at,
           wi.current_node workflow_node,
           wi.status workflow_status
         FROM project_register p
         LEFT JOIN police_register pr ON pr.project_register_id = p.id
+        LEFT JOIN user_account pm ON pm.username = pr.project_manager_username
         LEFT JOIN workflow_instance wi ON wi.biz_type = 'PROJECT_REGISTER' AND wi.biz_id = p.id
         WHERE p.deleted_flag = 0 AND p.status = 'APPROVED'
         """;
@@ -212,6 +255,24 @@ public class PoliceRegisterService {
     }
     String normalized = value.trim();
     return normalized.isEmpty() ? null : normalized;
+  }
+
+  private void ensureProjectManagerValid(String username, boolean required) {
+    String normalized = trim(username);
+    if (normalized == null) {
+      if (required) {
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请选择项目经理");
+      }
+      return;
+    }
+    boolean exists =
+        userAccountService
+            .findByUsername(normalized)
+            .map(UserAccountService.UserAccount::enabled)
+            .orElse(false);
+    if (!exists) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "项目经理不存在或未启用: " + normalized);
+    }
   }
 
   private static class PoliceRegisterRowMapper implements RowMapper<PoliceRegisterRecord> {
@@ -231,6 +292,8 @@ public class PoliceRegisterService {
       record.setFilingAgency(rs.getString("filing_agency"));
       record.setContactName(rs.getString("contact_name"));
       record.setContactPhone(rs.getString("contact_phone"));
+      record.setProjectManagerUsername(rs.getString("project_manager_username"));
+      record.setProjectManagerDisplayName(rs.getString("project_manager_display_name"));
       record.setRemark(rs.getString("remark"));
       record.setCreatedBy(rs.getString("created_by"));
       record.setCreatedAt(stringTimestamp(rs.getTimestamp("created_at")));

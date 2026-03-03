@@ -37,6 +37,11 @@ export async function fetchCustomers(): Promise<CustomerRecord[]> {
   return response.data.data;
 }
 
+export async function fetchCustomerDetail(id: number): Promise<CustomerRecord> {
+  const response = await apiClient.get<ApiResponse<CustomerRecord>>(`/customers/${id}`);
+  return response.data.data;
+}
+
 export async function createCustomer(payload: CustomerPayload): Promise<number> {
   const response = await apiClient.post<ApiResponse<{ id: number }>>("/customers", payload);
   return response.data.data.id;

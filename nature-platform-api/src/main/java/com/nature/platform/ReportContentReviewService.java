@@ -1,7 +1,7 @@
 /**
- * @input JdbcTemplate, user-account service, workflow trace helper, and notifications
- * @output Node-12 content-review submit and technical/management/network task approval/rejection operations with unified displayStatus projection
- * @position Report content-review service bridging technical-review completion to compile-assignment stage
+ * @input JdbcTemplate, user-account/workflow-config services, workflow trace helper, and notifications
+ * @output Node-12 content-review submit with node-rule assignee selection (excluding police-register project manager) plus task approve/reject operations
+ * @position Report content-review service bridging technical-review completion to compile-assignment stage with strict node-rule assignment
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 package com.nature.platform;
@@ -27,6 +27,13 @@ public class ReportContentReviewService {
   public static final String NODE_TASK = "REPORT_CONTENT_REVIEW_TASK";
   public static final String NEXT_NODE = "REPORT_COMPILE_ASSIGN";
 
+  private static final String SLOT_CONTENT_REVIEWER_TECH = "CONTENT_REVIEWER_TECH";
+  private static final String SLOT_CONTENT_REVIEWER_MANAGEMENT = "CONTENT_REVIEWER_MANAGEMENT";
+  private static final String SLOT_CONTENT_REVIEWER_NETWORK = "CONTENT_REVIEWER_NETWORK";
+  private static final String SLOT_CONTENT_REVIEWER_A = "CONTENT_REVIEWER_A";
+  private static final String SLOT_CONTENT_REVIEWER_B = "CONTENT_REVIEWER_B";
+  private static final String SLOT_CONTENT_REVIEWER_C = "CONTENT_REVIEWER_C";
+
   private static final String ROLE_TECH = "CONTENT_TECH";
   private static final String ROLE_MANAGEMENT = "CONTENT_MANAGEMENT";
   private static final String ROLE_NETWORK = "CONTENT_NETWORK";
@@ -35,16 +42,19 @@ public class ReportContentReviewService {
   private final UserAccountService userAccountService;
   private final ProjectWorkflowTraceService workflowTraceService;
   private final NotificationService notificationService;
+  private final WorkflowConfigService workflowConfigService;
 
   public ReportContentReviewService(
       JdbcTemplate jdbcTemplate,
       UserAccountService userAccountService,
       ProjectWorkflowTraceService workflowTraceService,
-      NotificationService notificationService) {
+      NotificationService notificationService,
+      WorkflowConfigService workflowConfigService) {
     this.jdbcTemplate = jdbcTemplate;
     this.userAccountService = userAccountService;
     this.workflowTraceService = workflowTraceService;
     this.notificationService = notificationService;
+    this.workflowConfigService = workflowConfigService;
   }
 
   public List<ReportContentReviewRecord> list() {
@@ -192,7 +202,7 @@ public class ReportContentReviewService {
     ProjectRef project = loadProjectRef(projectId);
     notificationService.createForUsers(
         List.of(reviewers.reviewerA(), reviewers.reviewerB(), reviewers.reviewerC()),
-        "报告内容审核待处理",
+        "内容审核待处理",
         "项目[" + project.applicationName() + "]已进入报告内容审核阶段。",
         "REPORT_CONTENT_REVIEW_ENTER",
         ProjectRegisterService.BIZ_TYPE,
@@ -271,7 +281,7 @@ public class ReportContentReviewService {
 
     notificationService.createForUser(
         task.appliedBy(),
-        "报告内容审核驳回",
+        "内容审核驳回",
         "项目[" + task.applicationName() + "]报告内容审核已驳回。",
         "REPORT_CONTENT_REVIEW_REJECTED",
         ProjectRegisterService.BIZ_TYPE,
@@ -309,7 +319,7 @@ public class ReportContentReviewService {
 
     notificationService.createForUser(
         appliedBy,
-        "报告内容审核通过",
+        "内容审核通过",
         "项目[" + applicationName + "]报告内容审核全部通过。",
         "REPORT_CONTENT_REVIEW_APPROVED",
         ProjectRegisterService.BIZ_TYPE,
@@ -385,29 +395,76 @@ public class ReportContentReviewService {
   }
 
   private Assignment loadAssignment(long projectId) {
-    List<Assignment> rows =
+    String projectManager = normalizeUser(loadProjectManagerUsername(projectId));
+    String reviewerTech =
+        pickReviewerForSlot(
+            SLOT_CONTENT_REVIEWER_TECH,
+            SLOT_CONTENT_REVIEWER_A,
+            "内容审核-技术",
+            projectManager);
+    String reviewerManagement =
+        pickReviewerForSlot(
+            SLOT_CONTENT_REVIEWER_MANAGEMENT,
+            SLOT_CONTENT_REVIEWER_B,
+            "内容审核-管理",
+            projectManager);
+    String reviewerNetwork =
+        pickReviewerForSlot(
+            SLOT_CONTENT_REVIEWER_NETWORK,
+            SLOT_CONTENT_REVIEWER_C,
+            "内容审核-网络",
+            projectManager);
+    return new Assignment(reviewerTech, reviewerManagement, reviewerNetwork);
+  }
+
+  private String pickReviewerForSlot(
+      String slotKey, String legacySlotKey, String slotLabel, String excludedUsername) {
+    List<String> roleCodes = resolveRoleCodesBySlot(slotKey, legacySlotKey);
+    if (roleCodes.isEmpty()) {
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT,
+          "节点规则缺少槽位配置：" + slotKey + "，请到流程管理-节点规则补齐");
+    }
+
+    List<String> candidates =
+        userAccountService.listEnabledUsernamesByRoles(roleCodes).stream()
+            .map(this::normalizeUser)
+            .filter(item -> item != null && !item.isBlank())
+            .filter(item -> excludedUsername == null || !item.equalsIgnoreCase(excludedUsername))
+            .distinct()
+            .toList();
+    if (candidates.isEmpty()) {
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT,
+          slotLabel + " 未匹配到可用审核人，请检查角色分配和用户启用状态");
+    }
+    return candidates.get(0);
+  }
+
+  private List<String> resolveRoleCodesBySlot(String slotKey, String legacySlotKey) {
+    List<String> primary = workflowConfigService.listRoleCodesBySlot(NODE_TASK, slotKey, List.of());
+    if (!primary.isEmpty()) {
+      return primary;
+    }
+    if (legacySlotKey == null || legacySlotKey.isBlank()) {
+      return List.of();
+    }
+    return workflowConfigService.listRoleCodesBySlot(NODE_TASK, legacySlotKey, List.of());
+  }
+
+  private String loadProjectManagerUsername(long projectId) {
+    List<String> rows =
         jdbcTemplate.query(
             """
-            SELECT content_reviewer_a, content_reviewer_b, content_reviewer_c
-            FROM workflow_assignment
+            SELECT project_manager_username
+            FROM police_register
             WHERE project_register_id = ?
+            ORDER BY id DESC
+            LIMIT 1
             """,
-            (rs, rowNum) ->
-                new Assignment(
-                    rs.getString("content_reviewer_a"),
-                    rs.getString("content_reviewer_b"),
-                    rs.getString("content_reviewer_c")),
+            (rs, rowNum) -> normalizeUser(rs.getString("project_manager_username")),
             projectId);
-    if (rows.isEmpty()) {
-      throw new ResponseStatusException(
-          HttpStatus.CONFLICT, "quality assignment is required before content review submit");
-    }
-    Assignment assignment = rows.get(0);
-    if (isBlank(assignment.reviewerA()) || isBlank(assignment.reviewerB()) || isBlank(assignment.reviewerC())) {
-      throw new ResponseStatusException(
-          HttpStatus.CONFLICT, "content reviewers (technical/management/network) are required");
-    }
-    return assignment;
+    return rows.isEmpty() ? null : rows.get(0);
   }
 
   private void ensureEnabledUsers(Assignment assignment) {
@@ -471,10 +528,6 @@ public class ReportContentReviewService {
 
   private boolean isAdmin(String username) {
     return userAccountService.hasRole(username, UserAccountService.ROLE_SUPER_ADMIN);
-  }
-
-  private boolean isBlank(String value) {
-    return value == null || value.isBlank();
   }
 
   private boolean contains(String value, String needle) {
@@ -542,6 +595,14 @@ public class ReportContentReviewService {
     return value == null ? "" : value.trim();
   }
 
+  private String normalizeUser(String value) {
+    if (value == null) {
+      return null;
+    }
+    String trimmed = value.trim();
+    return trimmed.isEmpty() ? null : trimmed;
+  }
+
   private String stringTimestamp(Timestamp timestamp) {
     return timestamp == null ? null : String.valueOf(timestamp);
   }
@@ -565,9 +626,30 @@ public class ReportContentReviewService {
           p.application_name,
           tr.status tech_review_status,
           osa.package_object_key on_site_package_object_key,
-          wa.content_reviewer_a reviewer_a,
-          wa.content_reviewer_b reviewer_b,
-          wa.content_reviewer_c reviewer_c,
+          COALESCE((
+            SELECT t1.assignee
+            FROM report_content_review_task t1
+            WHERE t1.project_register_id = p.id
+              AND t1.review_role = 'CONTENT_TECH'
+            ORDER BY t1.id DESC
+            LIMIT 1
+          ), '') reviewer_a,
+          COALESCE((
+            SELECT t2.assignee
+            FROM report_content_review_task t2
+            WHERE t2.project_register_id = p.id
+              AND t2.review_role = 'CONTENT_MANAGEMENT'
+            ORDER BY t2.id DESC
+            LIMIT 1
+          ), '') reviewer_b,
+          COALESCE((
+            SELECT t3.assignee
+            FROM report_content_review_task t3
+            WHERE t3.project_register_id = p.id
+              AND t3.review_role = 'CONTENT_NETWORK'
+            ORDER BY t3.id DESC
+            LIMIT 1
+          ), '') reviewer_c,
           COALESCE(a.status, 'DRAFT') status,
           a.applied_by,
           a.submitted_at,
@@ -577,7 +659,6 @@ public class ReportContentReviewService {
         FROM project_register p
         JOIN report_tech_review_apply tr ON tr.project_register_id = p.id
         LEFT JOIN on_site_assessment osa ON osa.project_register_id = p.id AND osa.status = 'SUBMITTED'
-        LEFT JOIN workflow_assignment wa ON wa.project_register_id = p.id
         LEFT JOIN report_content_review_apply a ON a.project_register_id = p.id
         LEFT JOIN workflow_instance wi ON wi.biz_type = 'PROJECT_REGISTER' AND wi.biz_id = p.id
         WHERE p.deleted_flag = 0

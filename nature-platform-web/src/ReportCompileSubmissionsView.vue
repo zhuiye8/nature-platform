@@ -1,9 +1,9 @@
-﻿<template>
+<template>
   <div class="page-shell page section-stack">
     <header class="page-header">
       <div>
         <h2>报告编制与上传</h2>
-        <p>节点 14：编制人上传报告文件并提交，进入报告最终审核</p>
+        <p>节点 14：编制人上传报告文件并提交，流程进入最终审核。</p>
       </div>
       <el-space>
         <el-button :loading="loading" @click="loadRows">刷新</el-button>
@@ -16,7 +16,7 @@
         type="info"
         :closable="false"
         show-icon
-        title="建议先上传并保存草稿，再执行提交；提交后流程进入最终审核。"
+        title="建议先上传并保存草稿，再执行提交；提交后系统会根据最终审核节点规则自动创建待办。"
       />
     </el-card>
 
@@ -29,12 +29,12 @@
             {{ row.onSitePackageObjectKey || "-" }}
           </template>
         </el-table-column>
-        <el-table-column prop="assignee" label="编制" width="120">
+        <el-table-column prop="assignee" label="编制人" width="120">
           <template #default="{ row }">
             {{ row.assignee || "-" }}
           </template>
         </el-table-column>
-        <el-table-column prop="reportObjectKey" label="报告文件对象" min-width="260" show-overflow-tooltip>
+        <el-table-column prop="reportObjectKey" label="报告对象键" min-width="260" show-overflow-tooltip>
           <template #default="{ row }">
             {{ row.reportObjectKey || "-" }}
           </template>
@@ -60,7 +60,8 @@
               >
                 提交报告
               </el-button>
-              <el-button size="small" @click="openProcessOverview(row.projectRegisterId)">流程详情</el-button>
+              <el-button size="small" @click="openEntityDetail(row.projectRegisterId)">业务详情</el-button>
+              <el-button size="small" @click="openTaskDetail(row.projectRegisterId)">审核详情</el-button>
             </el-space>
           </template>
         </el-table-column>
@@ -93,7 +94,8 @@
             :rows="4"
             maxlength="2000"
             show-word-limit
-            placeholder="请输入编制备注" />
+            placeholder="请输入编制备注"
+          />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -114,8 +116,8 @@
 <script setup lang="ts">
 /**
  * @input Report compile submission APIs, upload endpoint, and router navigation for node-14 operations
- * @output Node-14 report compile/upload board with permission-gated draft save, file upload, and submit actions
- * @position Report compile submission page bridging assignment output and final review input with button-level RBAC
+ * @output Node-14 compile/upload board with permission-gated draft save, file upload, and submit actions
+ * @position Report compile submission page bridging compile output and final-review task creation
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 import { onMounted, reactive, ref } from "vue";
@@ -129,7 +131,7 @@ import {
   submitReportCompileSubmission,
   type ReportCompileSubmissionRecord
 } from "./report-compile-service";
-import { toProcessOverviewPath } from "./process-overview-service";
+import { toTaskDetailPath } from "./task-detail-service";
 
 interface UploadResponse {
   objectKey: string;
@@ -281,8 +283,12 @@ function goWorkflow() {
   void router.push("/workflow");
 }
 
-function openProcessOverview(projectId: number) {
-  void router.push(toProcessOverviewPath(projectId));
+function openTaskDetail(projectId: number) {
+  void router.push(toTaskDetailPath("PROJECT_REGISTER", projectId));
+}
+
+function openEntityDetail(projectId: number) {
+  void router.push(`/entity-detail/report/${projectId}`);
 }
 
 onMounted(() => {
@@ -317,4 +323,3 @@ onMounted(() => {
   display: none;
 }
 </style>
-

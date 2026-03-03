@@ -3,7 +3,7 @@
     <header class="page-header">
       <div>
         <h2>报告内容审核（技术/管理/网络）</h2>
-        <p>节点 12：沿用现场测评分配的三类审核人，任务在进入节点后自动创建并行待办。</p>
+        <p>节点 12：审核人由流程管理中的节点规则自动安插，任务进入节点后自动创建并行待办。</p>
       </div>
       <el-space>
         <el-button :loading="loading" @click="loadRows">刷新</el-button>
@@ -16,7 +16,7 @@
         type="info"
         :closable="false"
         show-icon
-        title="内容审核分为技术/管理/网络三条并行任务；本页仅展示任务状态与明细。"
+        title="内容审核分为技术/管理/网络三条并行任务；若缺少槽位配置，请到流程管理-节点规则补齐。"
       />
     </el-card>
 
@@ -43,7 +43,8 @@
         <el-table-column label="操作" width="250" fixed="right">
           <template #default="{ row }">
             <el-space>
-              <el-button size="small" @click="openDetail(row.projectRegisterId)">详情</el-button>
+              <el-button size="small" @click="openEntityDetail(row.projectRegisterId)">业务详情</el-button>
+              <el-button size="small" @click="openDetail(row.projectRegisterId)">审核详情</el-button>
             </el-space>
           </template>
         </el-table-column>
@@ -55,8 +56,8 @@
 <script setup lang="ts">
 /**
  * @input Report content review list APIs and router navigation for node-12 detail-page retrieval
- * @output Node-12 content review board with technical/management/network reviewer visibility and unified detail-page entry
- * @position Report content review page handling auto-created parallel tasks with cross-node detail-page access
+ * @output Node-12 content review board showing node-rule-assigned technical/management/network reviewers and unified detail-page entry
+ * @position Report content review page handling auto-created parallel tasks with workflow-rule-driven assignee display
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 import { onMounted, ref } from "vue";
@@ -131,6 +132,10 @@ function goWorkflow() {
 
 function openDetail(projectId: number) {
   void router.push(toTaskDetailPath("REPORT_CONTENT_REVIEW", projectId));
+}
+
+function openEntityDetail(projectId: number) {
+  void router.push(`/entity-detail/report/${projectId}`);
 }
 
 onMounted(() => {

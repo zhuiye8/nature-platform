@@ -56,6 +56,54 @@ function Invoke-E2EMySql {
   return docker exec -i $Context.MysqlContainer mysql -N -B "-u$($Context.DbUser)" "-p$($Context.DbPassword)" $Context.DbName -e $Sql
 }
 
+function Ensure-E2EReviewNodeRules {
+  param(
+    [hashtable]$Context,
+    [string]$UpdatedBy = "admin"
+  )
+
+  $safeUpdatedBy = $UpdatedBy.Replace("'", "''")
+  $sql = @"
+INSERT INTO workflow_node_rule (node_key, rule_name, enabled, updated_by)
+VALUES ('REPORT_TECH_REVIEW_TASK', 'E2E Technical Review Rule', 1, '$safeUpdatedBy')
+ON DUPLICATE KEY UPDATE enabled = VALUES(enabled), updated_by = VALUES(updated_by);
+
+INSERT INTO workflow_node_rule (node_key, rule_name, enabled, updated_by)
+VALUES ('REPORT_CONTENT_REVIEW_TASK', 'E2E Content Review Rule', 1, '$safeUpdatedBy')
+ON DUPLICATE KEY UPDATE enabled = VALUES(enabled), updated_by = VALUES(updated_by);
+
+INSERT INTO workflow_node_rule (node_key, rule_name, enabled, updated_by)
+VALUES ('REPORT_FINAL_REVIEW_TASK', 'E2E Final Review Rule', 1, '$safeUpdatedBy')
+ON DUPLICATE KEY UPDATE enabled = VALUES(enabled), updated_by = VALUES(updated_by);
+
+SET @rule_tech = (SELECT id FROM workflow_node_rule WHERE node_key = 'REPORT_TECH_REVIEW_TASK' LIMIT 1);
+SET @rule_content = (SELECT id FROM workflow_node_rule WHERE node_key = 'REPORT_CONTENT_REVIEW_TASK' LIMIT 1);
+SET @rule_final = (SELECT id FROM workflow_node_rule WHERE node_key = 'REPORT_FINAL_REVIEW_TASK' LIMIT 1);
+
+INSERT INTO workflow_node_rule_item (rule_id, slot_key, slot_label, role_code, required_flag, min_count, max_count, sort_order)
+VALUES (@rule_tech, 'TECH_REVIEWER', 'Technical Reviewer', 'ROLE_SUPER_ADMIN', 1, 1, 1, 10)
+ON DUPLICATE KEY UPDATE slot_label = VALUES(slot_label), required_flag = VALUES(required_flag), min_count = VALUES(min_count), max_count = VALUES(max_count), sort_order = VALUES(sort_order);
+
+INSERT INTO workflow_node_rule_item (rule_id, slot_key, slot_label, role_code, required_flag, min_count, max_count, sort_order)
+VALUES (@rule_content, 'CONTENT_REVIEWER_TECH', 'Content Reviewer Tech', 'ROLE_SUPER_ADMIN', 1, 1, 1, 10)
+ON DUPLICATE KEY UPDATE slot_label = VALUES(slot_label), required_flag = VALUES(required_flag), min_count = VALUES(min_count), max_count = VALUES(max_count), sort_order = VALUES(sort_order);
+
+INSERT INTO workflow_node_rule_item (rule_id, slot_key, slot_label, role_code, required_flag, min_count, max_count, sort_order)
+VALUES (@rule_content, 'CONTENT_REVIEWER_MANAGEMENT', 'Content Reviewer Management', 'ROLE_SUPER_ADMIN', 1, 1, 1, 20)
+ON DUPLICATE KEY UPDATE slot_label = VALUES(slot_label), required_flag = VALUES(required_flag), min_count = VALUES(min_count), max_count = VALUES(max_count), sort_order = VALUES(sort_order);
+
+INSERT INTO workflow_node_rule_item (rule_id, slot_key, slot_label, role_code, required_flag, min_count, max_count, sort_order)
+VALUES (@rule_content, 'CONTENT_REVIEWER_NETWORK', 'Content Reviewer Network', 'ROLE_SUPER_ADMIN', 1, 1, 1, 30)
+ON DUPLICATE KEY UPDATE slot_label = VALUES(slot_label), required_flag = VALUES(required_flag), min_count = VALUES(min_count), max_count = VALUES(max_count), sort_order = VALUES(sort_order);
+
+INSERT INTO workflow_node_rule_item (rule_id, slot_key, slot_label, role_code, required_flag, min_count, max_count, sort_order)
+VALUES (@rule_final, 'FINAL_REVIEWER', 'Final Reviewer', 'ROLE_SUPER_ADMIN', 1, 1, 1, 10)
+ON DUPLICATE KEY UPDATE slot_label = VALUES(slot_label), required_flag = VALUES(required_flag), min_count = VALUES(min_count), max_count = VALUES(max_count), sort_order = VALUES(sort_order);
+"@
+
+  Invoke-E2EMySql -Context $Context -Sql $sql | Out-Null
+}
+
 function Ensure-E2EUser {
   param(
     [hashtable]$Context,

@@ -1,6 +1,6 @@
 /**
  * @input OnSiteAssessmentService operations, AdminAccessService guards, and authentication principal for operator attribution
- * @output /api/v1/on-site-assessments endpoints for node-8 list/detail/save/submit and reviewer-candidate workflows
+ * @output /api/v1/on-site-assessments endpoints for node-8 list/detail/save/submit workflows
  * @position HTTP adapter for on-site assessment stage with ZIP submit gate enforcement and action-level authorization
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
@@ -33,18 +33,32 @@ public class OnSiteAssessmentController {
 
   @GetMapping
   public ApiResponse<List<OnSiteAssessmentRecord>> list(Authentication authentication) {
-    adminAccessService.requirePermission(
-        CurrentUser.username(authentication), BusinessPermissionCodes.ON_SITE_ASSESSMENT_VIEW);
-    return ApiResponse.success(onSiteAssessmentService.list());
+    String operator = CurrentUser.username(authentication);
+    requireOnSiteResultResource(operator);
+    return ApiResponse.success(onSiteAssessmentService.listResults(operator));
+  }
+
+  @GetMapping("/executions")
+  public ApiResponse<List<OnSiteAssessmentRecord>> listExecutions(Authentication authentication) {
+    String operator = CurrentUser.username(authentication);
+    requireOnSiteExecutionResource(operator);
+    return ApiResponse.success(onSiteAssessmentService.listExecutions(operator));
+  }
+
+  @GetMapping("/results")
+  public ApiResponse<List<OnSiteAssessmentRecord>> listResults(Authentication authentication) {
+    String operator = CurrentUser.username(authentication);
+    requireOnSiteResultResource(operator);
+    return ApiResponse.success(onSiteAssessmentService.listResults(operator));
   }
 
   @GetMapping("/{projectId}")
   public ResponseEntity<ApiResponse<OnSiteAssessmentRecord>> detail(
       Authentication authentication, @PathVariable long projectId) {
-    adminAccessService.requirePermission(
-        CurrentUser.username(authentication), BusinessPermissionCodes.ON_SITE_ASSESSMENT_VIEW);
+    String operator = CurrentUser.username(authentication);
+    requireOnSiteAnyResource(operator);
     return onSiteAssessmentService
-        .detail(projectId)
+        .detailVisible(projectId, operator)
         .map(item -> ResponseEntity.ok(ApiResponse.success(item)))
         .orElseGet(
             () ->
@@ -57,43 +71,45 @@ public class OnSiteAssessmentController {
       Authentication authentication,
       @PathVariable long projectId,
       @Valid @RequestBody OnSiteAssessmentRequest request) {
-    adminAccessService.requirePermission(
-        CurrentUser.username(authentication), BusinessPermissionCodes.ON_SITE_ASSESSMENT_SAVE);
+    requireOnSiteAnyResource(CurrentUser.username(authentication));
     return ApiResponse.success(
         onSiteAssessmentService.save(projectId, request, CurrentUser.username(authentication)));
   }
 
-  @GetMapping("/candidates")
-  public ApiResponse<List<String>> candidates(Authentication authentication) {
-    adminAccessService.requirePermission(
-        CurrentUser.username(authentication), BusinessPermissionCodes.ON_SITE_ASSESSMENT_CANDIDATE_VIEW);
-    return ApiResponse.success(onSiteAssessmentService.listReviewAssignmentCandidates());
-  }
-
-  @GetMapping("/reviewer-candidates")
-  public ApiResponse<OnSiteAssessmentService.ReviewerCandidates> reviewerCandidates(
-      Authentication authentication) {
-    adminAccessService.requirePermission(
-        CurrentUser.username(authentication), BusinessPermissionCodes.ON_SITE_ASSESSMENT_CANDIDATE_VIEW);
-    return ApiResponse.success(onSiteAssessmentService.listReviewAssignmentCandidatesByRole());
-  }
-
-  @PutMapping("/{projectId}/review-assignment")
-  public ApiResponse<OnSiteAssessmentRecord> saveReviewAssignment(
-      Authentication authentication,
-      @PathVariable long projectId,
-      @Valid @RequestBody QualityReviewAssignmentRequest request) {
-    adminAccessService.requirePermission(
-        CurrentUser.username(authentication), BusinessPermissionCodes.ON_SITE_ASSESSMENT_ASSIGN);
-    return ApiResponse.success(
-        onSiteAssessmentService.saveReviewAssignment(
-            projectId, request, CurrentUser.username(authentication)));
-  }
-
   @PostMapping("/{projectId}/submit")
   public ApiResponse<OnSiteAssessmentRecord> submit(Authentication authentication, @PathVariable long projectId) {
-    adminAccessService.requirePermission(
-        CurrentUser.username(authentication), BusinessPermissionCodes.ON_SITE_ASSESSMENT_SUBMIT);
+    requireOnSiteAnyResource(CurrentUser.username(authentication));
     return ApiResponse.success(onSiteAssessmentService.submit(projectId, CurrentUser.username(authentication)));
+  }
+
+  private void requireOnSiteExecutionResource(String operator) {
+    if (adminAccessService.hasResource(operator, ResourceKeys.PAGE_ON_SITE_ASSESSMENT_EXECUTIONS)
+        || adminAccessService.hasResource(operator, ResourceKeys.PAGE_ON_SITE_ASSESSMENTS)) {
+      return;
+    }
+    throw new org.springframework.web.server.ResponseStatusException(
+        org.springframework.http.HttpStatus.FORBIDDEN,
+        "current user has no permission: on-site-assessment:execution");
+  }
+
+  private void requireOnSiteResultResource(String operator) {
+    if (adminAccessService.hasResource(operator, ResourceKeys.PAGE_ON_SITE_ASSESSMENT_RESULTS)
+        || adminAccessService.hasResource(operator, ResourceKeys.PAGE_ON_SITE_ASSESSMENTS)) {
+      return;
+    }
+    throw new org.springframework.web.server.ResponseStatusException(
+        org.springframework.http.HttpStatus.FORBIDDEN,
+        "current user has no permission: on-site-assessment:result");
+  }
+
+  private void requireOnSiteAnyResource(String operator) {
+    if (adminAccessService.hasResource(operator, ResourceKeys.PAGE_ON_SITE_ASSESSMENT_EXECUTIONS)
+        || adminAccessService.hasResource(operator, ResourceKeys.PAGE_ON_SITE_ASSESSMENT_RESULTS)
+        || adminAccessService.hasResource(operator, ResourceKeys.PAGE_ON_SITE_ASSESSMENTS)) {
+      return;
+    }
+    throw new org.springframework.web.server.ResponseStatusException(
+        org.springframework.http.HttpStatus.FORBIDDEN,
+        "current user has no permission: on-site-assessment");
   }
 }

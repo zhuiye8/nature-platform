@@ -23,6 +23,14 @@ public class AdminRoleUpsertRequest {
 
   private Boolean enabled;
 
+  private String dataScope = RoleDataScopeTypes.SELF;
+
+  private Boolean projectViewAll = false;
+
+  private Boolean peerSalesLimited = false;
+
+  private List<Long> dataScopeDeptIds = new ArrayList<>();
+
   @JsonAlias("permissionCodes")
   private List<String> resourceKeys = new ArrayList<>();
 
@@ -56,6 +64,38 @@ public class AdminRoleUpsertRequest {
 
   public void setEnabled(Boolean enabled) {
     this.enabled = enabled;
+  }
+
+  public String getDataScope() {
+    return dataScope;
+  }
+
+  public void setDataScope(String dataScope) {
+    this.dataScope = dataScope;
+  }
+
+  public Boolean getProjectViewAll() {
+    return projectViewAll;
+  }
+
+  public void setProjectViewAll(Boolean projectViewAll) {
+    this.projectViewAll = projectViewAll;
+  }
+
+  public Boolean getPeerSalesLimited() {
+    return peerSalesLimited;
+  }
+
+  public void setPeerSalesLimited(Boolean peerSalesLimited) {
+    this.peerSalesLimited = peerSalesLimited;
+  }
+
+  public List<Long> getDataScopeDeptIds() {
+    return dataScopeDeptIds;
+  }
+
+  public void setDataScopeDeptIds(List<Long> dataScopeDeptIds) {
+    this.dataScopeDeptIds = dataScopeDeptIds == null ? new ArrayList<>() : dataScopeDeptIds;
   }
 
   public List<String> getResourceKeys() {

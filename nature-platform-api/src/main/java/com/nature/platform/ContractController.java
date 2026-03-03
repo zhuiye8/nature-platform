@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -34,25 +35,38 @@ public class ContractController {
 
   @GetMapping
   public ApiResponse<List<ContractRecord>> list(Authentication authentication) {
-    adminAccessService.requirePermission(
-        CurrentUser.username(authentication), BusinessPermissionCodes.CONTRACT_VIEW);
-    return ApiResponse.success(contractService.list());
+    String operator = CurrentUser.username(authentication);
+    adminAccessService.requirePermission(operator, BusinessPermissionCodes.CONTRACT_VIEW);
+    return ApiResponse.success(contractService.list(operator));
+  }
+
+  @GetMapping("/project-name-suggestions")
+  public ApiResponse<ContractProjectNameSuggestionResponse> projectNameSuggestions(
+      Authentication authentication,
+      @RequestParam String keyword,
+      @RequestParam(defaultValue = "5") int limit) {
+    String operator = CurrentUser.username(authentication);
+    if (!(adminAccessService.hasPermission(operator, BusinessPermissionCodes.CONTRACT_CREATE)
+        || adminAccessService.hasPermission(operator, BusinessPermissionCodes.CONTRACT_UPDATE))) {
+      adminAccessService.requirePermission(operator, BusinessPermissionCodes.CONTRACT_VIEW);
+    }
+    return ApiResponse.success(contractService.suggestProjectNames(keyword, limit));
   }
 
   @GetMapping("/archive-list")
   public ApiResponse<List<ContractRecord>> archiveList(Authentication authentication) {
-    adminAccessService.requirePermission(
-        CurrentUser.username(authentication), BusinessPermissionCodes.CONTRACT_ARCHIVE);
-    return ApiResponse.success(contractService.listForArchive());
+    String operator = CurrentUser.username(authentication);
+    adminAccessService.requirePermission(operator, BusinessPermissionCodes.CONTRACT_ARCHIVE);
+    return ApiResponse.success(contractService.listForArchive(operator));
   }
 
   @GetMapping("/{id}")
   public ResponseEntity<ApiResponse<ContractRecord>> detail(
       Authentication authentication, @PathVariable long id) {
-    adminAccessService.requirePermission(
-        CurrentUser.username(authentication), BusinessPermissionCodes.CONTRACT_VIEW);
+    String operator = CurrentUser.username(authentication);
+    adminAccessService.requirePermission(operator, BusinessPermissionCodes.CONTRACT_VIEW);
     return contractService
-        .findById(id)
+        .findByIdVisible(id, operator)
         .map(item -> ResponseEntity.ok(ApiResponse.success(item)))
         .orElseGet(
             () ->

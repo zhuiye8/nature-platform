@@ -3,17 +3,17 @@
     <header class="page-header">
       <div>
         <h2>材料归档</h2>
-        <p>节点 16：上传报告与表单材料，提交后项目流程闭环</p>
+        <p>节点 16：上传报告与表单材料，提交后项目流程闭环。</p>
       </div>
       <el-button :loading="loading" @click="loadRows">刷新</el-button>
     </header>
 
-    <el-card class="tip-card">
+    <el-card class="tip-card np-info-strip">
       <el-alert
         type="info"
         :closable="false"
         show-icon
-        title="归档前请确认报告文件与表单材料完整；每行填写一个对象键。"
+        title="请先维护材料状态，再补充报告/表单附件；每行填写一个对象键。"
       />
     </el-card>
 
@@ -21,18 +21,25 @@
       <el-table :data="rows" v-loading="loading" empty-text="暂无可处理项">
         <el-table-column prop="projectRegisterId" label="项目ID" width="90" />
         <el-table-column prop="applicationName" label="申请单名称" min-width="220" show-overflow-tooltip />
-        <el-table-column prop="onSitePackageObjectKey" label="现场测评压缩" min-width="240" show-overflow-tooltip>
+        <el-table-column prop="onSitePackageObjectKey" label="现场测评压缩包" min-width="240" show-overflow-tooltip>
           <template #default="{ row }">
             {{ row.onSitePackageObjectKey || "-" }}
           </template>
         </el-table-column>
+        <el-table-column label="材料状态" min-width="220" show-overflow-tooltip>
+          <template #default="{ row }">
+            {{ formatMaterialStatusCodes(row.materialStatusCodes) }}
+          </template>
+        </el-table-column>
         <el-table-column label="报告文件" width="100">
           <template #default="{ row }">
-            {{ row.reportFiles?.length || 0 }} 项          </template>
+            {{ row.reportFiles?.length || 0 }} 项
+          </template>
         </el-table-column>
         <el-table-column label="表单文件" width="100">
           <template #default="{ row }">
-            {{ row.formFiles?.length || 0 }} 项          </template>
+            {{ row.formFiles?.length || 0 }} 项
+          </template>
         </el-table-column>
         <el-table-column prop="status" label="状态" width="120">
           <template #default="{ row }">
@@ -55,20 +62,39 @@
               >
                 提交归档
               </el-button>
-              <el-button size="small" @click="openProcessOverview(row.projectRegisterId)">流程详情</el-button>
+              <el-button size="small" @click="openEntityDetail(row.projectRegisterId)">业务详情</el-button>
+              <el-button size="small" @click="openTaskDetail(row.projectRegisterId)">审核详情</el-button>
             </el-space>
           </template>
         </el-table-column>
       </el-table>
     </el-card>
 
-    <el-dialog v-model="dialogVisible" title="材料归档" width="880px">
+    <el-dialog v-model="dialogVisible" title="材料归档" width="920px">
       <el-form label-width="140px">
         <el-form-item label="项目ID">
           <el-input :model-value="form.projectRegisterId" disabled />
         </el-form-item>
 
-        <el-form-item label="报告文件对象">
+        <el-form-item label="材料状态" required>
+          <el-select
+            v-model="form.materialStatusCodes"
+            multiple
+            collapse-tags
+            collapse-tags-tooltip
+            placeholder="请选择材料状态"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="item in materialStatusOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="报告文件对象键" required>
           <el-input
             v-model="form.reportFilesText"
             type="textarea"
@@ -83,11 +109,11 @@
             >
               上传报告文件
             </el-button>
-            <span class="upload-tip">上传后自动追加到文本</span>
+            <span class="upload-tip">上传后自动追加到文本框</span>
           </div>
         </el-form-item>
 
-        <el-form-item label="表单文件对象">
+        <el-form-item label="表单文件对象键" required>
           <el-input
             v-model="form.formFilesText"
             type="textarea"
@@ -102,7 +128,7 @@
             >
               上传表单文件
             </el-button>
-            <span class="upload-tip">上传后自动追加到文本</span>
+            <span class="upload-tip">上传后自动追加到文本框</span>
           </div>
         </el-form-item>
 
@@ -113,7 +139,8 @@
             :rows="3"
             maxlength="2000"
             show-word-limit
-            placeholder="请输入备注" />
+            placeholder="请输入备注"
+          />
         </el-form-item>
       </el-form>
 
@@ -137,8 +164,8 @@
 <script setup lang="ts">
 /**
  * @input Material archive APIs, upload endpoint, and Element Plus form components for node-16 operations
- * @output Node-16 material archive board supporting permission-gated draft save, file upload, and archive submit actions
- * @position Material archive stage page closing project workflow with report/form materials persistence and button-level RBAC
+ * @output Node-16 material archive board supporting enum-based material-status maintenance, draft save, file upload, and archive submit actions
+ * @position Material archive stage page closing project workflow with material status checklist and report/form package persistence
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 import { onMounted, reactive, ref } from "vue";
@@ -152,7 +179,7 @@ import {
   submitMaterialArchive,
   type MaterialArchiveRecord
 } from "./material-archive-service";
-import { toProcessOverviewPath } from "./process-overview-service";
+import { toTaskDetailPath } from "./task-detail-service";
 
 interface UploadResponse {
   objectKey: string;
@@ -160,10 +187,27 @@ interface UploadResponse {
 
 interface FormState {
   projectRegisterId: number;
+  materialStatusCodes: string[];
   reportFilesText: string;
   formFilesText: string;
   remark: string;
 }
+
+const materialStatusOptions = [
+  { value: "MATERIAL_SUMMARY_PENDING_PRINT", label: "待打印材料汇总" },
+  { value: "ASSESSMENT_REPORT", label: "测评报告" },
+  { value: "ASSESSMENT_REPORT_REVIEW_RECORD", label: "测评报告评审记录" },
+  { value: "VERIFICATION_TEST", label: "验证测试" },
+  { value: "TOOL_SCAN", label: "工具扫描" },
+  { value: "ASSESSMENT_PLAN", label: "测评方案" },
+  { value: "ASSESSMENT_PLAN_REVIEW_RECORD", label: "测评方案评审记录" },
+  { value: "ON_SITE_ASSESSMENT", label: "现场测评" },
+  { value: "PROCESS_DOCUMENT", label: "过程文档" },
+  { value: "INFORMATION_COLLECTION", label: "信息收集" },
+  { value: "PROJECT_PLAN", label: "项目计划书" }
+] as const;
+
+const materialStatusLabelMap = new Map(materialStatusOptions.map((item) => [item.value, item.label]));
 
 const router = useRouter();
 const loading = ref(false);
@@ -175,6 +219,7 @@ const uploadingType = ref<"report" | "form" | "">("");
 
 const form = reactive<FormState>({
   projectRegisterId: 0,
+  materialStatusCodes: [],
   reportFilesText: "",
   formFilesText: "",
   remark: ""
@@ -207,8 +252,16 @@ function textToList(value: string) {
     .filter((item) => item.length > 0);
 }
 
+function formatMaterialStatusCodes(codes?: string[]) {
+  if (!codes || codes.length === 0) {
+    return "-";
+  }
+  return codes.map((code) => materialStatusLabelMap.get(code) || code).join("、");
+}
+
 function fillForm(row: MaterialArchiveRecord) {
   form.projectRegisterId = row.projectRegisterId;
+  form.materialStatusCodes = Array.isArray(row.materialStatusCodes) ? row.materialStatusCodes : [];
   form.reportFilesText = listToText(row.reportFiles);
   form.formFilesText = listToText(row.formFiles);
   form.remark = row.remark || "";
@@ -274,11 +327,27 @@ async function saveForm() {
   if (!form.projectRegisterId) {
     return;
   }
+  const reportFiles = textToList(form.reportFilesText);
+  const formFiles = textToList(form.formFilesText);
+  if (form.materialStatusCodes.length === 0) {
+    ElMessage.warning("请至少选择一个材料状态");
+    return;
+  }
+  if (reportFiles.length === 0) {
+    ElMessage.warning("请至少上传一个报告文件");
+    return;
+  }
+  if (formFiles.length === 0) {
+    ElMessage.warning("请至少上传一个表单文件");
+    return;
+  }
+
   saving.value = true;
   try {
     await saveMaterialArchive(form.projectRegisterId, {
-      reportFiles: textToList(form.reportFilesText),
-      formFiles: textToList(form.formFilesText),
+      materialStatusCodes: form.materialStatusCodes,
+      reportFiles,
+      formFiles,
       remark: form.remark.trim()
     });
     ElMessage.success("材料归档草稿已保存");
@@ -291,21 +360,21 @@ async function saveForm() {
   }
 }
 
-function openProcessOverview(projectId: number) {
-  void router.push(toProcessOverviewPath(projectId));
+function openTaskDetail(projectId: number) {
+  void router.push(toTaskDetailPath("PROJECT_REGISTER", projectId));
+}
+
+function openEntityDetail(projectId: number) {
+  void router.push(`/entity-detail/material/${projectId}`);
 }
 
 async function submitRow(row: MaterialArchiveRecord) {
   try {
-    await ElMessageBox.confirm(
-      `确认提交项目 ${row.projectRegisterId} 的材料归档吗？`,
-      "提交确认",
-      {
-        type: "warning",
-        confirmButtonText: "确认",
-        cancelButtonText: "取消"
-      }
-    );
+    await ElMessageBox.confirm(`确认提交项目 ${row.projectRegisterId} 的材料归档吗？`, "提交确认", {
+      type: "warning",
+      confirmButtonText: "确认",
+      cancelButtonText: "取消"
+    });
   } catch {
     return;
   }
@@ -325,10 +394,6 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.page {
-  padding-top: 24px;
-}
-
 .tip-card {
   border: 1px solid rgba(31, 152, 122, 0.2);
   background: linear-gradient(92deg, rgba(45, 184, 146, 0.08), rgba(47, 110, 162, 0.05));
@@ -355,5 +420,3 @@ onMounted(() => {
   display: none;
 }
 </style>
-
-

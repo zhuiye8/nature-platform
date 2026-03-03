@@ -30,6 +30,7 @@ class ProjectRegisterServiceTests {
   private final JsonSupport jsonSupport = org.mockito.Mockito.mock(JsonSupport.class);
   private final NotificationService notificationService = org.mockito.Mockito.mock(NotificationService.class);
   private final UserAccountService userAccountService = org.mockito.Mockito.mock(UserAccountService.class);
+  private final UserDataScopeService userDataScopeService = org.mockito.Mockito.mock(UserDataScopeService.class);
   private final RuntimeService runtimeService = org.mockito.Mockito.mock(RuntimeService.class);
   private final TaskService taskService = org.mockito.Mockito.mock(TaskService.class);
 
@@ -42,6 +43,7 @@ class ProjectRegisterServiceTests {
                 jsonSupport,
                 notificationService,
                 userAccountService,
+                userDataScopeService,
                 runtimeService,
                 taskService));
     ProjectRegisterRecord project = new ProjectRegisterRecord();
@@ -130,6 +132,7 @@ class ProjectRegisterServiceTests {
                 jsonSupport,
                 notificationService,
                 userAccountService,
+                userDataScopeService,
                 runtimeService,
                 taskService));
     ProjectRegisterRecord submitted = new ProjectRegisterRecord();
@@ -150,6 +153,9 @@ class ProjectRegisterServiceTests {
             eq("PROJECT_REGISTER"),
             eq(2L)))
         .thenReturn(List.of(11L));
+    when(jdbcTemplate.queryForObject(
+            contains("FROM project_assessment_member"), eq(Integer.class), eq(2L)))
+        .thenReturn(1);
 
     service.approve(2L, "reviewer");
 

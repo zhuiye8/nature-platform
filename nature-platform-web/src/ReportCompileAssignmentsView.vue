@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="page-shell page section-stack">
     <header class="page-header">
       <div>
@@ -60,7 +60,8 @@
               >
                 提交分配
               </el-button>
-              <el-button size="small" @click="openProcessOverview(row.projectRegisterId)">流程详情</el-button>
+              <el-button size="small" @click="openEntityDetail(row.projectRegisterId)">业务详情</el-button>
+              <el-button size="small" @click="openTaskDetail(row.projectRegisterId)">审核详情</el-button>
             </el-space>
           </template>
         </el-table-column>
@@ -111,7 +112,7 @@ import {
   submitReportCompileAssignment,
   type ReportCompileAssignmentRecord
 } from "./report-compile-service";
-import { toProcessOverviewPath } from "./process-overview-service";
+import { toTaskDetailPath } from "./task-detail-service";
 
 interface FormState {
   projectRegisterId: number;
@@ -234,8 +235,12 @@ function goWorkflow() {
   void router.push("/workflow");
 }
 
-function openProcessOverview(projectId: number) {
-  void router.push(toProcessOverviewPath(projectId));
+function openTaskDetail(projectId: number) {
+  void router.push(toTaskDetailPath("PROJECT_REGISTER", projectId));
+}
+
+function openEntityDetail(projectId: number) {
+  void router.push(`/entity-detail/report/${projectId}`);
 }
 
 onMounted(() => {
@@ -254,4 +259,3 @@ onMounted(() => {
   border: 1px solid rgba(211, 225, 230, 0.88);
 }
 </style>
-

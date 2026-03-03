@@ -178,6 +178,29 @@ try {
     -Pass ($projectSubmitResp.status -eq 200) `
     -Detail $projectSubmitResp.raw
 
+  $assessmentMemberPayload = @{
+    usernames = @("admin")
+  }
+  $assessmentMemberResp =
+    Invoke-E2EApi -Context $context `
+      -Method "Put" `
+      -Path "/api/v1/project-registers/$projectId/assessment-members" `
+      -Token $adminToken `
+      -Body $assessmentMemberPayload
+  $assessmentMembers = @()
+  if ($assessmentMemberResp.status -eq 200 -and
+      $null -ne $assessmentMemberResp.body -and
+      $null -ne $assessmentMemberResp.body.data -and
+      $assessmentMemberResp.body.data.PSObject.Properties.Name -contains "usernames") {
+    $assessmentMembers = @($assessmentMemberResp.body.data.usernames)
+  }
+  Add-E2EResult -Context $context `
+    -CaseName "project_assessment_members_saved_hp03" `
+    -Expected "200 + usernames non-empty" `
+    -Actual "status=$($assessmentMemberResp.status), count=$($assessmentMembers.Count)" `
+    -Pass ($assessmentMemberResp.status -eq 200 -and $assessmentMembers.Count -gt 0) `
+    -Detail $assessmentMemberResp.raw
+
   $projectTodoResp =
     Invoke-E2EApi -Context $context `
       -Method "Get" `
@@ -204,6 +227,7 @@ try {
     filingAgency = "agency-police"
     contactName = "officer"
     contactPhone = "13600136000"
+    projectManagerUsername = "reviewer"
     remark = "saved by hp03"
   }
   $policeSaveResp =
@@ -248,57 +272,6 @@ try {
     -Pass ($onSiteSaveResp.status -eq 200 -and [string]$onSiteSaveResp.body.data.packageObjectKey.ToLower().EndsWith(".zip")) `
     -Detail $onSiteSaveResp.raw
 
-  $candidatesResp =
-    Invoke-E2EApi -Context $context `
-      -Method "Get" `
-      -Path "/api/v1/on-site-assessments/reviewer-candidates" `
-      -Token $adminToken
-  $candidatesData = $candidatesResp.body.data
-  $techUsers = @($candidatesData.techReviewers)
-  $aUsers = @($candidatesData.contentReviewersTech)
-  $bUsers = @($candidatesData.contentReviewersManagement)
-  $cUsers = @($candidatesData.contentReviewersNetwork)
-  $candidatePass =
-    $candidatesResp.status -eq 200 -and
-    $techUsers.Count -gt 0 -and
-    $aUsers.Count -gt 0 -and
-    $bUsers.Count -gt 0 -and
-    $cUsers.Count -gt 0
-  Add-E2EResult -Context $context `
-    -CaseName "on_site_reviewer_candidates_ready_hp03" `
-    -Expected "200 + tech+内容技术/管理/网络 all non-empty" `
-    -Actual "status=$($candidatesResp.status), tech=$($techUsers.Count), A=$($aUsers.Count), B=$($bUsers.Count), C=$($cUsers.Count)" `
-    -Pass $candidatePass `
-    -Detail $candidatesResp.raw
-  if (-not $candidatePass) {
-    throw "reviewer candidates are not ready for hp03"
-  }
-
-  $techAssignee = "admin"
-  $contentTechAssignee = "admin"
-  $contentManagementAssignee = "admin"
-  $contentNetworkAssignee = "admin"
-
-  $assignPayload = @{
-    techReviewer = $techAssignee
-    contentReviewerTech = $contentTechAssignee
-    contentReviewerManagement = $contentManagementAssignee
-    contentReviewerNetwork = $contentNetworkAssignee
-    versionNo = 0
-  }
-  $assignResp =
-    Invoke-E2EApi -Context $context `
-      -Method "Put" `
-      -Path "/api/v1/on-site-assessments/$projectId/review-assignment" `
-      -Token $adminToken `
-      -Body $assignPayload
-  Add-E2EResult -Context $context `
-    -CaseName "on_site_assignment_saved_hp03" `
-    -Expected "200 + assignmentVersionNo>=1" `
-    -Actual "status=$($assignResp.status), assignmentVersionNo=$([int]$assignResp.body.data.assignmentVersionNo)" `
-    -Pass ($assignResp.status -eq 200 -and [int]$assignResp.body.data.assignmentVersionNo -ge 1) `
-    -Detail $assignResp.raw
-
   $onSiteSubmitResp =
     Invoke-E2EApi -Context $context `
       -Method "Post" `
@@ -310,18 +283,6 @@ try {
     -Actual "status=$($onSiteSubmitResp.status), onSiteStatus=$([string]$onSiteSubmitResp.body.data.status)" `
     -Pass ($onSiteSubmitResp.status -eq 200 -and [string]$onSiteSubmitResp.body.data.status -eq "SUBMITTED") `
     -Detail $onSiteSubmitResp.raw
-
-  $qualityDetailResp =
-    Invoke-E2EApi -Context $context `
-      -Method "Get" `
-      -Path "/api/v1/quality-reviews/$projectId" `
-      -Token $adminToken
-  Add-E2EResult -Context $context `
-    -CaseName "quality_gateway_approved_before_report_stages" `
-    -Expected "200 + qualityStatus=APPROVED" `
-    -Actual "status=$($qualityDetailResp.status), qualityStatus=$([string]$qualityDetailResp.body.data.status)" `
-    -Pass ($qualityDetailResp.status -eq 200 -and [string]$qualityDetailResp.body.data.status -eq "APPROVED") `
-    -Detail $qualityDetailResp.raw
 
   $techAutoDetailResp =
     Invoke-E2EApi -Context $context `
@@ -598,9 +559,9 @@ try {
   }
   Add-E2EResult -Context $context `
     -CaseName "report_compile_workflow_to_final_review" `
-    -Expected "200 + status=SUBMITTED + workflowNode=REPORT_FINAL_REVIEW" `
+    -Expected "200 + status=SUBMITTED + workflowNode=REPORT_FINAL_REVIEW_TASK" `
     -Actual "status=$($compileSubmissionDetailResp.status), submitStatus=$compileSubmissionDetailStatus, workflowNode=$compileSubmissionDetailWorkflowNode, reportObjectKey=$compileSubmissionDetailObjectKey" `
-    -Pass ($compileSubmissionDetailResp.status -eq 200 -and $compileSubmissionDetailStatus -eq "SUBMITTED" -and $compileSubmissionDetailWorkflowNode -eq "REPORT_FINAL_REVIEW" -and $compileSubmissionDetailObjectKey -eq [string]$compileSubmissionSavePayload.reportObjectKey) `
+    -Pass ($compileSubmissionDetailResp.status -eq 200 -and $compileSubmissionDetailStatus -eq "SUBMITTED" -and $compileSubmissionDetailWorkflowNode -eq "REPORT_FINAL_REVIEW_TASK" -and $compileSubmissionDetailObjectKey -eq [string]$compileSubmissionSavePayload.reportObjectKey) `
     -Detail $compileSubmissionDetailResp.raw
 } finally {
   $cleanupSqlLines = New-Object System.Collections.Generic.List[string]
@@ -614,9 +575,7 @@ try {
     $cleanupSqlLines.Add("DELETE FROM report_content_review_apply WHERE project_register_id = $projectId;") | Out-Null
     $cleanupSqlLines.Add("DELETE FROM report_tech_review_task WHERE project_register_id = $projectId;") | Out-Null
     $cleanupSqlLines.Add("DELETE FROM report_tech_review_apply WHERE project_register_id = $projectId;") | Out-Null
-    $cleanupSqlLines.Add("DELETE FROM quality_review_task WHERE project_register_id = $projectId;") | Out-Null
-    $cleanupSqlLines.Add("DELETE FROM quality_review_apply WHERE project_register_id = $projectId;") | Out-Null
-    $cleanupSqlLines.Add("DELETE FROM workflow_assignment WHERE project_register_id = $projectId;") | Out-Null
+    $cleanupSqlLines.Add("DELETE FROM project_assessment_member WHERE project_register_id = $projectId;") | Out-Null
     $cleanupSqlLines.Add("DELETE FROM on_site_assessment WHERE project_register_id = $projectId;") | Out-Null
     $cleanupSqlLines.Add("DELETE FROM police_register WHERE project_register_id = $projectId;") | Out-Null
     $cleanupSqlLines.Add("DELETE FROM project_system_item WHERE project_register_id = $projectId;") | Out-Null

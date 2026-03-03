@@ -1,6 +1,6 @@
 /**
  * @input JdbcTemplate, user-account, workflow trace, notification, and project context data
- * @output Node-13 assignment and node-14 report compile upload save/submit operations with final-review auto task sync
+ * @output Node-13 assignment and node-14 report compile upload save/submit operations with node-rule assigned final-review auto task sync
  * @position Report compile workflow service bridging content-review completion to final-review task stage
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
@@ -23,7 +23,6 @@ import org.springframework.web.server.ResponseStatusException;
 public class ReportCompileService {
   public static final String NODE_ASSIGN = "REPORT_COMPILE_ASSIGN";
   public static final String NODE_UPLOAD = "REPORT_COMPILE_UPLOAD";
-  public static final String NEXT_NODE = "REPORT_FINAL_REVIEW";
 
   private final JdbcTemplate jdbcTemplate;
   private final UserAccountService userAccountService;
@@ -263,14 +262,8 @@ public class ReportCompileService {
           operator,
           "");
     }
-
-    String finalReviewer = loadFinalReviewer(projectId);
-    if (finalReviewer == null) {
-      workflowTraceService.moveNode(projectId, NEXT_NODE, "PENDING", operator);
-    } else {
-      // 已配置最终审核人时自动创建待办任务，不再依赖手工提交。
-      reportFinalReviewService.submit(projectId, operator);
-    }
+    // 根据最终审核节点安插规则自动创建待办任务，不再依赖页面手工分配。
+    reportFinalReviewService.submit(projectId, operator);
 
     return detailSubmission(projectId).orElseThrow();
   }
@@ -357,19 +350,6 @@ public class ReportCompileService {
       throw new ResponseStatusException(
           HttpStatus.FORBIDDEN, "only assignee can edit/submit compile report");
     }
-  }
-
-  private String loadFinalReviewer(long projectId) {
-    List<String> rows =
-        jdbcTemplate.query(
-            "SELECT reviewer FROM report_final_review_apply WHERE project_register_id = ?",
-            (rs, rowNum) -> rs.getString("reviewer"),
-            projectId);
-    if (rows.isEmpty()) {
-      return null;
-    }
-    String reviewer = rows.get(0);
-    return reviewer == null || reviewer.isBlank() ? null : reviewer;
   }
 
   private void ensureEnabledUser(String username) {
@@ -511,5 +491,4 @@ public class ReportCompileService {
 
   private record ProjectRef(long id, String applicationName) {}
 }
-
 

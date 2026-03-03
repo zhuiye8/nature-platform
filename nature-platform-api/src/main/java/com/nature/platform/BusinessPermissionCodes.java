@@ -36,11 +36,6 @@ public final class BusinessPermissionCodes {
   public static final String ON_SITE_ASSESSMENT_SUBMIT = "on-site-assessment:submit";
   public static final String ON_SITE_ASSESSMENT_CANDIDATE_VIEW = "on-site-assessment:candidate:view";
 
-  public static final String QUALITY_REVIEW_VIEW = "quality-review:view";
-  public static final String QUALITY_REVIEW_CANDIDATE_VIEW = "quality-review:candidate:view";
-  public static final String QUALITY_REVIEW_ASSIGN = "quality-review:assign";
-  public static final String QUALITY_REVIEW_SUBMIT = "quality-review:submit";
-
   public static final String REPORT_TECH_REVIEW_VIEW = "report-tech-review:view";
   public static final String REPORT_TECH_REVIEW_CANDIDATE_VIEW = "report-tech-review:candidate:view";
   public static final String REPORT_TECH_REVIEW_SAVE = "report-tech-review:save";
@@ -58,8 +53,6 @@ public final class BusinessPermissionCodes {
   public static final String REPORT_COMPILE_SUBMISSION_SUBMIT = "report-compile-submission:submit";
 
   public static final String REPORT_FINAL_REVIEW_VIEW = "report-final-review:view";
-  public static final String REPORT_FINAL_REVIEW_CANDIDATE_VIEW = "report-final-review:candidate:view";
-  public static final String REPORT_FINAL_REVIEW_SAVE = "report-final-review:save";
 
   public static final String MATERIAL_ARCHIVE_VIEW = "material-archive:view";
   public static final String MATERIAL_ARCHIVE_SAVE = "material-archive:save";

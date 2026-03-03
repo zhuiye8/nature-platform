@@ -7,13 +7,28 @@
 package com.nature.platform;
 
 import jakarta.validation.constraints.Size;
+import java.util.ArrayList;
+import java.util.List;
 
 public class OnSiteAssessmentRequest {
+  private List<String> evidenceFiles = new ArrayList<>();
+
   @Size(max = 512)
   private String packageObjectKey;
 
   @Size(max = 2000)
   private String assessmentDetail;
+
+  @Size(max = 2000)
+  private String assessmentRemark;
+
+  public List<String> getEvidenceFiles() {
+    return evidenceFiles;
+  }
+
+  public void setEvidenceFiles(List<String> evidenceFiles) {
+    this.evidenceFiles = evidenceFiles == null ? new ArrayList<>() : evidenceFiles;
+  }
 
   public String getPackageObjectKey() {
     return packageObjectKey;
@@ -29,5 +44,13 @@ public class OnSiteAssessmentRequest {
 
   public void setAssessmentDetail(String assessmentDetail) {
     this.assessmentDetail = assessmentDetail;
+  }
+
+  public String getAssessmentRemark() {
+    return assessmentRemark;
+  }
+
+  public void setAssessmentRemark(String assessmentRemark) {
+    this.assessmentRemark = assessmentRemark;
   }
 }

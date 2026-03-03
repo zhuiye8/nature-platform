@@ -37,7 +37,7 @@ public class AdminRoleService {
     List<AdminRoleRecord> rows =
         jdbcTemplate.query(
             """
-            SELECT role_code, role_name, description, system_flag, enabled
+            SELECT role_code, role_name, description, system_flag, enabled, data_scope, project_view_all, peer_sales_limited
             FROM iam_role
             ORDER BY system_flag DESC, role_code ASC
             """,
@@ -48,8 +48,10 @@ public class AdminRoleService {
     }
 
     Map<String, List<String>> resourceMap = loadRoleResourceMap(rows);
+    Map<String, List<Long>> dataScopeDeptMap = loadRoleDataScopeDeptMap(rows);
     for (AdminRoleRecord row : rows) {
       row.setResourceKeys(resourceMap.getOrDefault(row.getRoleCode(), List.of()));
+      row.setDataScopeDeptIds(dataScopeDeptMap.getOrDefault(row.getRoleCode(), List.of()));
     }
     return rows;
   }
@@ -59,7 +61,7 @@ public class AdminRoleService {
     List<AdminRoleRecord> rows =
         jdbcTemplate.query(
             """
-            SELECT role_code, role_name, description, system_flag, enabled
+            SELECT role_code, role_name, description, system_flag, enabled, data_scope, project_view_all, peer_sales_limited
             FROM iam_role
             WHERE role_code = ?
             """,
@@ -80,6 +82,16 @@ public class AdminRoleService {
             """,
             String.class,
             normalizedRoleCode));
+    row.setDataScopeDeptIds(
+        jdbcTemplate.queryForList(
+            """
+            SELECT dept_id
+            FROM iam_role_data_scope_dept
+            WHERE role_code = ?
+            ORDER BY dept_id ASC
+            """,
+            Long.class,
+            normalizedRoleCode));
     return row;
   }
 
@@ -89,22 +101,36 @@ public class AdminRoleService {
     String roleName = normalizeRequired(request.getRoleName(), "roleName is required");
     String description = normalizeOptional(request.getDescription());
     boolean enabled = request.getEnabled() == null || request.getEnabled();
+    String dataScope = normalizeDataScope(request.getDataScope());
+    boolean projectViewAll = request.getProjectViewAll() != null && request.getProjectViewAll();
+    boolean peerSalesLimited = request.getPeerSalesLimited() != null && request.getPeerSalesLimited();
+    List<Long> dataScopeDeptIds =
+        RoleDataScopeTypes.CUSTOM.equals(dataScope)
+            ? normalizeDeptIds(request.getDataScopeDeptIds())
+            : List.of();
 
     ensureRoleCodeNotExists(roleCode);
     List<String> resources = normalizeResourceKeys(request.getResourceKeys());
     ensureResourceKeysExist(resources);
+    ensureDeptIdsExist(dataScopeDeptIds);
 
     jdbcTemplate.update(
         """
-        INSERT INTO iam_role (role_code, role_name, description, system_flag, enabled)
-        VALUES (?, ?, ?, 0, ?)
+        INSERT INTO iam_role (
+          role_code, role_name, description, system_flag, enabled, data_scope, project_view_all, peer_sales_limited
+        )
+        VALUES (?, ?, ?, 0, ?, ?, ?, ?)
         """,
         roleCode,
         roleName,
         description,
-        enabled ? 1 : 0);
+        enabled ? 1 : 0,
+        dataScope,
+        projectViewAll ? 1 : 0,
+        peerSalesLimited ? 1 : 0);
 
     replaceRoleResources(roleCode, resources);
+    replaceRoleDataScopeDepts(roleCode, dataScopeDeptIds);
     adminAuditService.logAction(
         operator,
         "ADMIN_ROLE_CREATE",
@@ -113,6 +139,10 @@ public class AdminRoleService {
         Map.of(
             "roleName", roleName,
             "enabled", enabled,
+            "dataScope", dataScope,
+            "projectViewAll", projectViewAll,
+            "peerSalesLimited", peerSalesLimited,
+            "dataScopeDeptIds", dataScopeDeptIds,
             "resourceKeys", resources));
     return detail(roleCode);
   }
@@ -125,21 +155,38 @@ public class AdminRoleService {
     String roleName = normalizeRequired(request.getRoleName(), "roleName is required");
     String description = normalizeOptional(request.getDescription());
     boolean enabled = request.getEnabled() == null ? state.enabled() : request.getEnabled();
+    String dataScope =
+        request.getDataScope() == null
+            ? normalizeDataScope(state.dataScope())
+            : normalizeDataScope(request.getDataScope());
+    boolean projectViewAll =
+        request.getProjectViewAll() == null ? state.projectViewAll() : request.getProjectViewAll();
+    boolean peerSalesLimited =
+        request.getPeerSalesLimited() == null ? state.peerSalesLimited() : request.getPeerSalesLimited();
+    List<Long> dataScopeDeptIds =
+        RoleDataScopeTypes.CUSTOM.equals(dataScope)
+            ? normalizeDeptIds(request.getDataScopeDeptIds())
+            : List.of();
     List<String> resources = normalizeResourceKeys(request.getResourceKeys());
     ensureResourceKeysExist(resources);
+    ensureDeptIdsExist(dataScopeDeptIds);
 
     jdbcTemplate.update(
         """
         UPDATE iam_role
-        SET role_name = ?, description = ?, enabled = ?
+        SET role_name = ?, description = ?, enabled = ?, data_scope = ?, project_view_all = ?, peer_sales_limited = ?
         WHERE role_code = ?
         """,
         roleName,
         description,
         enabled ? 1 : 0,
+        dataScope,
+        projectViewAll ? 1 : 0,
+        peerSalesLimited ? 1 : 0,
         normalizedRoleCode);
 
     replaceRoleResources(normalizedRoleCode, resources);
+    replaceRoleDataScopeDepts(normalizedRoleCode, dataScopeDeptIds);
     adminAuditService.logAction(
         operator,
         "ADMIN_ROLE_UPDATE",
@@ -148,6 +195,10 @@ public class AdminRoleService {
         Map.of(
             "roleName", roleName,
             "enabled", enabled,
+            "dataScope", dataScope,
+            "projectViewAll", projectViewAll,
+            "peerSalesLimited", peerSalesLimited,
+            "dataScopeDeptIds", dataScopeDeptIds,
             "resourceKeys", resources,
             "systemFlag", state.systemFlag()));
     return detail(normalizedRoleCode);
@@ -170,6 +221,7 @@ public class AdminRoleService {
       throw new ResponseStatusException(HttpStatus.CONFLICT, "role is still assigned to users");
     }
 
+    jdbcTemplate.update("DELETE FROM iam_role_data_scope_dept WHERE role_code = ?", normalizedRoleCode);
     jdbcTemplate.update("DELETE FROM iam_role_resource WHERE role_code = ?", normalizedRoleCode);
     jdbcTemplate.update("DELETE FROM iam_role WHERE role_code = ?", normalizedRoleCode);
     adminAuditService.logAction(
@@ -199,7 +251,7 @@ public class AdminRoleService {
         SELECT username
         FROM user_role
         WHERE role_code = ?
-        ORDER BY username ASC
+        ORDER BY sort_order ASC, username ASC
         """,
         String.class,
         normalizedRoleCode);
@@ -208,15 +260,18 @@ public class AdminRoleService {
   public List<AdminRoleUserOptionRecord> listUserOptions() {
     return jdbcTemplate.query(
         """
-        SELECT username, display_name, enabled
-        FROM user_account
-        ORDER BY enabled DESC, username ASC
+        SELECT u.username, u.display_name, u.enabled, u.dept_id, d.dept_name
+        FROM user_account u
+        LEFT JOIN iam_department d ON d.id = u.dept_id
+        ORDER BY u.enabled DESC, d.sort_order ASC, d.id ASC, u.display_name ASC, u.username ASC
         """,
         (rs, rowNum) -> {
           AdminRoleUserOptionRecord record = new AdminRoleUserOptionRecord();
           record.setUsername(rs.getString("username"));
           record.setDisplayName(rs.getString("display_name"));
           record.setEnabled(rs.getBoolean("enabled"));
+          record.setDeptId(rs.getObject("dept_id", Long.class));
+          record.setDeptName(rs.getString("dept_name"));
           return record;
         });
   }
@@ -230,14 +285,16 @@ public class AdminRoleService {
     ensureEnabledSuperAdminStillExists(normalizedRoleCode, normalizedUsernames);
 
     jdbcTemplate.update("DELETE FROM user_role WHERE role_code = ?", normalizedRoleCode);
-    for (String username : normalizedUsernames) {
+    for (int i = 0; i < normalizedUsernames.size(); i++) {
+      String username = normalizedUsernames.get(i);
       jdbcTemplate.update(
           """
-          INSERT INTO user_role (username, role_code)
-          VALUES (?, ?)
+          INSERT INTO user_role (username, role_code, sort_order)
+          VALUES (?, ?, ?)
           """,
           username,
-          normalizedRoleCode);
+          normalizedRoleCode,
+          i * 10);
     }
 
     adminAuditService.logAction(
@@ -289,6 +346,19 @@ public class AdminRoleService {
     }
   }
 
+  private void replaceRoleDataScopeDepts(String roleCode, List<Long> deptIds) {
+    jdbcTemplate.update("DELETE FROM iam_role_data_scope_dept WHERE role_code = ?", roleCode);
+    for (Long deptId : deptIds) {
+      jdbcTemplate.update(
+          """
+          INSERT INTO iam_role_data_scope_dept (role_code, dept_id)
+          VALUES (?, ?)
+          """,
+          roleCode,
+          deptId);
+    }
+  }
+
   private void ensureResourceKeysExist(List<String> resourceKeys) {
     if (resourceKeys.isEmpty()) {
       return;
@@ -305,6 +375,20 @@ public class AdminRoleService {
     if (!missing.isEmpty()) {
       throw new ResponseStatusException(
           HttpStatus.BAD_REQUEST, "unknown resource keys: " + String.join(",", missing));
+    }
+  }
+
+  private void ensureDeptIdsExist(List<Long> deptIds) {
+    if (deptIds == null || deptIds.isEmpty()) {
+      return;
+    }
+    String placeholders = String.join(",", Collections.nCopies(deptIds.size(), "?"));
+    String sql = "SELECT id FROM iam_department WHERE id IN (%s)".formatted(placeholders);
+    Set<Long> existing =
+        new LinkedHashSet<>(jdbcTemplate.queryForList(sql, Long.class, deptIds.toArray()));
+    List<Long> missing = deptIds.stream().filter(deptId -> !existing.contains(deptId)).toList();
+    if (!missing.isEmpty()) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "unknown department ids: " + missing);
     }
   }
 
@@ -359,7 +443,7 @@ public class AdminRoleService {
     List<RoleState> states =
         jdbcTemplate.query(
             """
-            SELECT role_code, role_name, system_flag, enabled
+            SELECT role_code, role_name, system_flag, enabled, data_scope, project_view_all, peer_sales_limited
             FROM iam_role
             WHERE role_code = ?
             """,
@@ -368,7 +452,10 @@ public class AdminRoleService {
                     rs.getString("role_code"),
                     rs.getString("role_name"),
                     rs.getBoolean("system_flag"),
-                    rs.getBoolean("enabled")),
+                    rs.getBoolean("enabled"),
+                    rs.getString("data_scope"),
+                    rs.getBoolean("project_view_all"),
+                    rs.getBoolean("peer_sales_limited")),
             roleCode);
     if (states.isEmpty()) {
       throw new ResponseStatusException(HttpStatus.NOT_FOUND, "role not found");
@@ -388,6 +475,31 @@ public class AdminRoleService {
       set.add(raw.trim().toLowerCase(Locale.ROOT));
     }
     return new ArrayList<>(set);
+  }
+
+  private List<Long> normalizeDeptIds(List<Long> deptIds) {
+    if (deptIds == null || deptIds.isEmpty()) {
+      return List.of();
+    }
+    LinkedHashSet<Long> set = new LinkedHashSet<>();
+    for (Long deptId : deptIds) {
+      if (deptId == null || deptId <= 0) {
+        continue;
+      }
+      set.add(deptId);
+    }
+    return new ArrayList<>(set);
+  }
+
+  private String normalizeDataScope(String rawDataScope) {
+    String normalized =
+        rawDataScope == null || rawDataScope.isBlank()
+            ? RoleDataScopeTypes.SELF
+            : rawDataScope.trim().toUpperCase(Locale.ROOT);
+    if (!RoleDataScopeTypes.isValid(normalized)) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "unknown data scope: " + rawDataScope);
+    }
+    return normalized;
   }
 
   private List<String> normalizeUsernames(List<String> usernames) {
@@ -441,11 +553,50 @@ public class AdminRoleService {
       record.setDescription(rs.getString("description"));
       record.setSystemFlag(rs.getBoolean("system_flag"));
       record.setEnabled(rs.getBoolean("enabled"));
+      record.setDataScope(rs.getString("data_scope"));
+      record.setProjectViewAll(rs.getBoolean("project_view_all"));
+      record.setPeerSalesLimited(rs.getBoolean("peer_sales_limited"));
       return record;
     }
   }
 
-  private record RoleState(String roleCode, String roleName, boolean systemFlag, boolean enabled) {}
+  private Map<String, List<Long>> loadRoleDataScopeDeptMap(List<AdminRoleRecord> rows) {
+    List<String> roleCodes = rows.stream().map(AdminRoleRecord::getRoleCode).toList();
+    if (roleCodes.isEmpty()) {
+      return Map.of();
+    }
+    String placeholders = String.join(",", Collections.nCopies(roleCodes.size(), "?"));
+    String sql =
+        """
+        SELECT role_code, dept_id
+        FROM iam_role_data_scope_dept
+        WHERE role_code IN (%s)
+        ORDER BY role_code ASC, dept_id ASC
+        """
+            .formatted(placeholders);
+
+    return jdbcTemplate.query(
+            sql,
+            (rs, rowNum) ->
+                new RoleDataScopeDeptRef(rs.getString("role_code"), rs.getLong("dept_id")),
+            roleCodes.toArray())
+        .stream()
+        .collect(
+            Collectors.groupingBy(
+                RoleDataScopeDeptRef::roleCode,
+                Collectors.mapping(RoleDataScopeDeptRef::deptId, Collectors.toList())));
+  }
+
+  private record RoleState(
+      String roleCode,
+      String roleName,
+      boolean systemFlag,
+      boolean enabled,
+      String dataScope,
+      boolean projectViewAll,
+      boolean peerSalesLimited) {}
 
   private record RoleResourceRef(String roleCode, String resourceKey) {}
+
+  private record RoleDataScopeDeptRef(String roleCode, Long deptId) {}
 }

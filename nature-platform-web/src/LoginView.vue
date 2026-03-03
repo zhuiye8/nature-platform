@@ -58,7 +58,7 @@
           </div>
 
           <div class="input-wrapper">
-            <el-form-item label="密码">
+            <el-form-item label="密  码">
               <el-input
                 v-model="form.password"
                 type="password"
@@ -115,10 +115,17 @@
 import { onMounted, onUnmounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
 import { CircleCheck, Connection, Key, Lock, Right, User } from "@element-plus/icons-vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { useAuthStore } from "./auth-store";
-import { fetchCurrentUser, fetchDingTalkLoginUrl, login } from "./auth-service";
+import {
+  dingTalkLogin,
+  fetchCurrentUser,
+  fetchDingTalkAuthorizeUrl,
+  login,
+  type LoginResponse
+} from "./auth-service";
 
+const route = useRoute();
 const router = useRouter();
 const authStore = useAuthStore();
 
@@ -139,26 +146,32 @@ function readErrorMessage(error: unknown, fallback: string) {
   return typeof msg === "string" && msg.trim().length > 0 ? msg : fallback;
 }
 
+async function bootstrapSession(data: LoginResponse) {
+  authStore.setSession(data.token, data.username, data.username, [], [], [], data.mustChangePassword);
+  try {
+    const profile = await fetchCurrentUser();
+    authStore.setSession(
+      data.token,
+      profile.username || data.username,
+      profile.displayName || profile.username || data.username,
+      profile.roles || [],
+      profile.resources || profile.permissions || [],
+      profile.menuTree || [],
+      Boolean(profile.mustChangePassword ?? data.mustChangePassword)
+    );
+  } catch {
+    authStore.setRoles([]);
+    authStore.setResources([]);
+    authStore.setMenuTree([]);
+    authStore.setMustChangePassword(data.mustChangePassword);
+  }
+}
+
 async function handleLogin() {
   loading.value = true;
   try {
     const data = await login(form.username, form.password);
-    authStore.setSession(data.token, data.username, data.username, [], [], []);
-    try {
-      const profile = await fetchCurrentUser();
-      authStore.setSession(
-        data.token,
-        profile.username || data.username,
-        profile.displayName || profile.username || data.username,
-        profile.roles || [],
-        profile.resources || profile.permissions || [],
-        profile.menuTree || []
-      );
-    } catch {
-      authStore.setRoles([]);
-      authStore.setResources([]);
-      authStore.setMenuTree([]);
-    }
+    await bootstrapSession(data);
     if (data.mustChangePassword) {
       ElMessage.warning("首次登录请尽快修改默认密码。");
     } else {
@@ -174,10 +187,41 @@ async function handleLogin() {
 
 async function handleDingTalk() {
   try {
-    const url = await fetchDingTalkLoginUrl();
+    const redirect = `${window.location.origin}/login`;
+    const url = await fetchDingTalkAuthorizeUrl(redirect);
     window.location.href = url;
   } catch (error) {
     ElMessage.error(readErrorMessage(error, "钉钉登录链接获取失败"));
+  }
+}
+
+async function handleDingTalkCallback() {
+  const authCode = typeof route.query.authCode === "string" ? route.query.authCode : "";
+  const error = typeof route.query.error === "string" ? route.query.error : "";
+  if (error) {
+    ElMessage.error(`钉钉授权失败：${error}`);
+    await router.replace("/login");
+    return;
+  }
+  if (!authCode) {
+    return;
+  }
+
+  loading.value = true;
+  try {
+    const data = await dingTalkLogin(authCode);
+    await bootstrapSession(data);
+    if (data.mustChangePassword) {
+      ElMessage.warning("首次钉钉登录后请先修改密码。");
+    } else {
+      ElMessage.success("登录成功");
+    }
+    await router.replace("/dashboard");
+  } catch (errorInfo) {
+    ElMessage.error(readErrorMessage(errorInfo, "钉钉登录失败"));
+    await router.replace("/login");
+  } finally {
+    loading.value = false;
   }
 }
 
@@ -253,6 +297,7 @@ function initParticles() {
 
 onMounted(() => {
   initParticles();
+  void handleDingTalkCallback();
 });
 
 onUnmounted(() => {

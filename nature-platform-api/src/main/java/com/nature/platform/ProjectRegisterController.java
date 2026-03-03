@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 @RequestMapping("/api/v1/project-registers")
@@ -39,17 +40,17 @@ public class ProjectRegisterController {
 
   @GetMapping
   public ApiResponse<List<ProjectRegisterRecord>> list(Authentication authentication) {
-    adminAccessService.requirePermission(
-        CurrentUser.username(authentication), BusinessPermissionCodes.PROJECT_REGISTER_VIEW);
-    return ApiResponse.success(projectRegisterService.list());
+    String operator = CurrentUser.username(authentication);
+    adminAccessService.requirePermission(operator, BusinessPermissionCodes.PROJECT_REGISTER_VIEW);
+    return ApiResponse.success(projectRegisterService.list(operator));
   }
 
   @GetMapping("/contract-options")
   public ApiResponse<List<ContractRecord>> contractOptions(Authentication authentication) {
-    adminAccessService.requirePermission(
-        CurrentUser.username(authentication), BusinessPermissionCodes.PROJECT_REGISTER_VIEW);
+    String operator = CurrentUser.username(authentication);
+    adminAccessService.requirePermission(operator, BusinessPermissionCodes.PROJECT_REGISTER_VIEW);
     List<ContractRecord> options =
-        contractService.listForArchive().stream()
+        contractService.listForArchive(operator).stream()
             .filter(item -> "ARCHIVED".equalsIgnoreCase(item.getArchiveStatus()))
             .toList();
     return ApiResponse.success(options);
@@ -58,10 +59,10 @@ public class ProjectRegisterController {
   @GetMapping("/{id}")
   public ResponseEntity<ApiResponse<ProjectRegisterRecord>> detail(
       Authentication authentication, @PathVariable long id) {
-    adminAccessService.requirePermission(
-        CurrentUser.username(authentication), BusinessPermissionCodes.PROJECT_REGISTER_VIEW);
+    String operator = CurrentUser.username(authentication);
+    adminAccessService.requirePermission(operator, BusinessPermissionCodes.PROJECT_REGISTER_VIEW);
     return projectRegisterService
-        .findById(id)
+        .findByIdVisible(id, operator)
         .map(item -> ResponseEntity.ok(ApiResponse.success(item)))
         .orElseGet(
             () ->
@@ -108,8 +109,55 @@ public class ProjectRegisterController {
   @GetMapping("/{id}/workflow-trace")
   public ApiResponse<List<WorkflowTraceRecord>> workflowTrace(
       Authentication authentication, @PathVariable long id) {
-    adminAccessService.requirePermission(
-        CurrentUser.username(authentication), BusinessPermissionCodes.PROJECT_REGISTER_TRACE_VIEW);
+    String operator = CurrentUser.username(authentication);
+    adminAccessService.requirePermission(operator, BusinessPermissionCodes.PROJECT_REGISTER_TRACE_VIEW);
+    if (projectRegisterService.findByIdVisible(id, operator).isEmpty()) {
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "project register not found");
+    }
     return ApiResponse.success(projectRegisterService.listWorkflowTrace(id));
+  }
+
+  @GetMapping("/{id}/assessment-members")
+  public ApiResponse<List<String>> assessmentMembers(
+      Authentication authentication, @PathVariable long id) {
+    String operator = CurrentUser.username(authentication);
+    requireProjectAssessmentMemberRead(operator);
+    return ApiResponse.success(projectRegisterService.listAssessmentMembers(id));
+  }
+
+  @GetMapping("/{id}/assessment-member-options")
+  public ApiResponse<List<AdminRoleUserOptionRecord>> assessmentMemberOptions(
+      Authentication authentication, @PathVariable long id) {
+    String operator = CurrentUser.username(authentication);
+    requireProjectAssessmentMemberRead(operator);
+    return ApiResponse.success(projectRegisterService.listAssessmentMemberOptions(id));
+  }
+
+  @PutMapping("/{id}/assessment-members")
+  public ApiResponse<Map<String, Object>> saveAssessmentMembers(
+      Authentication authentication,
+      @PathVariable long id,
+      @RequestBody(required = false) Map<String, List<String>> body) {
+    String operator = CurrentUser.username(authentication);
+    requireProjectAssessmentMemberWrite(operator);
+    List<String> usernames = body == null ? List.of() : body.getOrDefault("usernames", List.of());
+    projectRegisterService.saveAssessmentMembers(id, usernames, operator);
+    return ApiResponse.success(Map.of("id", id, "usernames", projectRegisterService.listAssessmentMembers(id)));
+  }
+
+  private void requireProjectAssessmentMemberRead(String operator) {
+    if (adminAccessService.hasPermission(operator, BusinessPermissionCodes.PROJECT_REGISTER_VIEW)
+        || adminAccessService.hasPermission(operator, BusinessPermissionCodes.WORKFLOW_TASK_VIEW)) {
+      return;
+    }
+    adminAccessService.requirePermission(operator, BusinessPermissionCodes.PROJECT_REGISTER_VIEW);
+  }
+
+  private void requireProjectAssessmentMemberWrite(String operator) {
+    if (adminAccessService.hasPermission(operator, BusinessPermissionCodes.PROJECT_REGISTER_UPDATE)
+        || adminAccessService.hasPermission(operator, BusinessPermissionCodes.WORKFLOW_TASK_APPROVE)) {
+      return;
+    }
+    adminAccessService.requirePermission(operator, BusinessPermissionCodes.PROJECT_REGISTER_UPDATE);
   }
 }

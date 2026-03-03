@@ -11,7 +11,6 @@ export interface WorkflowTask {
   taskType:
     | "CONTRACT"
     | "PROJECT_REGISTER"
-    | "QUALITY_REVIEW"
     | "REPORT_TECH_REVIEW"
     | "REPORT_CONTENT_REVIEW"
     | "REPORT_FINAL_REVIEW"

@@ -1,7 +1,7 @@
 /**
  * @input JdbcTemplate task queries, Flowable task/runtime services, contract/project transitions, and user-role lookup
  * @output Workflow todo query, contract review detail, task-access guard, and action methods with unified display-status mapping
- * @position Workflow application service bridging task-center APIs to contract/project/quality-report review state machines
+ * @position Workflow application service bridging task-center APIs to contract/project/report review state machines
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 package com.nature.platform;
@@ -26,7 +26,6 @@ import org.springframework.web.server.ResponseStatusException;
 public class WorkflowTaskService {
   private static final String TASK_TYPE_CONTRACT = "CONTRACT";
   private static final String TASK_TYPE_PROJECT = "PROJECT_REGISTER";
-  private static final String TASK_TYPE_QUALITY_REVIEW = "QUALITY_REVIEW";
   private static final String TASK_TYPE_REPORT_TECH_REVIEW = "REPORT_TECH_REVIEW";
   private static final String TASK_TYPE_REPORT_CONTENT_REVIEW = "REPORT_CONTENT_REVIEW";
   private static final String TASK_TYPE_REPORT_FINAL_REVIEW = "REPORT_FINAL_REVIEW";
@@ -34,7 +33,6 @@ public class WorkflowTaskService {
   private final JdbcTemplate jdbcTemplate;
   private final ContractService contractService;
   private final ProjectRegisterService projectRegisterService;
-  private final QualityReviewService qualityReviewService;
   private final ReportTechReviewService reportTechReviewService;
   private final ReportContentReviewService reportContentReviewService;
   private final ReportFinalReviewService reportFinalReviewService;
@@ -46,7 +44,6 @@ public class WorkflowTaskService {
       JdbcTemplate jdbcTemplate,
       ContractService contractService,
       ProjectRegisterService projectRegisterService,
-      QualityReviewService qualityReviewService,
       ReportTechReviewService reportTechReviewService,
       ReportContentReviewService reportContentReviewService,
       ReportFinalReviewService reportFinalReviewService,
@@ -56,7 +53,6 @@ public class WorkflowTaskService {
     this.jdbcTemplate = jdbcTemplate;
     this.contractService = contractService;
     this.projectRegisterService = projectRegisterService;
-    this.qualityReviewService = qualityReviewService;
     this.reportTechReviewService = reportTechReviewService;
     this.reportContentReviewService = reportContentReviewService;
     this.reportFinalReviewService = reportFinalReviewService;
@@ -75,9 +71,6 @@ public class WorkflowTaskService {
       ensureReviewer(operator);
       return listProjectTodo(operator, keyword);
     }
-    if (TASK_TYPE_QUALITY_REVIEW.equals(normalizedType)) {
-      return listQualityReviewTodo(operator, keyword);
-    }
     if (TASK_TYPE_REPORT_TECH_REVIEW.equals(normalizedType)) {
       return listReportTechReviewTodo(operator, keyword);
     }
@@ -93,7 +86,6 @@ public class WorkflowTaskService {
       rows.addAll(listContractTodo(keyword));
       rows.addAll(listProjectTodo(operator, keyword));
     }
-    rows.addAll(listQualityReviewTodo(operator, keyword));
     rows.addAll(listReportTechReviewTodo(operator, keyword));
     rows.addAll(listReportContentReviewTodo(operator, keyword));
     rows.addAll(listReportFinalReviewTodo(operator, keyword));
@@ -144,7 +136,6 @@ public class WorkflowTaskService {
     }
     TaskRef taskRef = parseTaskId(taskId);
     switch (taskRef.type()) {
-      case TASK_TYPE_QUALITY_REVIEW -> qualityReviewService.approveTask(taskRef.bizId(), operator);
       case TASK_TYPE_REPORT_TECH_REVIEW -> reportTechReviewService.approveTask(taskRef.bizId(), operator);
       case TASK_TYPE_REPORT_CONTENT_REVIEW ->
           reportContentReviewService.approveTask(taskRef.bizId(), operator);
@@ -168,8 +159,6 @@ public class WorkflowTaskService {
     }
     TaskRef taskRef = parseTaskId(taskId);
     switch (taskRef.type()) {
-      case TASK_TYPE_QUALITY_REVIEW ->
-          qualityReviewService.rejectTask(taskRef.bizId(), operator, remark == null ? "" : remark);
       case TASK_TYPE_REPORT_TECH_REVIEW ->
           reportTechReviewService.rejectTask(taskRef.bizId(), operator, remark == null ? "" : remark);
       case TASK_TYPE_REPORT_CONTENT_REVIEW ->
@@ -213,7 +202,6 @@ public class WorkflowTaskService {
     String normalized = type.trim().toUpperCase(Locale.ROOT);
     if (TASK_TYPE_CONTRACT.equals(normalized)
         || TASK_TYPE_PROJECT.equals(normalized)
-        || TASK_TYPE_QUALITY_REVIEW.equals(normalized)
         || TASK_TYPE_REPORT_TECH_REVIEW.equals(normalized)
         || TASK_TYPE_REPORT_CONTENT_REVIEW.equals(normalized)
         || TASK_TYPE_REPORT_FINAL_REVIEW.equals(normalized)) {
@@ -309,28 +297,6 @@ public class WorkflowTaskService {
               ProjectRegisterService.PROJECT_REVIEW_WORKFLOW_KEY,
               task.getTaskDefinitionKey(),
               task.getProcessInstanceId()));
-    }
-    return rows;
-  }
-
-  private List<WorkflowTaskDto> listQualityReviewTodo(String operator, String keyword) {
-    List<QualityReviewService.QualityReviewTodoTask> tasks =
-        qualityReviewService.listTodoTasks(operator, keyword);
-    List<WorkflowTaskDto> rows = new ArrayList<>();
-    for (QualityReviewService.QualityReviewTodoTask item : tasks) {
-      rows.add(
-          new WorkflowTaskDto(
-              buildTaskId(TASK_TYPE_QUALITY_REVIEW, item.taskId()),
-              TASK_TYPE_QUALITY_REVIEW,
-              item.projectRegisterId(),
-              item.applicationName(),
-              "SUBMITTED",
-              "PENDING",
-              item.appliedBy(),
-              item.submittedAt(),
-              "QUALITY_REVIEW_MANUAL",
-              item.reviewRole(),
-              item.processInstanceId()));
     }
     return rows;
   }

@@ -23,6 +23,7 @@ public class ProjectRegisterRecord {
   private String createdBy;
   private String createdAt;
   private List<ProjectSystemItemRequest> systemItems = new ArrayList<>();
+  private List<String> assessmentMembers = new ArrayList<>();
 
   public long getId() {
     return id;
@@ -126,5 +127,13 @@ public class ProjectRegisterRecord {
 
   public void setSystemItems(List<ProjectSystemItemRequest> systemItems) {
     this.systemItems = systemItems;
+  }
+
+  public List<String> getAssessmentMembers() {
+    return assessmentMembers;
+  }
+
+  public void setAssessmentMembers(List<String> assessmentMembers) {
+    this.assessmentMembers = assessmentMembers;
   }
 }

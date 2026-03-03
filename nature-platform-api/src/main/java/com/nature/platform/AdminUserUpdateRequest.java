@@ -20,6 +20,8 @@ public class AdminUserUpdateRequest {
   @NotNull
   private Boolean enabled;
 
+  private Long deptId;
+
   private List<String> roles = new ArrayList<>();
 
   public String getDisplayName() {
@@ -44,6 +46,14 @@ public class AdminUserUpdateRequest {
 
   public void setEnabled(Boolean enabled) {
     this.enabled = enabled;
+  }
+
+  public Long getDeptId() {
+    return deptId;
+  }
+
+  public void setDeptId(Long deptId) {
+    this.deptId = deptId;
   }
 
   public List<String> getRoles() {

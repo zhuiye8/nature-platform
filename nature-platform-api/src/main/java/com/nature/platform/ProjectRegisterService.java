@@ -11,10 +11,12 @@ import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.flowable.engine.RuntimeService;
 import org.flowable.engine.TaskService;
 import org.flowable.engine.runtime.ProcessInstance;
@@ -37,6 +39,7 @@ public class ProjectRegisterService {
   private final JsonSupport jsonSupport;
   private final NotificationService notificationService;
   private final UserAccountService userAccountService;
+  private final UserDataScopeService userDataScopeService;
   private final RuntimeService runtimeService;
   private final TaskService taskService;
 
@@ -45,17 +48,19 @@ public class ProjectRegisterService {
       JsonSupport jsonSupport,
       NotificationService notificationService,
       UserAccountService userAccountService,
+      UserDataScopeService userDataScopeService,
       RuntimeService runtimeService,
       TaskService taskService) {
     this.jdbcTemplate = jdbcTemplate;
     this.jsonSupport = jsonSupport;
     this.notificationService = notificationService;
     this.userAccountService = userAccountService;
+    this.userDataScopeService = userDataScopeService;
     this.runtimeService = runtimeService;
     this.taskService = taskService;
   }
 
-  public List<ProjectRegisterRecord> list() {
+  public List<ProjectRegisterRecord> list(String operator) {
     List<ProjectRegisterRecord> rows =
         jdbcTemplate.query(
             """
@@ -70,7 +75,8 @@ public class ProjectRegisterService {
             """,
             new ProjectRowMapper());
     loadSystemItems(rows);
-    return rows;
+    loadAssessmentMembers(rows);
+    return userDataScopeService.filterByCreator(operator, rows, ProjectRegisterRecord::getCreatedBy, true);
   }
 
   public Optional<ProjectRegisterRecord> findById(long id) {
@@ -91,7 +97,19 @@ public class ProjectRegisterService {
       return Optional.empty();
     }
     loadSystemItems(rows);
+    loadAssessmentMembers(rows);
     return rows.stream().findFirst();
+  }
+
+  public Optional<ProjectRegisterRecord> findByIdVisible(long id, String operator) {
+    Optional<ProjectRegisterRecord> row = findById(id);
+    if (row.isEmpty()) {
+      return Optional.empty();
+    }
+    return userDataScopeService.canAccessByCreator(
+            operator, row.get().getCreatedBy(), true)
+        ? row
+        : Optional.empty();
   }
 
   public List<WorkflowTraceRecord> listWorkflowTrace(long id) {
@@ -110,6 +128,96 @@ public class ProjectRegisterService {
         id);
   }
 
+  public List<String> listAssessmentMembers(long projectId) {
+    ensureExists(projectId);
+    return jdbcTemplate.query(
+        """
+        SELECT username
+        FROM project_assessment_member
+        WHERE project_register_id = ?
+        ORDER BY sort_order ASC, id ASC
+        """,
+        (rs, rowNum) -> rs.getString("username"),
+        projectId);
+  }
+
+  public List<AdminRoleUserOptionRecord> listAssessmentMemberOptions(long projectId) {
+    ensureExists(projectId);
+    return jdbcTemplate.query(
+        """
+        SELECT u.username, u.display_name, u.enabled, u.dept_id, d.dept_name
+        FROM user_account u
+        LEFT JOIN iam_department d ON d.id = u.dept_id
+        WHERE u.enabled = 1
+        ORDER BY COALESCE(d.sort_order, 9999) ASC, d.id ASC, u.display_name ASC, u.username ASC
+        """,
+        (rs, rowNum) -> {
+          AdminRoleUserOptionRecord record = new AdminRoleUserOptionRecord();
+          record.setUsername(rs.getString("username"));
+          record.setDisplayName(rs.getString("display_name"));
+          record.setEnabled(rs.getBoolean("enabled"));
+          long deptId = rs.getLong("dept_id");
+          record.setDeptId(rs.wasNull() ? null : deptId);
+          record.setDeptName(rs.getString("dept_name"));
+          return record;
+        });
+  }
+
+  @Transactional
+  public void saveAssessmentMembers(long projectId, List<String> usernames, String operator) {
+    ensureExists(projectId);
+    List<String> normalized = normalizeUsernames(usernames);
+    if (normalized.isEmpty()) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "\u81f3\u5c11\u9700\u8981\u5206\u914d 1 \u540d\u6d4b\u8bc4\u4eba\u5458");
+    }
+    ensureEnabledUsernames(normalized);
+
+    jdbcTemplate.update("DELETE FROM project_assessment_member WHERE project_register_id = ?", projectId);
+    int sortOrder = 1;
+    for (String username : normalized) {
+      jdbcTemplate.update(
+          """
+          INSERT INTO project_assessment_member (project_register_id, username, sort_order, created_by)
+          VALUES (?, ?, ?, ?)
+          """,
+          projectId,
+          username,
+          sortOrder++,
+          operator);
+    }
+  }
+
+
+  private List<String> normalizeUsernames(List<String> usernames) {
+    if (usernames == null || usernames.isEmpty()) {
+      return List.of();
+    }
+    LinkedHashSet<String> set = new LinkedHashSet<>();
+    for (String username : usernames) {
+      if (username == null || username.isBlank()) {
+        continue;
+      }
+      set.add(username.trim());
+    }
+    return new ArrayList<>(set);
+  }
+
+  private void ensureEnabledUsernames(List<String> usernames) {
+    if (usernames == null || usernames.isEmpty()) {
+      return;
+    }
+    String placeholders = String.join(",", java.util.Collections.nCopies(usernames.size(), "?"));
+    String sql =
+        "SELECT username FROM user_account WHERE enabled = 1 AND username IN (" + placeholders + ")";
+    List<String> enabled = jdbcTemplate.query(sql, (rs, rowNum) -> rs.getString("username"), usernames.toArray());
+    Set<String> enabledSet = Set.copyOf(enabled);
+    for (String username : usernames) {
+      if (!enabledSet.contains(username)) {
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "assignee user not enabled: " + username);
+      }
+    }
+  }
+
   @Transactional
   public long create(ProjectRegisterRequest request, String operator) {
     ContractBase contract = mustLoadArchivedContract(request.getContractId());
@@ -118,7 +226,14 @@ public class ProjectRegisterService {
     validateSystemItems(request.getSystemItems());
 
     String today = LocalDate.now(ZONE_ID).toString();
-    String appName = operator + "-系统登记申请-" + contract.contractName() + "(" + request.getContractYear() + ")-" + today;
+    String appName =
+        operator
+            + "-系统登记申请-"
+            + contract.contractName()
+            + "("
+            + request.getContractYear()
+            + ")-"
+            + today;
 
     jdbcTemplate.update(
         """
@@ -202,8 +317,8 @@ public class ProjectRegisterService {
 
     notificationService.createForUsers(
         userAccountService.listEnabledUsernames(),
-        "项目登记待审核",
-        "项目登记申请[" + project.getApplicationName() + "]已提交审核。",
+        "\u9879\u76ee\u767b\u8bb0\u5f85\u5ba1\u6838",
+        "\u9879\u76ee\u767b\u8bb0\u7533\u8bf7[" + project.getApplicationName() + "]\u5df2\u63d0\u4ea4\u5ba1\u6838\u3002",
         "PROJECT_REGISTER_SUBMITTED",
         BIZ_TYPE,
         id);
@@ -215,6 +330,7 @@ public class ProjectRegisterService {
         findById(id)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "project register not found"));
     ensureSubmitted(project.getStatus());
+    ensureAssessmentMembersAssigned(id);
 
     jdbcTemplate.update(
         "UPDATE project_register SET status = 'APPROVED' WHERE id = ? AND deleted_flag = 0", id);
@@ -223,8 +339,8 @@ public class ProjectRegisterService {
 
     notificationService.createForUser(
         project.getCreatedBy(),
-        "项目登记审核通过",
-        "项目登记申请[" + project.getApplicationName() + "]审核已通过。",
+        "\u9879\u76ee\u767b\u8bb0\u5ba1\u6838\u901a\u8fc7",
+        "\u9879\u76ee\u767b\u8bb0\u7533\u8bf7[" + project.getApplicationName() + "]\u5ba1\u6838\u901a\u8fc7\u3002",
         "PROJECT_REGISTER_APPROVED",
         BIZ_TYPE,
         id);
@@ -252,8 +368,8 @@ public class ProjectRegisterService {
 
     notificationService.createForUser(
         project.getCreatedBy(),
-        "项目登记审核驳回",
-        "项目登记申请[" + project.getApplicationName() + "]已驳回，备注：" + (remark == null ? "" : remark),
+        "\u9879\u76ee\u767b\u8bb0\u5ba1\u6838\u9a73\u56de",
+        "\u9879\u76ee\u767b\u8bb0\u7533\u8bf7[" + project.getApplicationName() + "]\u5ba1\u6838\u9a73\u56de\uff1a" + (remark == null ? "" : remark),
         "PROJECT_REGISTER_REJECTED",
         BIZ_TYPE,
         id);
@@ -528,6 +644,22 @@ public class ProjectRegisterService {
     }
   }
 
+  private void ensureAssessmentMembersAssigned(long projectId) {
+    Integer count =
+        jdbcTemplate.queryForObject(
+            """
+            SELECT COUNT(1)
+            FROM project_assessment_member
+            WHERE project_register_id = ?
+            """,
+            Integer.class,
+            projectId);
+    if (count == null || count <= 0) {
+      throw new ResponseStatusException(HttpStatus.CONFLICT, "\u9879\u76ee\u767b\u8bb0\u5ba1\u6838\u901a\u8fc7\u524d\u5fc5\u987b\u5206\u914d\u6d4b\u8bc4\u4eba\u5458");
+    }
+  }
+
+
   private void replaceSystemItems(long projectId, List<ProjectSystemItemRequest> systemItems) {
     jdbcTemplate.update(
         "UPDATE project_system_item SET deleted_flag = 1 WHERE project_register_id = ?", projectId);
@@ -564,9 +696,8 @@ public class ProjectRegisterService {
           jsonSupport.toJson(item.getClassificationReportFiles()));
     }
   }
-
   private void loadSystemItems(List<ProjectRegisterRecord> projects) {
-    if (projects.isEmpty()) {
+    if (projects == null || projects.isEmpty()) {
       return;
     }
     Map<Long, ProjectRegisterRecord> map = new LinkedHashMap<>();
@@ -615,6 +746,32 @@ public class ProjectRegisterService {
           item.setClassificationReportFiles(
               jsonSupport.fromJsonList(rs.getString("classification_report_files_json")));
           record.getSystemItems().add(item);
+        });
+  }
+  private void loadAssessmentMembers(List<ProjectRegisterRecord> projects) {
+    if (projects == null || projects.isEmpty()) {
+      return;
+    }
+    Map<Long, ProjectRegisterRecord> map = new LinkedHashMap<>();
+    for (ProjectRegisterRecord item : projects) {
+      map.put(item.getId(), item);
+      item.setAssessmentMembers(new ArrayList<>());
+    }
+    String inSql =
+        projects.stream().map(item -> String.valueOf(item.getId())).reduce((a, b) -> a + "," + b).orElse("0");
+    jdbcTemplate.query(
+        """
+        SELECT project_register_id, username
+        FROM project_assessment_member
+        WHERE project_register_id IN (%s)
+        ORDER BY project_register_id ASC, sort_order ASC, id ASC
+        """
+            .formatted(inSql),
+        rs -> {
+          ProjectRegisterRecord record = map.get(rs.getLong("project_register_id"));
+          if (record != null) {
+            record.getAssessmentMembers().add(rs.getString("username"));
+          }
         });
   }
 

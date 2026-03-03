@@ -2,10 +2,22 @@
   <div class="page-shell page section-stack">
     <header class="page-header">
       <div class="page-title-group">
-        <h2 class="page-title">现场测评实施</h2>
-        <p class="page-subtitle">节点 8：上传现场测评 ZIP，配置审核人并统一发起审核流程；整改后在本页修订重提。</p>
+        <h2 class="page-title">{{ isExecutionMode ? "现场测评实施" : "现场测评结果" }}</h2>
+        <p class="page-subtitle">
+          {{
+            isExecutionMode
+              ? "测评人员维护现场测评附件与说明，提交后进入审核流程。"
+              : "项目经理查看现场测评结果并发起提交审核。"
+          }}
+        </p>
       </div>
-      <el-button v-permission="'on-site-assessment:view'" :loading="loading" @click="loadRows">刷新</el-button>
+      <el-button
+        v-permission="['page.on-site-assessment-executions', 'page.on-site-assessment-results']"
+        :loading="loading"
+        @click="loadRows"
+      >
+        刷新
+      </el-button>
     </header>
 
     <el-card class="tip-card np-info-strip">
@@ -13,32 +25,22 @@
         type="info"
         :closable="false"
         show-icon
-        title="提交审核入口统一在现场测评：首次提交进入技术审核，整改后将直达触发整改的审核节点。"
+        title="现场测评在审核中不可编辑，仅当审核节点标记“需要整改”后允许修改并重新提交。"
       />
     </el-card>
 
     <el-card class="table-card">
-      <el-table :data="rows" v-loading="loading" empty-text="暂无可处理项目">
+      <el-table :data="rows" v-loading="loading" empty-text="暂无可处理项">
         <el-table-column prop="projectRegisterId" label="项目ID" width="100" />
         <el-table-column prop="applicationName" label="申请单名称" min-width="260" show-overflow-tooltip />
-        <el-table-column prop="packageObjectKey" label="测评压缩包" min-width="280" show-overflow-tooltip>
+        <el-table-column label="测评附件" min-width="280" show-overflow-tooltip>
           <template #default="{ row }">
-            {{ row.packageObjectKey || "-" }}
+            <span>{{ evidencePreview(row) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="审核人分配" min-width="360" show-overflow-tooltip>
+        <el-table-column label="附件数" width="90">
           <template #default="{ row }">
-            <div class="assignment-line">报告技术：{{ row.techReviewer || "-" }}</div>
-            <div class="assignment-line">
-              内容技术/管理/网络：
-              {{ `${row.contentReviewerTech || "-"}/${row.contentReviewerManagement || "-"}/${row.contentReviewerNetwork || "-"}` }}
-            </div>
-            <div v-if="row.rectificationNode" class="assignment-line rectification-line">
-              整改节点：{{ rectificationNodeLabel(row.rectificationNode) }}
-            </div>
-            <div v-if="row.rectificationRemark" class="assignment-line rectification-line">
-              整改要求：{{ row.rectificationRemark }}
-            </div>
+            {{ row.evidenceFiles?.length || 0 }}
           </template>
         </el-table-column>
         <el-table-column prop="status" label="状态" width="120">
@@ -47,22 +49,20 @@
           </template>
         </el-table-column>
         <el-table-column prop="workflowNode" label="流程节点" width="180" />
-        <el-table-column label="操作" width="420" fixed="right">
+        <el-table-column prop="updatedAt" label="更新时间" min-width="180" />
+        <el-table-column label="操作" width="300" fixed="right">
           <template #default="{ row }">
             <el-space>
-              <el-button v-permission="'on-site-assessment:save'" size="small" @click="openAssessmentDialog(row)">
+              <el-button
+                v-permission="['page.on-site-assessment-executions', 'page.on-site-assessment-results']"
+                size="small"
+                :disabled="!canEdit(row)"
+                @click="openAssessmentDialog(row)"
+              >
                 编辑测评
               </el-button>
               <el-button
-                v-permission="'on-site-assessment:assign'"
-                size="small"
-                :disabled="!canAssign(row)"
-                @click="openAssignDialog(row)"
-              >
-                分配审核人
-              </el-button>
-              <el-button
-                v-permission="'on-site-assessment:submit'"
+                v-permission="['page.on-site-assessment-executions', 'page.on-site-assessment-results']"
                 size="small"
                 type="success"
                 :disabled="!canSubmit(row)"
@@ -70,7 +70,7 @@
               >
                 提交审核
               </el-button>
-              <el-button size="small" @click="openProcessOverview(row.projectRegisterId)">流程详情</el-button>
+              <el-button size="small" @click="openTaskDetail(row.projectRegisterId)">详情</el-button>
             </el-space>
           </template>
         </el-table-column>
@@ -82,97 +82,47 @@
         <el-form-item label="项目ID">
           <el-input :model-value="assessmentForm.projectRegisterId" disabled />
         </el-form-item>
-        <el-form-item label="测评压缩包" required>
-          <el-input v-model="assessmentForm.packageObjectKey" placeholder="请上传 ZIP 或粘贴对象键" />
-          <div class="upload-row">
-            <el-button v-permission="'on-site-assessment:save'" :loading="uploading" @click="triggerUpload">
-              上传 ZIP
-            </el-button>
-            <span class="upload-tip">仅允许 .zip，上传后自动回填对象键。</span>
-          </div>
-          <input
-            ref="fileInputRef"
-            type="file"
-            accept=".zip"
-            class="hidden-file-input"
-            @change="handleFileChange"
-          />
-        </el-form-item>
-        <el-form-item label="实施说明">
+        <el-form-item label="测评附件" required>
           <el-input
-            v-model="assessmentForm.assessmentDetail"
+            v-model="assessmentForm.evidenceFilesText"
+            type="textarea"
+            :rows="4"
+            maxlength="4000"
+            show-word-limit
+            placeholder="每行一个对象键"
+          />
+          <div class="upload-row">
+            <el-button
+              v-permission="['page.on-site-assessment-executions', 'page.on-site-assessment-results']"
+              :loading="uploading"
+              @click="triggerUpload"
+            >
+              上传附件
+            </el-button>
+            <span class="upload-tip">上传后自动追加到文本框，每行一个对象键。</span>
+          </div>
+          <input ref="fileInputRef" type="file" class="hidden-file-input" @change="handleFileChange" />
+        </el-form-item>
+        <el-form-item label="现场测评结果说明">
+          <el-input
+            v-model="assessmentForm.assessmentRemark"
             type="textarea"
             :rows="4"
             maxlength="2000"
             show-word-limit
-            placeholder="可选，记录现场测评过程说明"
+            placeholder="可选，记录现场测评结果与补充说明"
           />
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="assessmentDialogVisible = false">取消</el-button>
-        <el-button v-permission="'on-site-assessment:save'" type="primary" :loading="savingAssessment" @click="saveAssessment">
-          保存
-        </el-button>
-      </template>
-    </el-dialog>
-
-    <el-dialog v-model="assignDialogVisible" title="分配审核人" width="680px">
-      <el-alert
-        type="warning"
-        :closable="false"
-        show-icon
-        title="四个角色必须全部选择后才允许保存分配。"
-      />
-      <el-form label-width="150px" class="assign-form">
-        <el-form-item label="项目ID">
-          <el-input :model-value="assignForm.projectRegisterId" disabled />
-        </el-form-item>
-        <el-form-item label="报告技术审核" required>
-          <el-select v-model="assignForm.techReviewer" style="width: 100%" filterable>
-            <el-option v-for="user in candidates.techReviewers" :key="`tech-${user}`" :label="user" :value="user" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="内容审核-技术" required>
-          <el-select v-model="assignForm.contentReviewerTech" style="width: 100%" filterable>
-            <el-option
-              v-for="user in candidates.contentReviewersTech"
-              :key="`content-tech-${user}`"
-              :label="user"
-              :value="user"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="内容审核-管理" required>
-          <el-select v-model="assignForm.contentReviewerManagement" style="width: 100%" filterable>
-            <el-option
-              v-for="user in candidates.contentReviewersManagement"
-              :key="`content-management-${user}`"
-              :label="user"
-              :value="user"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="内容审核-网络" required>
-          <el-select v-model="assignForm.contentReviewerNetwork" style="width: 100%" filterable>
-            <el-option
-              v-for="user in candidates.contentReviewersNetwork"
-              :key="`content-network-${user}`"
-              :label="user"
-              :value="user"
-            />
-          </el-select>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="assignDialogVisible = false">取消</el-button>
         <el-button
-          v-permission="'on-site-assessment:assign'"
+          v-permission="['page.on-site-assessment-executions', 'page.on-site-assessment-results']"
           type="primary"
-          :loading="savingAssign"
-          @click="saveAssign"
+          :loading="savingAssessment"
+          @click="saveAssessment"
         >
-          保存分配
+          保存
         </el-button>
       </template>
     </el-dialog>
@@ -181,27 +131,24 @@
 
 <script setup lang="ts">
 /**
- * @input On-site assessment APIs, reviewer candidate pools, auth permissions, upload endpoint, and workflow context
- * @output Node-8 implementation UI with permission-aware ZIP upload, reviewer assignment, and rectification-aware submit routing
- * @position On-site assessment stage page enforcing ZIP-first guardrails and acting as the unified review submission/rework entry
+ * @input On-site assessment APIs, auth permissions, upload endpoint, and workflow context
+ * @output Unified on-site assessment page supporting execution/result route modes with evidence-file upload and submit flow
+ * @position On-site assessment stage page enforcing "under-review cannot edit" guardrails and unified resubmit entry
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { apiClient, type ApiResponse } from "./api";
-import { useAuthStore } from "./auth-store";
 import {
   fetchOnSiteAssessmentDetail,
-  fetchOnSiteAssessmentReviewerCandidates,
   fetchOnSiteAssessments,
   saveOnSiteAssessment,
-  saveOnSiteReviewAssignment,
   submitOnSiteAssessment,
-  type OnSiteAssessmentRecord,
-  type ReviewerCandidates
+  type OnSiteAssessmentMode,
+  type OnSiteAssessmentRecord
 } from "./on-site-assessment-service";
-import { toProcessOverviewPath } from "./process-overview-service";
+import { toTaskDetailPath } from "./task-detail-service";
 
 interface UploadResponse {
   objectKey: string;
@@ -209,61 +156,40 @@ interface UploadResponse {
 
 interface AssessmentFormState {
   projectRegisterId: number;
-  packageObjectKey: string;
-  assessmentDetail: string;
+  evidenceFilesText: string;
+  assessmentRemark: string;
 }
 
-interface AssignFormState {
-  projectRegisterId: number;
-  techReviewer: string;
-  contentReviewerTech: string;
-  contentReviewerManagement: string;
-  contentReviewerNetwork: string;
-  versionNo: number;
-}
-
+const route = useRoute();
+const router = useRouter();
 const loading = ref(false);
 const savingAssessment = ref(false);
-const savingAssign = ref(false);
 const uploading = ref(false);
 const assessmentDialogVisible = ref(false);
-const assignDialogVisible = ref(false);
 const rows = ref<OnSiteAssessmentRecord[]>([]);
-const candidates = ref<ReviewerCandidates>({
-  techReviewers: [],
-  contentReviewersTech: [],
-  contentReviewersManagement: [],
-  contentReviewersNetwork: []
-});
 const fileInputRef = ref<HTMLInputElement | null>(null);
-const authStore = useAuthStore();
-const router = useRouter();
 
 const assessmentForm = reactive<AssessmentFormState>({
   projectRegisterId: 0,
-  packageObjectKey: "",
-  assessmentDetail: ""
+  evidenceFilesText: "",
+  assessmentRemark: ""
 });
 
-const assignForm = reactive<AssignFormState>({
-  projectRegisterId: 0,
-  techReviewer: "",
-  contentReviewerTech: "",
-  contentReviewerManagement: "",
-  contentReviewerNetwork: "",
-  versionNo: 0
-});
+const isExecutionMode = computed(() => route.path.includes("/on-site-assessment-executions"));
+const mode = computed<OnSiteAssessmentMode>(() => (isExecutionMode.value ? "execution" : "result"));
 
 function statusLabel(status?: string) {
   if (status === "REJECTED") return "待整改";
-  if (status === "SUBMITTED") return "已提交";
+  if (status === "SUBMITTED" || status === "PENDING") return "待审核";
+  if (status === "APPROVED") return "已通过";
   if (status === "DRAFT") return "草稿";
   return status || "草稿";
 }
 
 function statusTagType(status?: string) {
   if (status === "REJECTED") return "warning";
-  if (status === "SUBMITTED") return "success";
+  if (status === "SUBMITTED" || status === "PENDING") return "warning";
+  if (status === "APPROVED") return "success";
   return "info";
 }
 
@@ -272,32 +198,34 @@ function readErrorMessage(error: unknown, fallback: string) {
   return typeof message === "string" && message.trim() ? message : fallback;
 }
 
+function listToText(values: string[] | undefined) {
+  return (values || []).join("\n");
+}
+
+function textToList(value: string) {
+  const items =
+    value
+      ?.split(/\r?\n/)
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0) || [];
+  return Array.from(new Set(items));
+}
+
+function evidencePreview(row: OnSiteAssessmentRecord) {
+  const files = row.evidenceFiles || [];
+  if (files.length === 0) {
+    return "-";
+  }
+  if (files.length === 1) {
+    return files[0];
+  }
+  return `${files[0]} 等 ${files.length} 个附件`;
+}
+
 function fillAssessmentForm(row: OnSiteAssessmentRecord) {
   assessmentForm.projectRegisterId = row.projectRegisterId;
-  assessmentForm.packageObjectKey = row.packageObjectKey || "";
-  assessmentForm.assessmentDetail = row.assessmentDetail || "";
-}
-
-function fillAssignForm(row: OnSiteAssessmentRecord) {
-  assignForm.projectRegisterId = row.projectRegisterId;
-  assignForm.techReviewer = row.techReviewer || "";
-  assignForm.contentReviewerTech = row.contentReviewerTech || "";
-  assignForm.contentReviewerManagement = row.contentReviewerManagement || "";
-  assignForm.contentReviewerNetwork = row.contentReviewerNetwork || "";
-  assignForm.versionNo = row.assignmentVersionNo || 0;
-}
-
-function hasZip(row: OnSiteAssessmentRecord) {
-  return !!row.packageObjectKey && row.packageObjectKey.toLowerCase().endsWith(".zip");
-}
-
-function hasAllReviewers(row: OnSiteAssessmentRecord) {
-  return (
-    !!row.techReviewer &&
-    !!row.contentReviewerTech &&
-    !!row.contentReviewerManagement &&
-    !!row.contentReviewerNetwork
-  );
+  assessmentForm.evidenceFilesText = listToText(row.evidenceFiles);
+  assessmentForm.assessmentRemark = row.assessmentRemark || row.assessmentDetail || "";
 }
 
 function isRectification(row: OnSiteAssessmentRecord) {
@@ -308,26 +236,15 @@ function displayStatus(row: OnSiteAssessmentRecord) {
   return isRectification(row) ? "REJECTED" : row.status;
 }
 
-function canAssign(row: OnSiteAssessmentRecord) {
-  return (row.status !== "SUBMITTED" || isRectification(row)) && hasZip(row);
+function canEdit(row: OnSiteAssessmentRecord) {
+  if (row.status !== "SUBMITTED") {
+    return true;
+  }
+  return isRectification(row);
 }
 
 function canSubmit(row: OnSiteAssessmentRecord) {
-  return (row.status !== "SUBMITTED" || isRectification(row)) && hasZip(row) && hasAllReviewers(row);
-}
-
-function rectificationNodeLabel(node?: string) {
-  if (node === "REPORT_TECH_REVIEW_TASK") return "技术审核";
-  if (node === "REPORT_CONTENT_REVIEW_TASK") return "内容审核";
-  if (node === "REPORT_FINAL_REVIEW_TASK") return "最终审核";
-  return node || "-";
-}
-
-function submitTargetLabel(row: OnSiteAssessmentRecord) {
-  if (row.rectificationNode) {
-    return rectificationNodeLabel(row.rectificationNode);
-  }
-  return "技术审核";
+  return canEdit(row) && (row.evidenceFiles?.length || 0) > 0;
 }
 
 function triggerUpload() {
@@ -340,12 +257,6 @@ async function handleFileChange(event: Event) {
   if (!file) {
     return;
   }
-  const isZip = file.name.toLowerCase().endsWith(".zip");
-  if (!isZip) {
-    ElMessage.warning("仅支持上传 ZIP 压缩包");
-    input.value = "";
-    return;
-  }
 
   const formData = new FormData();
   formData.append("file", file);
@@ -356,10 +267,12 @@ async function handleFileChange(event: Event) {
         "Content-Type": "multipart/form-data"
       }
     });
-    assessmentForm.packageObjectKey = response.data.data.objectKey;
-    ElMessage.success("上传成功，已回填对象键");
+    const objectKey = response.data.data.objectKey;
+    const next = textToList([assessmentForm.evidenceFilesText, objectKey].filter(Boolean).join("\n"));
+    assessmentForm.evidenceFilesText = next.join("\n");
+    ElMessage.success("上传成功，已追加对象键");
   } catch (error) {
-    ElMessage.error(readErrorMessage(error, "上传 ZIP 失败"));
+    ElMessage.error(readErrorMessage(error, "上传附件失败"));
   } finally {
     uploading.value = false;
     input.value = "";
@@ -369,20 +282,7 @@ async function handleFileChange(event: Event) {
 async function loadRows() {
   loading.value = true;
   try {
-    rows.value = await fetchOnSiteAssessments();
-    if (
-      authStore.hasPermission("on-site-assessment:assign") ||
-      authStore.hasPermission("on-site-assessment:candidate:view")
-    ) {
-      candidates.value = await fetchOnSiteAssessmentReviewerCandidates();
-    } else {
-      candidates.value = {
-        techReviewers: [],
-        contentReviewersTech: [],
-        contentReviewersManagement: [],
-        contentReviewersNetwork: []
-      };
-    }
+    rows.value = await fetchOnSiteAssessments(mode.value);
   } catch (error) {
     ElMessage.error(readErrorMessage(error, "加载现场测评列表失败"));
   } finally {
@@ -400,20 +300,23 @@ async function openAssessmentDialog(row: OnSiteAssessmentRecord) {
   assessmentDialogVisible.value = true;
 }
 
-function openAssignDialog(row: OnSiteAssessmentRecord) {
-  fillAssignForm(row);
-  assignDialogVisible.value = true;
-}
-
 async function saveAssessment() {
   if (!assessmentForm.projectRegisterId) {
     return;
   }
+  const evidenceFiles = textToList(assessmentForm.evidenceFilesText);
+  if (evidenceFiles.length === 0) {
+    ElMessage.warning("请至少上传一个测评附件");
+    return;
+  }
+
   savingAssessment.value = true;
   try {
     await saveOnSiteAssessment(assessmentForm.projectRegisterId, {
-      packageObjectKey: assessmentForm.packageObjectKey.trim(),
-      assessmentDetail: assessmentForm.assessmentDetail.trim()
+      evidenceFiles,
+      packageObjectKey: evidenceFiles[0],
+      assessmentRemark: assessmentForm.assessmentRemark.trim(),
+      assessmentDetail: assessmentForm.assessmentRemark.trim()
     });
     ElMessage.success("现场测评草稿已保存");
     assessmentDialogVisible.value = false;
@@ -425,65 +328,28 @@ async function saveAssessment() {
   }
 }
 
-async function saveAssign() {
-  if (!assignForm.projectRegisterId) {
-    return;
-  }
-  if (
-    !assignForm.techReviewer ||
-    !assignForm.contentReviewerTech ||
-    !assignForm.contentReviewerManagement ||
-    !assignForm.contentReviewerNetwork
-  ) {
-    ElMessage.warning("请完整选择报告技术与内容（技术/管理/网络）审核人");
-    return;
-  }
-  savingAssign.value = true;
-  try {
-    await saveOnSiteReviewAssignment(assignForm.projectRegisterId, {
-      techReviewer: assignForm.techReviewer,
-      contentReviewerTech: assignForm.contentReviewerTech,
-      contentReviewerManagement: assignForm.contentReviewerManagement,
-      contentReviewerNetwork: assignForm.contentReviewerNetwork,
-      versionNo: assignForm.versionNo
-    });
-    ElMessage.success("审核人分配已保存");
-    assignDialogVisible.value = false;
-    await loadRows();
-  } catch (error) {
-    ElMessage.error(readErrorMessage(error, "保存审核人分配失败"));
-  } finally {
-    savingAssign.value = false;
-  }
-}
-
 async function submitRow(row: OnSiteAssessmentRecord) {
-  const targetLabel = submitTargetLabel(row);
   try {
-    await ElMessageBox.confirm(
-      `确认提交项目 ${row.projectRegisterId} 的现场测评吗？提交后将进入${targetLabel}。`,
-      "提交确认",
-      {
-        type: "warning",
-        confirmButtonText: "确认",
-        cancelButtonText: "取消"
-      }
-    );
+    await ElMessageBox.confirm(`确认提交项目 ${row.projectRegisterId} 的现场测评吗？`, "提交确认", {
+      type: "warning",
+      confirmButtonText: "确认",
+      cancelButtonText: "取消"
+    });
   } catch {
     return;
   }
 
   try {
     await submitOnSiteAssessment(row.projectRegisterId);
-    ElMessage.success(`现场测评已提交，流程已进入${targetLabel}`);
+    ElMessage.success("现场测评已提交");
     await loadRows();
   } catch (error) {
     ElMessage.error(readErrorMessage(error, "提交审核失败"));
   }
 }
 
-function openProcessOverview(projectId: number) {
-  void router.push(toProcessOverviewPath(projectId));
+function openTaskDetail(projectId: number) {
+  void router.push(toTaskDetailPath("PROJECT_REGISTER", projectId));
 }
 
 onMounted(() => {
@@ -520,23 +386,6 @@ onMounted(() => {
 
 .hidden-file-input {
   display: none;
-}
-
-.assignment-line {
-  line-height: 1.6;
-  color: var(--np-color-text-secondary);
-}
-
-.rectification-line {
-  color: #c87a1f;
-}
-
-.assign-form {
-  margin-top: 12px;
-}
-
-:deep(.el-alert) {
-  margin-bottom: 6px;
 }
 
 @media (max-width: 900px) {

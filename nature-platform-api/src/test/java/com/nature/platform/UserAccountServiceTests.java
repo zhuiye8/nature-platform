@@ -33,7 +33,7 @@ class UserAccountServiceTests {
   }
 
   @Test
-  void shouldOrderRoleFilteredCandidatesByUsername() {
+  void shouldOrderRoleFilteredCandidatesByRoleSortThenUsername() {
     when(jdbcTemplate.queryForList(anyString(), eq(String.class), eq("ROLE_SUPER_ADMIN"), eq("ROLE_REVIEWER")))
         .thenReturn(List.of("admin", "reviewer"));
 
@@ -47,8 +47,9 @@ class UserAccountServiceTests {
         .queryForList(
             sqlCaptor.capture(), eq(String.class), eq("ROLE_SUPER_ADMIN"), eq("ROLE_REVIEWER"));
     String sql = sqlCaptor.getValue();
-    assertTrue(sql.contains("SELECT DISTINCT u.username"));
-    assertTrue(sql.contains("ORDER BY u.username ASC"));
+    assertTrue(sql.contains("SELECT u.username"));
+    assertTrue(sql.contains("GROUP BY u.username"));
+    assertTrue(sql.contains("ORDER BY MIN(ur.sort_order) ASC, u.username ASC"));
     assertTrue(sql.contains("IN (?,?)"));
   }
 }

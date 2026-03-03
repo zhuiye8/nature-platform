@@ -7,12 +7,7 @@ $ErrorActionPreference = "Stop"
 
 $bootstrapContext = New-E2EContext -SuiteName "api-run-all-bootstrap" -BaseUrl $BaseUrl
 Assert-E2EApiReady -Context $bootstrapContext
-Ensure-E2EUserByAdminApi `
-  -Context $bootstrapContext `
-  -Username "normal" `
-  -Password "normal123" `
-  -DisplayName "普通用户" `
-  -Roles @("ROLE_USER")
+Ensure-E2EReviewNodeRules -Context $bootstrapContext -UpdatedBy "admin"
 
 $failed = @()
 $jobs = @(

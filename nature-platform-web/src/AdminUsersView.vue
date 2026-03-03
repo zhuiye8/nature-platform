@@ -24,6 +24,7 @@
       <el-table :data="users" v-loading="loading" empty-text="暂无用户数据">
         <el-table-column prop="username" label="用户名" min-width="140" />
         <el-table-column prop="displayName" label="显示名称" min-width="160" />
+        <el-table-column prop="deptName" label="所属部门" min-width="160" />
         <el-table-column label="状态" width="120">
           <template #default="{ row }">
             <el-tag :type="row.enabled ? 'success' : 'info'">{{ row.enabled ? "启用" : "停用" }}</el-tag>
@@ -77,6 +78,17 @@
             <el-option v-for="role in roleCodes" :key="role" :label="role" :value="role" />
           </el-select>
         </el-form-item>
+
+        <el-form-item label="所属部门">
+          <el-select v-model="form.deptId" filterable clearable style="width: 100%" placeholder="选择部门">
+            <el-option
+              v-for="dept in departments"
+              :key="dept.id"
+              :label="`${dept.deptName}（${dept.deptCode}）`"
+              :value="dept.id"
+            />
+          </el-select>
+        </el-form-item>
       </el-form>
 
       <template #footer>
@@ -98,9 +110,11 @@ import { onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
 import {
   createAdminUser,
+  fetchAdminDepartments,
   fetchAdminUserRoleCodes,
   fetchAdminUsers,
   updateAdminUser,
+  type AdminDepartmentRecord,
   type AdminUserRecord
 } from "./admin-service";
 
@@ -109,6 +123,7 @@ interface UserFormModel {
   displayName: string;
   password: string;
   enabled: boolean;
+  deptId?: number;
   roles: string[];
 }
 
@@ -118,12 +133,14 @@ const dialogVisible = ref(false);
 const editingUsername = ref<string>("");
 const users = ref<AdminUserRecord[]>([]);
 const roleCodes = ref<string[]>([]);
+const departments = ref<AdminDepartmentRecord[]>([]);
 
 const form = reactive<UserFormModel>({
   username: "",
   displayName: "",
   password: "",
   enabled: true,
+  deptId: undefined,
   roles: []
 });
 
@@ -137,6 +154,7 @@ function resetForm() {
   form.displayName = "";
   form.password = "";
   form.enabled = true;
+  form.deptId = undefined;
   form.roles = [];
 }
 
@@ -152,6 +170,7 @@ function openEdit(row: AdminUserRecord) {
   form.displayName = row.displayName;
   form.password = "";
   form.enabled = row.enabled;
+  form.deptId = row.deptId;
   form.roles = [...row.roles];
   dialogVisible.value = true;
 }
@@ -172,6 +191,14 @@ async function loadRoleCodes() {
     roleCodes.value = await fetchAdminUserRoleCodes();
   } catch (error) {
     ElMessage.error(readErrorMessage(error, "加载角色选项失败"));
+  }
+}
+
+async function loadDepartments() {
+  try {
+    departments.value = await fetchAdminDepartments();
+  } catch (error) {
+    ElMessage.error(readErrorMessage(error, "加载部门选项失败"));
   }
 }
 
@@ -196,6 +223,7 @@ async function saveUser() {
         displayName: form.displayName.trim(),
         password: form.password.trim() || undefined,
         enabled: form.enabled,
+        deptId: form.deptId,
         roles: form.roles
       });
       ElMessage.success("用户更新成功");
@@ -205,6 +233,7 @@ async function saveUser() {
         displayName: form.displayName.trim(),
         password: form.password.trim(),
         enabled: form.enabled,
+        deptId: form.deptId,
         roles: form.roles
       });
       ElMessage.success("用户创建成功");
@@ -219,6 +248,6 @@ async function saveUser() {
 }
 
 onMounted(() => {
-  void Promise.all([loadUsers(), loadRoleCodes()]);
+  void Promise.all([loadUsers(), loadRoleCodes(), loadDepartments()]);
 });
 </script>

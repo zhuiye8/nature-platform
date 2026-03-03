@@ -7,7 +7,6 @@
 export type WorkflowTaskType =
   | "CONTRACT"
   | "PROJECT_REGISTER"
-  | "QUALITY_REVIEW"
   | "REPORT_TECH_REVIEW"
   | "REPORT_CONTENT_REVIEW"
   | "REPORT_FINAL_REVIEW"
@@ -24,7 +23,6 @@ export function isProjectWorkflowTask(taskType: string | undefined): boolean {
   const normalized = normalizeTaskType(taskType);
   return (
     normalized === "PROJECT_REGISTER" ||
-    normalized === "QUALITY_REVIEW" ||
     normalized === "REPORT_TECH_REVIEW" ||
     normalized === "REPORT_CONTENT_REVIEW" ||
     normalized === "REPORT_FINAL_REVIEW"
@@ -44,4 +42,3 @@ export function toTaskDetailPath(
   const query = params.toString();
   return `/task-detail/${encodeURIComponent(normalizedType)}/${bizId}${query ? `?${query}` : ""}`;
 }
-

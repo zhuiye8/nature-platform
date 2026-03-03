@@ -21,6 +21,9 @@ public class PoliceRegisterRequest {
   @Size(max = 32)
   private String contactPhone;
 
+  @Size(max = 64)
+  private String projectManagerUsername;
+
   @Size(max = 1000)
   private String remark;
 
@@ -62,5 +65,13 @@ public class PoliceRegisterRequest {
 
   public void setRemark(String remark) {
     this.remark = remark;
+  }
+
+  public String getProjectManagerUsername() {
+    return projectManagerUsername;
+  }
+
+  public void setProjectManagerUsername(String projectManagerUsername) {
+    this.projectManagerUsername = projectManagerUsername;
   }
 }

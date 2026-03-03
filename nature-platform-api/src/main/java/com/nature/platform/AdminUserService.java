@@ -10,6 +10,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -27,19 +28,26 @@ import org.springframework.web.server.ResponseStatusException;
 public class AdminUserService {
   private final JdbcTemplate jdbcTemplate;
   private final AdminAuditService adminAuditService;
+  private final AdminDepartmentService adminDepartmentService;
 
-  public AdminUserService(JdbcTemplate jdbcTemplate, AdminAuditService adminAuditService) {
+  public AdminUserService(
+      JdbcTemplate jdbcTemplate,
+      AdminAuditService adminAuditService,
+      AdminDepartmentService adminDepartmentService) {
     this.jdbcTemplate = jdbcTemplate;
     this.adminAuditService = adminAuditService;
+    this.adminDepartmentService = adminDepartmentService;
   }
 
   public List<AdminUserRecord> listUsers() {
     List<AdminUserRecord> rows =
         jdbcTemplate.query(
             """
-            SELECT username, display_name, enabled, source_type
-            FROM user_account
-            ORDER BY id ASC
+            SELECT u.username, u.display_name, u.enabled, u.source_type, u.dept_id, u.ding_user_id,
+                   d.dept_name
+            FROM user_account u
+            LEFT JOIN iam_department d ON d.id = u.dept_id
+            ORDER BY u.id ASC
             """,
             new AdminUserRowMapper());
     bindRoles(rows);
@@ -51,9 +59,11 @@ public class AdminUserService {
     List<AdminUserRecord> rows =
         jdbcTemplate.query(
             """
-            SELECT username, display_name, enabled, source_type
-            FROM user_account
-            WHERE username = ?
+            SELECT u.username, u.display_name, u.enabled, u.source_type, u.dept_id, u.ding_user_id,
+                   d.dept_name
+            FROM user_account u
+            LEFT JOIN iam_department d ON d.id = u.dept_id
+            WHERE u.username = ?
             """,
             new AdminUserRowMapper(),
             normalizedUsername);
@@ -70,31 +80,36 @@ public class AdminUserService {
     String displayName = normalizeRequired(request.getDisplayName(), "displayName is required");
     String password = normalizeRequired(request.getPassword(), "password is required");
     boolean enabled = request.getEnabled() == null || request.getEnabled();
+    Long deptId = normalizeDeptId(request.getDeptId());
     List<String> roleCodes = normalizeRoleCodes(request.getRoles(), true);
 
     ensureUserNotExists(username);
     ensureRoleCodesExist(roleCodes);
+    adminDepartmentService.ensureDepartmentExists(deptId);
 
     jdbcTemplate.update(
         """
-        INSERT INTO user_account (username, password_hash, display_name, enabled, source_type)
-        VALUES (?, ?, ?, ?, 'LOCAL')
+        INSERT INTO user_account (username, password_hash, display_name, enabled, source_type, dept_id)
+        VALUES (?, ?, ?, ?, 'LOCAL', ?)
         """,
         username,
         password,
         displayName,
-        enabled ? 1 : 0);
+        enabled ? 1 : 0,
+        deptId);
 
     replaceUserRoles(username, roleCodes);
+    Map<String, Object> createDetail = new LinkedHashMap<>();
+    createDetail.put("displayName", displayName);
+    createDetail.put("enabled", enabled);
+    createDetail.put("deptId", deptId);
+    createDetail.put("roles", roleCodes);
     adminAuditService.logAction(
         operator,
         "ADMIN_USER_CREATE",
         "USER",
         username,
-        Map.of(
-            "displayName", displayName,
-            "enabled", enabled,
-            "roles", roleCodes));
+        createDetail);
     return detail(username);
   }
 
@@ -106,8 +121,10 @@ public class AdminUserService {
     String displayName = normalizeRequired(request.getDisplayName(), "displayName is required");
     String password = normalizeOptional(request.getPassword());
     boolean enabled = request.getEnabled();
+    Long deptId = normalizeDeptId(request.getDeptId());
     List<String> roleCodes = normalizeRoleCodes(request.getRoles(), true);
     ensureRoleCodesExist(roleCodes);
+    adminDepartmentService.ensureDepartmentExists(deptId);
 
     ensureSuperAdminStillExists(
         oldState.username(), oldState.enabled(), oldState.roles(), enabled, roleCodes);
@@ -116,36 +133,40 @@ public class AdminUserService {
       jdbcTemplate.update(
           """
           UPDATE user_account
-          SET display_name = ?, enabled = ?
+          SET display_name = ?, enabled = ?, dept_id = ?
           WHERE username = ?
           """,
           displayName,
           enabled ? 1 : 0,
+          deptId,
           normalizedUsername);
     } else {
       jdbcTemplate.update(
           """
           UPDATE user_account
-          SET display_name = ?, password_hash = ?, enabled = ?
+          SET display_name = ?, password_hash = ?, enabled = ?, dept_id = ?
           WHERE username = ?
           """,
           displayName,
           password,
           enabled ? 1 : 0,
+          deptId,
           normalizedUsername);
     }
 
     replaceUserRoles(normalizedUsername, roleCodes);
+    Map<String, Object> updateDetail = new LinkedHashMap<>();
+    updateDetail.put("displayName", displayName);
+    updateDetail.put("enabled", enabled);
+    updateDetail.put("deptId", deptId);
+    updateDetail.put("roles", roleCodes);
+    updateDetail.put("passwordUpdated", password != null);
     adminAuditService.logAction(
         operator,
         "ADMIN_USER_UPDATE",
         "USER",
         normalizedUsername,
-        Map.of(
-            "displayName", displayName,
-            "enabled", enabled,
-            "roles", roleCodes,
-            "passwordUpdated", password != null));
+        updateDetail);
     return detail(normalizedUsername);
   }
 
@@ -170,7 +191,7 @@ public class AdminUserService {
         SELECT username, role_code
         FROM user_role
         WHERE username IN (%s)
-        ORDER BY username ASC, role_code ASC
+        ORDER BY username ASC, sort_order ASC, role_code ASC
         """
             .formatted(placeholders);
 
@@ -221,14 +242,16 @@ public class AdminUserService {
 
   private void replaceUserRoles(String username, List<String> roleCodes) {
     jdbcTemplate.update("DELETE FROM user_role WHERE username = ?", username);
-    for (String roleCode : roleCodes) {
+    for (int i = 0; i < roleCodes.size(); i++) {
+      String roleCode = roleCodes.get(i);
       jdbcTemplate.update(
           """
-          INSERT INTO user_role (username, role_code)
-          VALUES (?, ?)
+          INSERT INTO user_role (username, role_code, sort_order)
+          VALUES (?, ?, ?)
           """,
           username,
-          roleCode);
+          roleCode,
+          i * 10);
     }
   }
 
@@ -268,7 +291,7 @@ public class AdminUserService {
                     rs.getString("username"),
                     rs.getBoolean("enabled"),
                     jdbcTemplate.queryForList(
-                        "SELECT role_code FROM user_role WHERE username = ? ORDER BY role_code ASC",
+                        "SELECT role_code FROM user_role WHERE username = ? ORDER BY sort_order ASC, role_code ASC",
                         String.class,
                         username)),
             username);
@@ -317,6 +340,13 @@ public class AdminUserService {
     return raw.trim();
   }
 
+  private Long normalizeDeptId(Long deptId) {
+    if (deptId == null || deptId <= 0) {
+      return null;
+    }
+    return deptId;
+  }
+
   private static class AdminUserRowMapper implements RowMapper<AdminUserRecord> {
     @Override
     public AdminUserRecord mapRow(ResultSet rs, int rowNum) throws SQLException {
@@ -325,6 +355,9 @@ public class AdminUserService {
       record.setDisplayName(rs.getString("display_name"));
       record.setEnabled(rs.getBoolean("enabled"));
       record.setSourceType(rs.getString("source_type"));
+      record.setDeptId(rs.getObject("dept_id", Long.class));
+      record.setDeptName(rs.getString("dept_name"));
+      record.setDingUserId(rs.getString("ding_user_id"));
       return record;
     }
   }

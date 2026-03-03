@@ -10,9 +10,11 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -28,6 +30,7 @@ public class ContractService {
   private final NotificationService notificationService;
   private final UserAccountService userAccountService;
   private final FieldChangeLogService fieldChangeLogService;
+  private final UserDataScopeService userDataScopeService;
 
   public ContractService(
       JdbcTemplate jdbcTemplate,
@@ -35,49 +38,27 @@ public class ContractService {
       ContractNumberService contractNumberService,
       NotificationService notificationService,
       UserAccountService userAccountService,
-      FieldChangeLogService fieldChangeLogService) {
+      FieldChangeLogService fieldChangeLogService,
+      UserDataScopeService userDataScopeService) {
     this.jdbcTemplate = jdbcTemplate;
     this.jsonSupport = jsonSupport;
     this.contractNumberService = contractNumberService;
     this.notificationService = notificationService;
     this.userAccountService = userAccountService;
     this.fieldChangeLogService = fieldChangeLogService;
+    this.userDataScopeService = userDataScopeService;
   }
 
-  public List<ContractRecord> list() {
-    List<ContractRecord> rows =
-        jdbcTemplate.query(
-            """
-            SELECT c.id, c.customer_id, COALESCE(cm.full_name, '') customer_name, c.project_name, c.contact_name, c.mobile_phone,
-                   c.payment_company, c.payment_amount, c.payment_method, c.partner_name, c.sales_person, c.performance_city, c.deal_status,
-                   c.remark, c.contract_type, c.contract_file_object_key, c.service_year_detail, c.payment_status,
-                   c.contract_name, c.contract_no, c.review_status, c.archive_status, c.created_by, c.created_at, c.service_years_json
-            FROM contract c
-            LEFT JOIN customer cm ON cm.id = c.customer_id
-            WHERE c.deleted_flag = 0
-            ORDER BY c.id DESC
-            """,
-            new ContractRowMapper(jsonSupport));
+  public List<ContractRecord> list(String operator) {
+    List<ContractRecord> rows = queryContractList(false);
     loadSystemItems(rows);
-    return rows;
+    return applyContractVisibility(operator, rows);
   }
 
-  public List<ContractRecord> listForArchive() {
-    List<ContractRecord> rows =
-        jdbcTemplate.query(
-            """
-            SELECT c.id, c.customer_id, COALESCE(cm.full_name, '') customer_name, c.project_name, c.contact_name, c.mobile_phone,
-                   c.payment_company, c.payment_amount, c.payment_method, c.partner_name, c.sales_person, c.performance_city, c.deal_status,
-                   c.remark, c.contract_type, c.contract_file_object_key, c.service_year_detail, c.payment_status,
-                   c.contract_name, c.contract_no, c.review_status, c.archive_status, c.created_by, c.created_at, c.service_years_json
-            FROM contract c
-            LEFT JOIN customer cm ON cm.id = c.customer_id
-            WHERE c.deleted_flag = 0 AND c.review_status = 'APPROVED'
-            ORDER BY c.id DESC
-            """,
-            new ContractRowMapper(jsonSupport));
+  public List<ContractRecord> listForArchive(String operator) {
+    List<ContractRecord> rows = queryContractList(true);
     loadSystemItems(rows);
-    return rows;
+    return applyContractVisibility(operator, rows);
   }
 
   public Optional<ContractRecord> findById(long id) {
@@ -99,6 +80,53 @@ public class ContractService {
     }
     loadSystemItems(rows);
     return rows.stream().findFirst();
+  }
+
+  public Optional<ContractRecord> findByIdVisible(long id, String operator) {
+    Optional<ContractRecord> row = findById(id);
+    if (row.isEmpty()) {
+      return Optional.empty();
+    }
+    return userDataScopeService.canAccessByCreator(
+            operator, row.get().getCreatedBy(), false)
+        ? row
+        : Optional.empty();
+  }
+
+  public ContractProjectNameSuggestionResponse suggestProjectNames(String keyword, int limit) {
+    String normalizedKeyword = keyword == null ? "" : keyword.trim();
+    ContractProjectNameSuggestionResponse response = new ContractProjectNameSuggestionResponse();
+    if (normalizedKeyword.isEmpty()) {
+      return response;
+    }
+    int safeLimit = Math.max(1, Math.min(limit, 20));
+    String fuzzy = "%" + normalizedKeyword + "%";
+    List<String> rows =
+        jdbcTemplate.queryForList(
+            """
+            SELECT DISTINCT c.project_name
+            FROM contract c
+            WHERE c.deleted_flag = 0
+              AND c.project_name LIKE ?
+            ORDER BY c.updated_at DESC, c.id DESC
+            LIMIT ?
+            """,
+            String.class,
+            fuzzy,
+            safeLimit);
+    Integer exactCount =
+        jdbcTemplate.queryForObject(
+            """
+            SELECT COUNT(1)
+            FROM contract
+            WHERE deleted_flag = 0
+              AND project_name = ?
+            """,
+            Integer.class,
+            normalizedKeyword);
+    response.setItems(rows);
+    response.setExactExists(exactCount != null && exactCount > 0);
+    return response;
   }
 
   @Transactional
@@ -295,6 +323,70 @@ public class ContractService {
         "CONTRACT_ARCHIVED",
         "CONTRACT",
         id);
+  }
+
+  private List<ContractRecord> queryContractList(boolean archivedOnly) {
+    String sql =
+        """
+        SELECT c.id, c.customer_id, COALESCE(cm.full_name, '') customer_name, c.project_name, c.contact_name, c.mobile_phone,
+               c.payment_company, c.payment_amount, c.payment_method, c.partner_name, c.sales_person, c.performance_city, c.deal_status,
+               c.remark, c.contract_type, c.contract_file_object_key, c.service_year_detail, c.payment_status,
+               c.contract_name, c.contract_no, c.review_status, c.archive_status, c.created_by, c.created_at, c.service_years_json
+        FROM contract c
+        LEFT JOIN customer cm ON cm.id = c.customer_id
+        WHERE c.deleted_flag = 0
+        """
+            + (archivedOnly ? " AND c.review_status = 'APPROVED' " : "")
+            + " ORDER BY c.id DESC";
+    return jdbcTemplate.query(sql, new ContractRowMapper(jsonSupport));
+  }
+
+  private List<ContractRecord> applyContractVisibility(String operator, List<ContractRecord> rows) {
+    if (rows == null || rows.isEmpty()) {
+      return List.of();
+    }
+    List<ContractRecord> scopeRows =
+        userDataScopeService.filterByCreator(operator, rows, ContractRecord::getCreatedBy, false);
+    Set<Long> scopeIds = new LinkedHashSet<>();
+    for (ContractRecord row : scopeRows) {
+      scopeIds.add(row.getId());
+    }
+
+    Set<String> peerCreators = loadPeerSalesUsernames(operator);
+    List<ContractRecord> visible = new ArrayList<>();
+    for (ContractRecord row : rows) {
+      boolean inScope = scopeIds.contains(row.getId());
+      boolean inPeerList = peerCreators.contains(row.getCreatedBy());
+      if (!inScope && !inPeerList) {
+        continue;
+      }
+      row.setCanViewDetail(inScope);
+      visible.add(row);
+    }
+    return visible;
+  }
+
+  private Set<String> loadPeerSalesUsernames(String operator) {
+    if (operator == null || operator.isBlank()) {
+      return Set.of();
+    }
+    List<String> rows =
+        jdbcTemplate.queryForList(
+            """
+            SELECT DISTINCT ur2.username
+            FROM user_role ur1
+            JOIN iam_role r ON r.role_code = ur1.role_code
+            JOIN user_role ur2 ON ur2.role_code = ur1.role_code
+            JOIN user_account u2 ON u2.username = ur2.username
+            WHERE ur1.username = ?
+              AND r.enabled = 1
+              AND r.peer_sales_limited = 1
+              AND u2.enabled = 1
+            ORDER BY ur2.username ASC
+            """,
+            String.class,
+            operator.trim());
+    return new LinkedHashSet<>(rows);
   }
 
   private void ensureCustomerExists(long customerId) {

@@ -1,12 +1,13 @@
 /**
- * @input JdbcTemplate storage, user/role lookup, police-register prerequisite service, workflow trace helper, workflow config, and notifications
- * @output Node-8 on-site assessment save/submit plus reviewer-assignment, rectification routing, and role-pool candidate operations
- * @position Project node service implementing unified on-site submission entry for first-pass review and rework resubmission
+ * @input JdbcTemplate storage, police-register prerequisite service, workflow trace helper, and notification services
+ * @output Node-8 on-site assessment save/submit APIs with multi-evidence attachments and rectification-aware resubmission into report-review chain
+ * @position Project node service implementing unified on-site submission entry and direct routing to technical/content/final review
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 package com.nature.platform;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
@@ -22,109 +23,120 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class OnSiteAssessmentService {
- public static final String NODE_KEY = "ON_SITE_ASSESSMENT";
+  public static final String NODE_KEY = "ON_SITE_ASSESSMENT";
   private static final String NODE_REPORT_TECH_REVIEW_TASK = "REPORT_TECH_REVIEW_TASK";
   private static final String NODE_REPORT_CONTENT_REVIEW_TASK = "REPORT_CONTENT_REVIEW_TASK";
   private static final String NODE_REPORT_FINAL_REVIEW_TASK = "REPORT_FINAL_REVIEW_TASK";
-  public static final String SLOT_TECH_REVIEWER = "TECH_REVIEWER";
-  public static final String SLOT_CONTENT_REVIEWER_TECH = "CONTENT_REVIEWER_TECH";
-  public static final String SLOT_CONTENT_REVIEWER_MANAGEMENT = "CONTENT_REVIEWER_MANAGEMENT";
-  public static final String SLOT_CONTENT_REVIEWER_NETWORK = "CONTENT_REVIEWER_NETWORK";
-  private static final String LEGACY_SLOT_CONTENT_REVIEWER_A = "CONTENT_REVIEWER_A";
-  private static final String LEGACY_SLOT_CONTENT_REVIEWER_B = "CONTENT_REVIEWER_B";
-  private static final String LEGACY_SLOT_CONTENT_REVIEWER_C = "CONTENT_REVIEWER_C";
 
   private final JdbcTemplate jdbcTemplate;
-  private final UserAccountService userAccountService;
+  private final JsonSupport jsonSupport;
   private final PoliceRegisterService policeRegisterService;
   private final ProjectWorkflowTraceService workflowTraceService;
-  private final WorkflowConfigService workflowConfigService;
   private final NotificationService notificationService;
+  private final UserDataScopeService userDataScopeService;
   private final ReportTechReviewService reportTechReviewService;
   private final ReportContentReviewService reportContentReviewService;
   private final ReportFinalReviewService reportFinalReviewService;
 
   public OnSiteAssessmentService(
       JdbcTemplate jdbcTemplate,
-      UserAccountService userAccountService,
+      JsonSupport jsonSupport,
       PoliceRegisterService policeRegisterService,
       ProjectWorkflowTraceService workflowTraceService,
-      WorkflowConfigService workflowConfigService,
       NotificationService notificationService,
+      UserDataScopeService userDataScopeService,
       ReportTechReviewService reportTechReviewService,
       ReportContentReviewService reportContentReviewService,
       ReportFinalReviewService reportFinalReviewService) {
     this.jdbcTemplate = jdbcTemplate;
-    this.userAccountService = userAccountService;
+    this.jsonSupport = jsonSupport;
     this.policeRegisterService = policeRegisterService;
     this.workflowTraceService = workflowTraceService;
-    this.workflowConfigService = workflowConfigService;
     this.notificationService = notificationService;
+    this.userDataScopeService = userDataScopeService;
     this.reportTechReviewService = reportTechReviewService;
     this.reportContentReviewService = reportContentReviewService;
     this.reportFinalReviewService = reportFinalReviewService;
   }
 
-  public List<OnSiteAssessmentRecord> list() {
-    return jdbcTemplate.query(baseSql() + " ORDER BY p.id DESC", new OnSiteAssessmentRowMapper());
+  public List<OnSiteAssessmentRecord> list(String operator) {
+    return listResults(operator);
+  }
+
+  public List<OnSiteAssessmentRecord> listExecutions(String operator) {
+    List<OnSiteAssessmentRecord> rows =
+        jdbcTemplate.query(baseSql() + " ORDER BY p.id DESC", new OnSiteAssessmentRowMapper(jsonSupport));
+    if (rows.isEmpty()) {
+      return rows;
+    }
+    UserDataScopeService.DataScopeProfile profile = userDataScopeService.resolveProfile(operator);
+    if (profile.allowAll()) {
+      return rows;
+    }
+    Set<Long> accessibleProjectIds =
+        Set.copyOf(
+            jdbcTemplate.query(
+                """
+                SELECT DISTINCT project_register_id
+                FROM project_assessment_member
+                WHERE username = ?
+                """,
+                (rs, rowNum) -> rs.getLong("project_register_id"),
+                operator));
+    return rows.stream()
+        .filter(item -> accessibleProjectIds.contains(item.getProjectRegisterId()))
+        .toList();
+  }
+
+  public List<OnSiteAssessmentRecord> listResults(String operator) {
+    List<OnSiteAssessmentRecord> rows =
+        jdbcTemplate.query(baseSql() + " ORDER BY p.id DESC", new OnSiteAssessmentRowMapper(jsonSupport));
+    if (rows.isEmpty()) {
+      return rows;
+    }
+    UserDataScopeService.DataScopeProfile profile = userDataScopeService.resolveProfile(operator);
+    if (profile.allowAll() || profile.projectViewAll()) {
+      return rows;
+    }
+    Set<Long> managerProjectIds =
+        Set.copyOf(
+            jdbcTemplate.query(
+                """
+                SELECT DISTINCT project_register_id
+                FROM police_register
+                WHERE project_manager_username = ?
+                """,
+                (rs, rowNum) -> rs.getLong("project_register_id"),
+                operator));
+    return rows.stream()
+        .filter(item -> managerProjectIds.contains(item.getProjectRegisterId()))
+        .toList();
   }
 
   public Optional<OnSiteAssessmentRecord> detail(long projectId) {
     List<OnSiteAssessmentRecord> rows =
-        jdbcTemplate.query(baseSql() + " AND p.id = ?", new OnSiteAssessmentRowMapper(), projectId);
+        jdbcTemplate.query(
+            baseSql() + " AND p.id = ?", new OnSiteAssessmentRowMapper(jsonSupport), projectId);
     return rows.stream().findFirst();
   }
 
-  public List<String> listReviewAssignmentCandidates() {
-    return userAccountService.listEnabledUsernames();
-  }
-
-  public ReviewerCandidates listReviewAssignmentCandidatesByRole() {
-    List<String> techRoleCodes =
-        workflowConfigService.listRoleCodesBySlot(
-            NODE_KEY,
-            SLOT_TECH_REVIEWER,
-            List.of(
-                UserAccountService.ROLE_SUPER_ADMIN,
-                UserAccountService.ROLE_REVIEWER,
-                UserAccountService.ROLE_REVIEW_TECH));
-    List<String> reviewerTechRoleCodes =
-        listRoleCodesBySlotWithLegacy(
-            SLOT_CONTENT_REVIEWER_TECH,
-            LEGACY_SLOT_CONTENT_REVIEWER_A,
-            List.of(
-                UserAccountService.ROLE_SUPER_ADMIN,
-                UserAccountService.ROLE_REVIEWER,
-                UserAccountService.ROLE_REVIEW_CONTENT_TECH));
-    List<String> reviewerManagementRoleCodes =
-        listRoleCodesBySlotWithLegacy(
-            SLOT_CONTENT_REVIEWER_MANAGEMENT,
-            LEGACY_SLOT_CONTENT_REVIEWER_B,
-            List.of(
-                UserAccountService.ROLE_SUPER_ADMIN,
-                UserAccountService.ROLE_REVIEWER,
-                UserAccountService.ROLE_REVIEW_CONTENT_MANAGEMENT));
-    List<String> reviewerNetworkRoleCodes =
-        listRoleCodesBySlotWithLegacy(
-            SLOT_CONTENT_REVIEWER_NETWORK,
-            LEGACY_SLOT_CONTENT_REVIEWER_C,
-            List.of(
-                UserAccountService.ROLE_SUPER_ADMIN,
-                UserAccountService.ROLE_REVIEWER,
-                UserAccountService.ROLE_REVIEW_CONTENT_NETWORK));
-
-    return new ReviewerCandidates(
-        listCandidatesByRoles(techRoleCodes),
-        listCandidatesByRoles(reviewerTechRoleCodes),
-        listCandidatesByRoles(reviewerManagementRoleCodes),
-        listCandidatesByRoles(reviewerNetworkRoleCodes));
+  public Optional<OnSiteAssessmentRecord> detailVisible(long projectId, String operator) {
+    Optional<OnSiteAssessmentRecord> row = detail(projectId);
+    if (row.isEmpty()) {
+      return Optional.empty();
+    }
+    return canAccessOnSiteProject(projectId, operator) ? row : Optional.empty();
   }
 
   @Transactional
   public OnSiteAssessmentRecord save(long projectId, OnSiteAssessmentRequest request, String operator) {
     ensureProjectApproved(projectId);
-    String packageKey = trim(request.getPackageObjectKey());
-    validateZipObjectKey(packageKey, false);
+    ensureOnSiteOperationPermitted(projectId, operator);
+    List<String> evidenceFiles = resolveEvidenceFiles(request);
+    validateEvidenceFiles(evidenceFiles, false);
+    String packageKey = resolveLegacyPackageKey(evidenceFiles, request.getPackageObjectKey());
+    String assessmentDetail = trim(request.getAssessmentDetail());
+    String assessmentRemark = trim(request.getAssessmentRemark());
 
     List<Long> ids =
         jdbcTemplate.query(
@@ -135,12 +147,14 @@ public class OnSiteAssessmentService {
       jdbcTemplate.update(
           """
           INSERT INTO on_site_assessment (
-            project_register_id, package_object_key, assessment_detail, status, created_by, updated_by
-          ) VALUES (?, ?, ?, 'DRAFT', ?, ?)
+            project_register_id, package_object_key, evidence_files_json, assessment_detail, assessment_remark, status, created_by, updated_by
+          ) VALUES (?, ?, ?, ?, ?, 'DRAFT', ?, ?)
           """,
           projectId,
           packageKey,
-          trim(request.getAssessmentDetail()),
+          jsonSupport.toJson(evidenceFiles),
+          assessmentDetail,
+          assessmentRemark,
           operator,
           operator);
       workflowTraceService.moveNode(projectId, NODE_KEY, "PENDING", operator);
@@ -150,18 +164,19 @@ public class OnSiteAssessmentService {
       RectificationTarget rectificationTarget = resolveRectificationTarget(projectId);
       String oldStatus =
           jdbcTemplate.queryForObject(
-              "SELECT status FROM on_site_assessment WHERE id = ?",
-              String.class,
-              id);
+              "SELECT status FROM on_site_assessment WHERE id = ?", String.class, id);
+      ensureEditableOnSubmitted(oldStatus, rectificationTarget);
       jdbcTemplate.update(
           """
           UPDATE on_site_assessment
-          SET package_object_key = ?, assessment_detail = ?, updated_by = ?,
+          SET package_object_key = ?, evidence_files_json = ?, assessment_detail = ?, assessment_remark = ?, updated_by = ?,
               status = CASE WHEN status = 'SUBMITTED' THEN 'SUBMITTED' ELSE 'DRAFT' END
           WHERE id = ?
           """,
           packageKey,
-          trim(request.getAssessmentDetail()),
+          jsonSupport.toJson(evidenceFiles),
+          assessmentDetail,
+          assessmentRemark,
           operator,
           id);
       if (rectificationTarget == RectificationTarget.NONE) {
@@ -174,104 +189,21 @@ public class OnSiteAssessmentService {
   }
 
   @Transactional
-  public OnSiteAssessmentRecord saveReviewAssignment(
-      long projectId, QualityReviewAssignmentRequest request, String operator) {
-    ensureProjectApproved(projectId);
-    ensurePackageUploaded(projectId);
-
-    String techReviewer = trim(request.getTechReviewer());
-    String reviewerA = trim(request.getContentReviewerTech());
-    String reviewerB = trim(request.getContentReviewerManagement());
-    String reviewerC = trim(request.getContentReviewerNetwork());
-    validateAssignees(techReviewer, reviewerA, reviewerB, reviewerC);
-
-    List<AssignmentRow> existingRows =
-        jdbcTemplate.query(
-            """
-            SELECT project_register_id, tech_reviewer, content_reviewer_a, content_reviewer_b, content_reviewer_c, version_no
-            FROM workflow_assignment
-            WHERE project_register_id = ?
-            """,
-            (rs, rowNum) ->
-                new AssignmentRow(
-                    rs.getLong("project_register_id"),
-                    rs.getString("tech_reviewer"),
-                    rs.getString("content_reviewer_a"),
-                    rs.getString("content_reviewer_b"),
-                    rs.getString("content_reviewer_c"),
-                    rs.getInt("version_no")),
-            projectId);
-
-    if (existingRows.isEmpty()) {
-      int expected = request.getVersionNo() == null ? 0 : request.getVersionNo();
-      if (expected != 0) {
-        throw new ResponseStatusException(HttpStatus.CONFLICT, "assignment already changed, refresh required");
-      }
-      jdbcTemplate.update(
-          """
-          INSERT INTO workflow_assignment (
-            project_register_id, tech_reviewer, content_reviewer_a, content_reviewer_b, content_reviewer_c, version_no, updated_by
-          ) VALUES (?, ?, ?, ?, ?, 1, ?)
-          """,
-          projectId,
-          techReviewer,
-          reviewerA,
-          reviewerB,
-          reviewerC,
-          operator);
-      workflowTraceService.appendAction(projectId, "ON_SITE_REVIEW_ASSIGN_SAVE", null, "ASSIGNED", operator, "");
-    } else {
-      AssignmentRow old = existingRows.get(0);
-      int expected = request.getVersionNo() == null ? old.versionNo() : request.getVersionNo();
-      int updated =
-          jdbcTemplate.update(
-              """
-              UPDATE workflow_assignment
-              SET tech_reviewer = ?, content_reviewer_a = ?, content_reviewer_b = ?, content_reviewer_c = ?,
-                  version_no = version_no + 1, updated_by = ?
-              WHERE project_register_id = ? AND version_no = ?
-              """,
-              techReviewer,
-              reviewerA,
-              reviewerB,
-              reviewerC,
-              operator,
-              projectId,
-              expected);
-      if (updated == 0) {
-        throw new ResponseStatusException(HttpStatus.CONFLICT, "assignment already changed, refresh required");
-      }
-      workflowTraceService.appendAction(
-          projectId,
-          "ON_SITE_REVIEW_ASSIGN_SAVE",
-          "v" + old.versionNo(),
-          "v" + (old.versionNo() + 1),
-          operator,
-          "");
-    }
-
-    return detail(projectId).orElseThrow();
-  }
-  @Transactional
   public OnSiteAssessmentRecord submit(long projectId, String operator) {
     ensureProjectApproved(projectId);
+    ensureOnSiteOperationPermitted(projectId, operator);
     if (!policeRegisterService.isSubmitted(projectId)) {
       throw new ResponseStatusException(HttpStatus.CONFLICT, "police register must be submitted first");
     }
 
-    OnSiteAssessmentRecord detail = detail(projectId).orElse(null);
-    if (detail == null || detail.getId() == null) {
+    OnSiteAssessmentRecord row = detail(projectId).orElse(null);
+    if (row == null || row.getId() == null) {
       throw new ResponseStatusException(HttpStatus.CONFLICT, "on-site assessment draft is required before submit");
     }
 
-    validateZipObjectKey(detail.getPackageObjectKey(), true);
-    AssignmentRow assignment = loadAssignment(projectId);
-    validateAssignees(
-        assignment.techReviewer(),
-        assignment.contentReviewerA(),
-        assignment.contentReviewerB(),
-        assignment.contentReviewerC());
+    validateEvidenceFiles(row.getEvidenceFiles(), true);
     RectificationTarget rectificationTarget = resolveRectificationTarget(projectId);
+    ensureEditableOnSubmitted(row.getStatus(), rectificationTarget);
 
     jdbcTemplate.update(
         """
@@ -284,21 +216,21 @@ public class OnSiteAssessmentService {
     workflowTraceService.appendAction(
         projectId,
         "ON_SITE_ASSESSMENT_SUBMIT",
-        detail.getStatus(),
+        row.getStatus(),
         "SUBMITTED",
         operator,
         "");
-    upsertQualityGatewayApproved(projectId, operator);
     submitToNextReviewStage(projectId, operator, rectificationTarget);
 
     ProjectOwner projectOwner = loadProjectOwner(projectId);
     notificationService.createForUser(
         projectOwner.createdBy(),
         "现场测评已提交",
-        "项目[" + projectOwner.applicationName() + "]现场测评已提交，已进入后续审核流程。",
+        "项目[" + projectOwner.applicationName() + "]现场测评已提交，流程已进入审核阶段。",
         "ON_SITE_ASSESSMENT_SUBMITTED",
         ProjectRegisterService.BIZ_TYPE,
         projectId);
+
     return detail(projectId).orElseThrow();
   }
 
@@ -375,22 +307,45 @@ public class OnSiteAssessmentService {
     return RectificationTarget.NONE;
   }
 
-  private List<String> listCandidatesByRoles(List<String> roles) {
-    List<String> rows = userAccountService.listEnabledUsernamesByRoles(roles);
-    if (!rows.isEmpty()) {
-      return rows;
+  private boolean canAccessOnSiteProject(long projectId, String operator) {
+    if (operator == null || operator.isBlank()) {
+      return false;
     }
-    return userAccountService.listEnabledUsernames();
+    UserDataScopeService.DataScopeProfile profile = userDataScopeService.resolveProfile(operator);
+    if (profile.allowAll() || profile.projectViewAll()) {
+      return true;
+    }
+    Integer assessmentMemberCount =
+        jdbcTemplate.queryForObject(
+            """
+            SELECT COUNT(1)
+            FROM project_assessment_member
+            WHERE project_register_id = ? AND username = ?
+            """,
+            Integer.class,
+            projectId,
+            operator);
+    if (assessmentMemberCount != null && assessmentMemberCount > 0) {
+      return true;
+    }
+    Integer managerCount =
+        jdbcTemplate.queryForObject(
+            """
+            SELECT COUNT(1)
+            FROM police_register
+            WHERE project_register_id = ? AND project_manager_username = ?
+            """,
+            Integer.class,
+            projectId,
+            operator);
+    return managerCount != null && managerCount > 0;
   }
 
-  private List<String> listRoleCodesBySlotWithLegacy(
-      String primarySlotKey, String legacySlotKey, List<String> fallbackRoleCodes) {
-    List<String> primary =
-        workflowConfigService.listRoleCodesBySlot(NODE_KEY, primarySlotKey, List.of());
-    if (!primary.isEmpty()) {
-      return primary;
+  private void ensureOnSiteOperationPermitted(long projectId, String operator) {
+    if (canAccessOnSiteProject(projectId, operator)) {
+      return;
     }
-    return workflowConfigService.listRoleCodesBySlot(NODE_KEY, legacySlotKey, fallbackRoleCodes);
+    throw new ResponseStatusException(HttpStatus.FORBIDDEN, "current user has no permission for this project");
   }
 
   private void ensureProjectApproved(long projectId) {
@@ -411,94 +366,65 @@ public class OnSiteAssessmentService {
     }
   }
 
-  private void ensurePackageUploaded(long projectId) {
-    List<String> rows =
-        jdbcTemplate.query(
-            "SELECT package_object_key FROM on_site_assessment WHERE project_register_id = ?",
-            (rs, rowNum) -> rs.getString("package_object_key"),
-            projectId);
-    if (rows.isEmpty()) {
-      throw new ResponseStatusException(HttpStatus.CONFLICT, "save on-site package before assignment");
-    }
-    validateZipObjectKey(rows.get(0), true);
-  }
-
-  private void validateZipObjectKey(String packageKey, boolean required) {
-    if (packageKey == null || packageKey.isBlank()) {
+  private void validateEvidenceFiles(List<String> evidenceFiles, boolean required) {
+    if (evidenceFiles == null || evidenceFiles.isEmpty()) {
       if (required) {
-        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "zip package object key is required");
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "at least one evidence file is required");
       }
       return;
     }
-    if (!packageKey.toLowerCase(Locale.ROOT).endsWith(".zip")) {
-      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "only zip package is allowed");
-    }
-  }
-
-  private AssignmentRow loadAssignment(long projectId) {
-    List<AssignmentRow> rows =
-        jdbcTemplate.query(
-            """
-            SELECT project_register_id, tech_reviewer, content_reviewer_a, content_reviewer_b, content_reviewer_c, version_no
-            FROM workflow_assignment
-            WHERE project_register_id = ?
-            """,
-            (rs, rowNum) ->
-                new AssignmentRow(
-                    rs.getLong("project_register_id"),
-                    rs.getString("tech_reviewer"),
-                    rs.getString("content_reviewer_a"),
-                    rs.getString("content_reviewer_b"),
-                    rs.getString("content_reviewer_c"),
-                    rs.getInt("version_no")),
-            projectId);
-    if (rows.isEmpty()) {
-      throw new ResponseStatusException(HttpStatus.CONFLICT, "assign reviewers before submit");
-    }
-    return rows.get(0);
-  }
-
-  private void validateAssignees(String techReviewer, String reviewerA, String reviewerB, String reviewerC) {
-    if (techReviewer == null || reviewerA == null || reviewerB == null || reviewerC == null) {
-      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "four reviewers are required");
-    }
-    Set<String> enabledUsers = Set.copyOf(userAccountService.listEnabledUsernames());
-    for (String username : List.of(techReviewer, reviewerA, reviewerB, reviewerC)) {
-      if (!enabledUsers.contains(username)) {
-        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "assignee user not enabled: " + username);
+    for (String objectKey : evidenceFiles) {
+      if (objectKey == null || objectKey.isBlank()) {
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "evidence object key is invalid");
+      }
+      if (objectKey.trim().length() > 512) {
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "evidence object key length exceeds 512");
       }
     }
   }
 
-  private void upsertQualityGatewayApproved(long projectId, String operator) {
-    List<Long> rows =
-        jdbcTemplate.query(
-            "SELECT id FROM quality_review_apply WHERE project_register_id = ?",
-            (rs, rowNum) -> rs.getLong("id"),
-            projectId);
-    if (rows.isEmpty()) {
-      jdbcTemplate.update(
-          """
-          INSERT INTO quality_review_apply (
-            project_register_id, status, applied_by, submitted_at, finished_at, updated_by
-          ) VALUES (?, 'APPROVED', ?, NOW(), NOW(), ?)
-          """,
-          projectId,
-          operator,
-          operator);
+  private List<String> resolveEvidenceFiles(OnSiteAssessmentRequest request) {
+    LinkedHashSet<String> set = new LinkedHashSet<>();
+    if (request.getEvidenceFiles() != null) {
+      for (String objectKey : request.getEvidenceFiles()) {
+        String normalized = trim(objectKey);
+        if (normalized != null) {
+          set.add(normalized);
+        }
+      }
+    }
+    String packageObjectKey = trim(request.getPackageObjectKey());
+    if (packageObjectKey != null) {
+      set.add(packageObjectKey);
+    }
+    return new ArrayList<>(set);
+  }
+
+  private String resolveLegacyPackageKey(List<String> evidenceFiles, String requestPackageObjectKey) {
+    String explicit = trim(requestPackageObjectKey);
+    if (explicit != null) {
+      return explicit;
+    }
+    if (evidenceFiles == null || evidenceFiles.isEmpty()) {
+      return null;
+    }
+    for (String objectKey : evidenceFiles) {
+      if (objectKey != null && objectKey.toLowerCase(Locale.ROOT).endsWith(".zip")) {
+        return objectKey;
+      }
+    }
+    return evidenceFiles.get(0);
+  }
+
+  private void ensureEditableOnSubmitted(String onSiteStatus, RectificationTarget rectificationTarget) {
+    if (!"SUBMITTED".equalsIgnoreCase(onSiteStatus)) {
       return;
     }
-    long applyId = rows.get(0);
-    jdbcTemplate.update(
-        """
-        UPDATE quality_review_apply
-        SET status = 'APPROVED', applied_by = ?, submitted_at = COALESCE(submitted_at, NOW()), finished_at = NOW(), updated_by = ?
-        WHERE id = ?
-        """,
-        operator,
-        operator,
-        applyId);
-    jdbcTemplate.update("DELETE FROM quality_review_task WHERE quality_apply_id = ?", applyId);
+    if (rectificationTarget != RectificationTarget.NONE) {
+      return;
+    }
+    throw new ResponseStatusException(
+        HttpStatus.CONFLICT, "现场测评正在审核中，仅在“需要整改”时允许编辑并重新提交");
   }
 
   private ProjectOwner loadProjectOwner(long projectId) {
@@ -534,13 +460,15 @@ public class OnSiteAssessmentService {
           p.status project_status,
           COALESCE(osa.status, 'DRAFT') status,
           osa.package_object_key,
-          wa.tech_reviewer,
-          wa.content_reviewer_a,
-          wa.content_reviewer_b,
-          wa.content_reviewer_c,
-          COALESCE(wa.version_no, 0) assignment_version_no,
+          osa.evidence_files_json,
+          NULL tech_reviewer,
+          NULL content_reviewer_a,
+          NULL content_reviewer_b,
+          NULL content_reviewer_c,
+          0 assignment_version_no,
           osa.assessment_detail,
-          osa.created_by,
+          osa.assessment_remark,
+          COALESCE(osa.created_by, p.created_by) created_by,
           osa.updated_by,
           osa.created_at,
           osa.updated_at,
@@ -602,13 +530,18 @@ public class OnSiteAssessmentService {
           END rectification_at
         FROM project_register p
         LEFT JOIN on_site_assessment osa ON osa.project_register_id = p.id
-        LEFT JOIN workflow_assignment wa ON wa.project_register_id = p.id
         LEFT JOIN workflow_instance wi ON wi.biz_type = 'PROJECT_REGISTER' AND wi.biz_id = p.id
         WHERE p.deleted_flag = 0 AND p.status = 'APPROVED'
         """;
   }
 
   private static class OnSiteAssessmentRowMapper implements RowMapper<OnSiteAssessmentRecord> {
+    private final JsonSupport jsonSupport;
+
+    private OnSiteAssessmentRowMapper(JsonSupport jsonSupport) {
+      this.jsonSupport = jsonSupport;
+    }
+
     @Override
     public OnSiteAssessmentRecord mapRow(ResultSet rs, int rowNum) throws SQLException {
       OnSiteAssessmentRecord record = new OnSiteAssessmentRecord();
@@ -622,12 +555,14 @@ public class OnSiteAssessmentService {
       record.setProjectStatus(rs.getString("project_status"));
       record.setStatus(rs.getString("status"));
       record.setPackageObjectKey(rs.getString("package_object_key"));
+      record.setEvidenceFiles(jsonSupport.fromJsonList(rs.getString("evidence_files_json")));
       record.setTechReviewer(rs.getString("tech_reviewer"));
       record.setContentReviewerA(rs.getString("content_reviewer_a"));
       record.setContentReviewerB(rs.getString("content_reviewer_b"));
       record.setContentReviewerC(rs.getString("content_reviewer_c"));
       record.setAssignmentVersionNo(rs.getInt("assignment_version_no"));
       record.setAssessmentDetail(rs.getString("assessment_detail"));
+      record.setAssessmentRemark(rs.getString("assessment_remark"));
       record.setCreatedBy(rs.getString("created_by"));
       record.setUpdatedBy(rs.getString("updated_by"));
       record.setCreatedAt(stringTimestamp(rs.getTimestamp("created_at")));
@@ -645,14 +580,6 @@ public class OnSiteAssessmentService {
     }
   }
 
-  private record AssignmentRow(
-      long projectRegisterId,
-      String techReviewer,
-      String contentReviewerA,
-      String contentReviewerB,
-      String contentReviewerC,
-      int versionNo) {}
-
   private record WorkflowState(String currentNode, String status) {}
 
   private record ProjectOwner(String createdBy, String applicationName) {}
@@ -663,28 +590,4 @@ public class OnSiteAssessmentService {
     REPORT_CONTENT_REVIEW,
     REPORT_FINAL_REVIEW
   }
-
-  public record ReviewerCandidates(
-      List<String> techReviewers,
-      List<String> contentReviewersTech,
-      List<String> contentReviewersManagement,
-      List<String> contentReviewersNetwork) {
-    @JsonProperty("contentReviewersA")
-    public List<String> getContentReviewersA() {
-      return contentReviewersTech;
-    }
-
-    @JsonProperty("contentReviewersB")
-    public List<String> getContentReviewersB() {
-      return contentReviewersManagement;
-    }
-
-    @JsonProperty("contentReviewersC")
-    public List<String> getContentReviewersC() {
-      return contentReviewersNetwork;
-    }
-  }
 }
-
-
-

@@ -39,7 +39,6 @@ public class FileAssetController {
   private static final List<String> PROJECT_TASK_TYPES =
       List.of(
           "PROJECT_REGISTER",
-          "QUALITY_REVIEW",
           "REPORT_TECH_REVIEW",
           "REPORT_CONTENT_REVIEW",
           "REPORT_FINAL_REVIEW");

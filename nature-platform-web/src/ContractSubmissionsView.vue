@@ -3,7 +3,7 @@
     <header class="page-header">
       <div>
         <h2>合同提审</h2>
-        <p>用于合同创建、编辑、提交审核，审核通过后进入合同归档页面处理。</p>
+        <p>用于合同创建、编辑与提交审核；审核通过后请在“合同归档”页面办理归档。</p>
       </div>
       <el-space>
         <el-button v-permission="'contract:view'" :loading="loading" @click="loadAll">刷新</el-button>
@@ -14,9 +14,9 @@
     <el-card class="tip-card">
       <el-alert
         type="info"
-        show-icon
         :closable="false"
-        title="提审链路：合同创建/编辑 -> 提交审核；审核通过后请在“合同归档”页面完成归档。"
+        show-icon
+        title="新建合同时，项目名称会全量模糊检索（最多 5 条）；若完全同名将提示“该项目合同已创建”。"
       />
     </el-card>
 
@@ -41,6 +41,7 @@
         <el-table-column label="操作" min-width="300" fixed="right">
           <template #default="{ row }">
             <el-space>
+              <el-button v-if="row.canViewDetail !== false" size="small" @click="openEntityDetail(row)">详情</el-button>
               <el-button
                 v-permission="'contract:update'"
                 size="small"
@@ -96,7 +97,15 @@
           </el-col>
           <el-col :span="12">
             <el-form-item label="项目名称" required>
-              <el-input v-model="form.projectName" placeholder="请输入项目名称" />
+              <el-autocomplete
+                v-model="form.projectName"
+                clearable
+                :debounce="250"
+                :fetch-suggestions="queryProjectNameSuggestions"
+                placeholder="请输入项目名称"
+                style="width: 100%"
+                @select="selectProjectNameSuggestion"
+              />
             </el-form-item>
           </el-col>
         </el-row>
@@ -138,12 +147,7 @@
                 placeholder="请选择服务年份"
                 style="width: 100%"
               >
-                <el-option
-                  v-for="year in serviceYearOptions"
-                  :key="year"
-                  :label="String(year)"
-                  :value="year"
-                />
+                <el-option v-for="year in serviceYearOptions" :key="year" :label="String(year)" :value="year" />
               </el-select>
             </el-form-item>
           </el-col>
@@ -204,15 +208,17 @@
 <script setup lang="ts">
 /**
  * @input Contract/customer APIs, permission helpers, and Element Plus table/dialog/form widgets
- * @output Contract submission page for list/create/edit/delete/submit-review operations with year selection and payment-status labels
- * @position Contract lifecycle front-half page responsible for draft management and review submission
+ * @output Contract submission page for list/create/edit/delete/submit-review operations with project-name autocomplete and detail-visibility guard
+ * @position Contract lifecycle front-half page responsible for draft management, review submission, and permission-aware detail entry
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 import { onMounted, reactive, ref } from "vue";
+import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   createContract,
   deleteContract,
+  fetchContractProjectNameSuggestions,
   fetchContractSubmissionList,
   submitContractReview,
   updateContract,
@@ -233,6 +239,9 @@ const dialogVisible = ref(false);
 const editingId = ref<number | null>(null);
 const customers = ref<CustomerRecord[]>([]);
 const contracts = ref<ContractRecord[]>([]);
+const projectNameExactExists = ref(false);
+const router = useRouter();
+
 const currentYear = new Date().getFullYear();
 const serviceYearOptions = Array.from({ length: 11 }, (_, index) => currentYear - 1 + index);
 
@@ -301,14 +310,34 @@ function canDelete(status: string) {
   return status === "DRAFT" || status === "REJECTED";
 }
 
+function selectProjectNameSuggestion(item: { value: string }) {
+  form.projectName = item.value || "";
+}
+
+async function queryProjectNameSuggestions(
+  queryString: string,
+  callback: (items: Array<{ value: string }>) => void
+) {
+  const keyword = queryString.trim();
+  if (!keyword) {
+    projectNameExactExists.value = false;
+    callback([]);
+    return;
+  }
+  try {
+    const response = await fetchContractProjectNameSuggestions(keyword, 5);
+    projectNameExactExists.value = response.exactExists;
+    callback((response.items || []).map((item) => ({ value: item })));
+  } catch {
+    callback([]);
+  }
+}
+
 async function loadAll() {
   loading.value = true;
   try {
     contracts.value = await fetchContractSubmissionList();
-    if (
-      hasPermission("customer:view") &&
-      (hasPermission("contract:create") || hasPermission("contract:update"))
-    ) {
+    if (hasPermission("customer:view") && (hasPermission("contract:create") || hasPermission("contract:update"))) {
       customers.value = await fetchCustomers();
     } else {
       customers.value = [];
@@ -321,6 +350,7 @@ async function loadAll() {
 }
 
 function resetForm() {
+  projectNameExactExists.value = false;
   form.customerId = null;
   form.projectName = "";
   form.contactName = "";
@@ -348,6 +378,7 @@ function openCreate() {
 }
 
 function openEdit(row: ContractRecord) {
+  projectNameExactExists.value = false;
   editingId.value = row.id;
   form.customerId = row.customerId;
   form.projectName = row.projectName || "";
@@ -402,6 +433,20 @@ async function saveContract() {
     ElMessage.warning("项目名称不能为空");
     return;
   }
+  if (!editingId.value) {
+    try {
+      const response = await fetchContractProjectNameSuggestions(form.projectName.trim(), 1);
+      if (response.exactExists) {
+        ElMessage.warning("该项目合同已创建，请勿重复新建");
+        return;
+      }
+    } catch {
+      if (projectNameExactExists.value) {
+        ElMessage.warning("该项目合同已创建，请勿重复新建");
+        return;
+      }
+    }
+  }
   if (!form.contactName?.trim()) {
     ElMessage.warning("联系人不能为空");
     return;
@@ -454,8 +499,18 @@ async function saveContract() {
 
 async function submitReview(id: number) {
   try {
+    await ElMessageBox.confirm("确认提交该合同进入审核吗？", "提交确认", {
+      type: "warning",
+      confirmButtonText: "提交",
+      cancelButtonText: "取消"
+    });
+  } catch {
+    return;
+  }
+
+  try {
     await submitContractReview(id);
-    ElMessage.success("已提交审核，请在待办审批中处理");
+    ElMessage.success("提交审核成功");
     await loadAll();
   } catch (error) {
     ElMessage.error(readErrorMessage(error, "提交审核失败"));
@@ -464,9 +519,9 @@ async function submitReview(id: number) {
 
 async function removeContract(id: number) {
   try {
-    await ElMessageBox.confirm("确认删除该合同吗？删除后不可恢复。", "删除确认", {
+    await ElMessageBox.confirm("确认删除该合同草稿吗？删除后可在回收站恢复。", "删除确认", {
       type: "warning",
-      confirmButtonText: "确认",
+      confirmButtonText: "删除",
       cancelButtonText: "取消"
     });
   } catch {
@@ -475,45 +530,22 @@ async function removeContract(id: number) {
 
   try {
     await deleteContract(id);
-    ElMessage.success("合同已删除");
+    ElMessage.success("删除成功");
     await loadAll();
   } catch (error) {
     ElMessage.error(readErrorMessage(error, "删除合同失败"));
   }
 }
 
+function openEntityDetail(row: ContractRecord) {
+  if (row.canViewDetail === false) {
+    ElMessage.warning("当前角色仅可查看列表，无法查看合同详情");
+    return;
+  }
+  void router.push(`/entity-detail/contract/${row.id}`);
+}
+
 onMounted(() => {
-  void loadAll();
+  loadAll();
 });
 </script>
-
-<style scoped>
-.tip-card {
-  border: 1px solid rgba(31, 152, 122, 0.2);
-  background: linear-gradient(90deg, rgba(45, 184, 146, 0.08), rgba(47, 110, 162, 0.04));
-}
-
-.table-card {
-  background: linear-gradient(180deg, #ffffff, #fbfcfc);
-  border: 1px solid rgba(211, 225, 230, 0.86);
-}
-
-.system-items {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.system-item-row {
-  display: grid;
-  grid-template-columns: 130px 1fr auto;
-  gap: 8px;
-}
-
-@media (max-width: 960px) {
-  .system-item-row {
-    grid-template-columns: 1fr;
-  }
-}
-</style>

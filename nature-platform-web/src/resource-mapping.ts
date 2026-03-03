@@ -13,7 +13,9 @@ const exactMap: Record<string, string> = {
   "permission:view": "page.admin-resources",
   "workflow:manage": "page.admin-workflow",
   "workflow-node-rule:manage": "page.admin-workflow",
-  "audit:view": "page.admin-audit-logs"
+  "audit:view": "page.admin-audit-logs",
+  "department:manage": "page.admin-departments",
+  "dingtalk:sync": "page.admin-departments"
 };
 
 export function resolveResourceKey(permissionOrResourceCode: string): string {
@@ -47,9 +49,6 @@ export function resolveResourceKey(permissionOrResourceCode: string): string {
   }
   if (normalized.startsWith("on-site-assessment:")) {
     return "page.on-site-assessments";
-  }
-  if (normalized.startsWith("quality-review:")) {
-    return "page.quality-reviews";
   }
   if (normalized.startsWith("report-tech-review:")) {
     return "page.report-tech-reviews";

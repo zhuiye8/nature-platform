@@ -129,6 +129,27 @@ try {
     -Detail $projectResp.raw
 
   Invoke-E2EApi -Context $context -Method "Post" -Path "/api/v1/project-registers/$projectId/submit-review" -Token $adminToken | Out-Null
+
+  $assessmentMemberResp =
+    Invoke-E2EApi -Context $context `
+      -Method "Put" `
+      -Path "/api/v1/project-registers/$projectId/assessment-members" `
+      -Token $adminToken `
+      -Body @{ usernames = @("admin") }
+  $assessmentMemberCount = 0
+  if ($assessmentMemberResp.status -eq 200 -and
+      $null -ne $assessmentMemberResp.body -and
+      $null -ne $assessmentMemberResp.body.data -and
+      $assessmentMemberResp.body.data.PSObject.Properties.Name -contains "usernames") {
+    $assessmentMemberCount = @($assessmentMemberResp.body.data.usernames).Count
+  }
+  Add-E2EResult -Context $context `
+    -CaseName "project_assessment_members_saved_reject_recovery" `
+    -Expected "200 + usernames non-empty" `
+    -Actual "status=$($assessmentMemberResp.status), count=$assessmentMemberCount" `
+    -Pass ($assessmentMemberResp.status -eq 200 -and $assessmentMemberCount -gt 0) `
+    -Detail $assessmentMemberResp.raw
+
   $projectTodoResp = Invoke-E2EApi -Context $context -Method "Get" -Path "/api/v1/workflow/tasks/todo?type=PROJECT_REGISTER" -Token $adminToken
   $projectTodoRows = @($projectTodoResp.body.data | Where-Object { [long]$_.bizId -eq [long]$projectId })
   if ($projectTodoRows.Count -lt 1) {
@@ -141,6 +162,7 @@ try {
     filingAgency = "agency-police"
     contactName = "officer"
     contactPhone = "13600136000"
+    projectManagerUsername = "reviewer"
     remark = "saved by reject recovery"
   } | Out-Null
   Invoke-E2EApi -Context $context -Method "Post" -Path "/api/v1/police-registers/$projectId/submit" -Token $adminToken | Out-Null
@@ -150,40 +172,6 @@ try {
     assessmentDetail = "on-site assessment by reject recovery"
   } | Out-Null
 
-  $candidatesResp = Invoke-E2EApi -Context $context -Method "Get" -Path "/api/v1/on-site-assessments/reviewer-candidates" -Token $adminToken
-  $candidatesData = $candidatesResp.body.data
-  $techUsers = @($candidatesData.techReviewers)
-  $aUsers = @($candidatesData.contentReviewersTech)
-  $bUsers = @($candidatesData.contentReviewersManagement)
-  $cUsers = @($candidatesData.contentReviewersNetwork)
-  $candidatePass =
-    $candidatesResp.status -eq 200 -and
-    $techUsers.Count -gt 0 -and
-    $aUsers.Count -gt 0 -and
-    $bUsers.Count -gt 0 -and
-    $cUsers.Count -gt 0
-  Add-E2EResult -Context $context `
-    -CaseName "reviewer_candidates_ready_reject_recovery" `
-    -Expected "200 + tech+内容技术/管理/网络 all non-empty" `
-    -Actual "status=$($candidatesResp.status), tech=$($techUsers.Count), A=$($aUsers.Count), B=$($bUsers.Count), C=$($cUsers.Count)" `
-    -Pass $candidatePass `
-    -Detail $candidatesResp.raw
-  if (-not $candidatePass) {
-    throw "reviewer candidates are not ready for reject recovery"
-  }
-
-  $techAssignee = "admin"
-  $contentTechAssignee = "admin"
-  $contentManagementAssignee = "admin"
-  $contentNetworkAssignee = "admin"
-
-  Invoke-E2EApi -Context $context -Method "Put" -Path "/api/v1/on-site-assessments/$projectId/review-assignment" -Token $adminToken -Body @{
-    techReviewer = $techAssignee
-    contentReviewerTech = $contentTechAssignee
-    contentReviewerManagement = $contentManagementAssignee
-    contentReviewerNetwork = $contentNetworkAssignee
-    versionNo = 0
-  } | Out-Null
   Invoke-E2EApi -Context $context -Method "Post" -Path "/api/v1/on-site-assessments/$projectId/submit" -Token $adminToken | Out-Null
 
   $techTodoResp = Invoke-E2EApi -Context $context -Method "Get" -Path "/api/v1/workflow/tasks/todo?type=REPORT_TECH_REVIEW" -Token $adminToken
@@ -345,9 +333,7 @@ try {
     $cleanupSqlLines.Add("DELETE FROM report_content_review_apply WHERE project_register_id = $projectId;") | Out-Null
     $cleanupSqlLines.Add("DELETE FROM report_tech_review_task WHERE project_register_id = $projectId;") | Out-Null
     $cleanupSqlLines.Add("DELETE FROM report_tech_review_apply WHERE project_register_id = $projectId;") | Out-Null
-    $cleanupSqlLines.Add("DELETE FROM quality_review_task WHERE project_register_id = $projectId;") | Out-Null
-    $cleanupSqlLines.Add("DELETE FROM quality_review_apply WHERE project_register_id = $projectId;") | Out-Null
-    $cleanupSqlLines.Add("DELETE FROM workflow_assignment WHERE project_register_id = $projectId;") | Out-Null
+    $cleanupSqlLines.Add("DELETE FROM project_assessment_member WHERE project_register_id = $projectId;") | Out-Null
     $cleanupSqlLines.Add("DELETE FROM on_site_assessment WHERE project_register_id = $projectId;") | Out-Null
     $cleanupSqlLines.Add("DELETE FROM police_register WHERE project_register_id = $projectId;") | Out-Null
     $cleanupSqlLines.Add("DELETE FROM project_system_item WHERE project_register_id = $projectId;") | Out-Null

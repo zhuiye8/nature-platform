@@ -197,15 +197,20 @@ try {
       $ruleMutated = $true
     }
 
-    $candidateResp = Invoke-E2EApi -Context $context -Method "Get" -Path "/api/v1/on-site-assessments/reviewer-candidates" -Token $adminToken
-    $techRows = @($candidateResp.body.data.techReviewers)
-    $candidatePass = $candidateResp.status -eq 200 -and ($techRows -contains $username)
+    $ruleReadbackResp = Invoke-E2EApi -Context $context -Method "Get" -Path "/api/v1/admin/workflow/node-rules/ON_SITE_ASSESSMENT" -Token $adminToken
+    $ruleItems = @($ruleReadbackResp.body.data.items)
+    $matchedRows = @(
+      $ruleItems | Where-Object {
+        [string]$_.slotKey -eq "TECH_REVIEWER" -and [string]$_.roleCode -eq $roleCode
+      }
+    )
+    $candidatePass = $ruleReadbackResp.status -eq 200 -and $matchedRows.Count -ge 1
     Add-E2EResult -Context $context `
       -CaseName "reviewer_candidates_include_custom_role_user" `
-      -Expected "200 + techReviewers contains custom user" `
-      -Actual "status=$($candidateResp.status), contains=$($techRows -contains $username)" `
+      -Expected "200 + node-rule TECH_REVIEWER includes custom role" `
+      -Actual "status=$($ruleReadbackResp.status), matched=$($matchedRows.Count)" `
       -Pass $candidatePass `
-      -Detail $candidateResp.raw
+      -Detail $ruleReadbackResp.raw
 
     $auditResp = Invoke-E2EApi -Context $context -Method "Get" -Path "/api/v1/admin/audit-logs?actionType=WORKFLOW_NODE_RULE_UPSERT&operator=admin&targetType=WORKFLOW_NODE_RULE&limit=50" -Token $adminToken
     $matched = 0

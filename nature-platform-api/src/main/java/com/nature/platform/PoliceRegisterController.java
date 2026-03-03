@@ -33,18 +33,25 @@ public class PoliceRegisterController {
 
   @GetMapping
   public ApiResponse<List<PoliceRegisterRecord>> list(Authentication authentication) {
-    adminAccessService.requirePermission(
-        CurrentUser.username(authentication), BusinessPermissionCodes.POLICE_REGISTER_VIEW);
-    return ApiResponse.success(policeRegisterService.list());
+    String operator = CurrentUser.username(authentication);
+    adminAccessService.requirePermission(operator, BusinessPermissionCodes.POLICE_REGISTER_VIEW);
+    return ApiResponse.success(policeRegisterService.list(operator));
+  }
+
+  @GetMapping("/project-managers")
+  public ApiResponse<List<String>> projectManagerCandidates(Authentication authentication) {
+    String operator = CurrentUser.username(authentication);
+    adminAccessService.requirePermission(operator, BusinessPermissionCodes.POLICE_REGISTER_VIEW);
+    return ApiResponse.success(policeRegisterService.listProjectManagerCandidates());
   }
 
   @GetMapping("/{projectId}")
   public ResponseEntity<ApiResponse<PoliceRegisterRecord>> detail(
       Authentication authentication, @PathVariable long projectId) {
-    adminAccessService.requirePermission(
-        CurrentUser.username(authentication), BusinessPermissionCodes.POLICE_REGISTER_VIEW);
+    String operator = CurrentUser.username(authentication);
+    adminAccessService.requirePermission(operator, BusinessPermissionCodes.POLICE_REGISTER_VIEW);
     return policeRegisterService
-        .detail(projectId)
+        .detailVisible(projectId, operator)
         .map(item -> ResponseEntity.ok(ApiResponse.success(item)))
         .orElseGet(
             () ->

@@ -1,7 +1,7 @@
 /**
  * @input ProcessOverviewService with mocked node-stage services and project register payload
  * @output Unit tests for process overview not-found guard and attachment aggregation behavior
- * @position Process-overview test layer ensuring cross-node snapshot composition remains stable
+ * @position Task-detail aggregate test layer ensuring cross-node snapshot composition remains stable
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 package com.nature.platform;
@@ -23,8 +23,6 @@ class ProcessOverviewServiceTests {
       org.mockito.Mockito.mock(PoliceRegisterService.class);
   private final OnSiteAssessmentService onSiteAssessmentService =
       org.mockito.Mockito.mock(OnSiteAssessmentService.class);
-  private final QualityReviewService qualityReviewService =
-      org.mockito.Mockito.mock(QualityReviewService.class);
   private final ReportTechReviewService reportTechReviewService =
       org.mockito.Mockito.mock(ReportTechReviewService.class);
   private final ReportContentReviewService reportContentReviewService =
@@ -41,7 +39,6 @@ class ProcessOverviewServiceTests {
           projectRegisterService,
           policeRegisterService,
           onSiteAssessmentService,
-          qualityReviewService,
           reportTechReviewService,
           reportContentReviewService,
           reportCompileService,
@@ -88,7 +85,6 @@ class ProcessOverviewServiceTests {
     when(projectRegisterService.findById(projectId)).thenReturn(Optional.of(projectRegister));
     when(policeRegisterService.detail(projectId)).thenReturn(Optional.empty());
     when(onSiteAssessmentService.detail(projectId)).thenReturn(Optional.of(onSite));
-    when(qualityReviewService.detail(projectId)).thenReturn(Optional.empty());
     when(reportTechReviewService.detail(projectId)).thenReturn(Optional.empty());
     when(reportContentReviewService.detail(projectId)).thenReturn(Optional.empty());
     when(reportCompileService.detailAssignment(projectId)).thenReturn(Optional.empty());

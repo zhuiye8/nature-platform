@@ -10,6 +10,8 @@ public class AdminRoleUserOptionRecord {
   private String username;
   private String displayName;
   private boolean enabled;
+  private Long deptId;
+  private String deptName;
 
   public String getUsername() {
     return username;
@@ -33,5 +35,21 @@ public class AdminRoleUserOptionRecord {
 
   public void setEnabled(boolean enabled) {
     this.enabled = enabled;
+  }
+
+  public Long getDeptId() {
+    return deptId;
+  }
+
+  public void setDeptId(Long deptId) {
+    this.deptId = deptId;
+  }
+
+  public String getDeptName() {
+    return deptName;
+  }
+
+  public void setDeptName(String deptName) {
+    this.deptName = deptName;
   }
 }

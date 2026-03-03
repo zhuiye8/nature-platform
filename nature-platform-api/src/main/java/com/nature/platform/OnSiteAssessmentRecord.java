@@ -1,10 +1,13 @@
 /**
  * @input On-site assessment table rows joined with project/workflow summary fields
- * @output OnSiteAssessmentRecord response model for node-8 list/detail APIs with rectification context
- * @position Node-8 read model exposing on-site package, workflow transition status, and latest review-rectification hints
+ * @output OnSiteAssessmentRecord response model for node-8 list/detail APIs with evidence-file and rectification context
+ * @position Node-8 read model exposing on-site evidence attachments, workflow transition status, and latest review-rectification hints
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 package com.nature.platform;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public class OnSiteAssessmentRecord {
   private Long id;
@@ -13,12 +16,14 @@ public class OnSiteAssessmentRecord {
   private String projectStatus;
   private String status;
   private String packageObjectKey;
+  private List<String> evidenceFiles = new ArrayList<>();
   private String techReviewer;
   private String contentReviewerA;
   private String contentReviewerB;
   private String contentReviewerC;
   private int assignmentVersionNo;
   private String assessmentDetail;
+  private String assessmentRemark;
   private String createdBy;
   private String updatedBy;
   private String createdAt;
@@ -77,12 +82,28 @@ public class OnSiteAssessmentRecord {
     this.packageObjectKey = packageObjectKey;
   }
 
+  public List<String> getEvidenceFiles() {
+    return evidenceFiles;
+  }
+
+  public void setEvidenceFiles(List<String> evidenceFiles) {
+    this.evidenceFiles = evidenceFiles == null ? new ArrayList<>() : evidenceFiles;
+  }
+
   public String getAssessmentDetail() {
     return assessmentDetail;
   }
 
   public void setAssessmentDetail(String assessmentDetail) {
     this.assessmentDetail = assessmentDetail;
+  }
+
+  public String getAssessmentRemark() {
+    return assessmentRemark;
+  }
+
+  public void setAssessmentRemark(String assessmentRemark) {
+    this.assessmentRemark = assessmentRemark;
   }
 
   public String getTechReviewer() {

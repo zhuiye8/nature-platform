@@ -29,6 +29,7 @@ export interface MenuTreeNode {
 export interface CurrentUser {
   username: string;
   displayName: string;
+  mustChangePassword: boolean;
   roles: string[];
   resources: string[];
   permissions: string[];
@@ -49,7 +50,24 @@ export async function fetchCurrentUser(): Promise<CurrentUser> {
   return response.data.data;
 }
 
+export async function fetchDingTalkAuthorizeUrl(redirect: string): Promise<string> {
+  const response = await apiClient.get<ApiResponse<{ url: string }>>("/auth/dingtalk/authorize-url", {
+    params: { redirect }
+  });
+  return response.data.data.url;
+}
+
 export async function fetchDingTalkLoginUrl(): Promise<string> {
   const response = await apiClient.get<ApiResponse<{ url: string }>>("/auth/dingtalk/url");
   return response.data.data.url;
+}
+
+export async function dingTalkLogin(authCode: string): Promise<LoginResponse> {
+  const response = await apiClient.post<ApiResponse<LoginResponse>>("/auth/dingtalk/login", { authCode });
+  return response.data.data;
+}
+
+export async function changePassword(newPassword: string): Promise<CurrentUser> {
+  const response = await apiClient.post<ApiResponse<CurrentUser>>("/auth/change-password", { newPassword });
+  return response.data.data;
 }

@@ -40,7 +40,7 @@
         <el-table-column label="操作" min-width="220" fixed="right">
           <template #default="{ row }">
             <el-space>
-              <el-button size="small" @click="openDetail(row)">查看详情</el-button>
+              <el-button v-if="row.canViewDetail !== false" size="small" @click="openDetail(row)">查看详情</el-button>
               <el-button
                 v-permission="'contract:archive'"
                 size="small"
@@ -160,8 +160,8 @@
 <script setup lang="ts">
 /**
  * @input Contract archive list/action APIs, upload API, and Element Plus table/dialog/form widgets
- * @output Contract archive page for listing approved contracts, viewing contract detail snapshots, and submitting archive metadata
- * @position Contract lifecycle back-half page dedicated to archive-stage execution with in-node detail visibility
+ * @output Contract archive page for listing approved contracts, permission-aware detail snapshots, and archive metadata submission
+ * @position Contract lifecycle back-half page dedicated to archive-stage execution with detail-entry visibility control
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 import { onMounted, reactive, ref } from "vue";
@@ -273,6 +273,10 @@ function openArchive(row: ContractRecord) {
 }
 
 function openDetail(row: ContractRecord) {
+  if (row.canViewDetail === false) {
+    ElMessage.warning("当前角色仅可查看列表，无法查看合同详情");
+    return;
+  }
   detailContract.value = row;
   detailDialogVisible.value = true;
 }

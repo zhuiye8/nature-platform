@@ -1,13 +1,15 @@
 <!-- FORMAT-DOC: Update when files in this folder change -->
 
-# platform
+# platform-tests
 
-Backend test folder containing unit-level regression coverage for workflow, numbering, and overview aggregation.
-Current index is maintained for this change set and focuses on updated files.
+Changed-source index for current turn.
 
 ## Files
 
 | File | Role | Responsibilities |
 |---|---|---|
-| ProcessOverviewServiceTests.java | Test | Verifies process-overview not-found guard and aggregated attachment filename projection |
-| WorkflowTaskServiceTests.java | Test | Verifies workflow task permission checks, contract review-detail guard, and task access validation |
+| ProcessOverviewServiceTests.java | Source | Updated in current turn |
+| ProjectRegisterServiceTests.java | Source | Updated in current turn |
+| ReportContentReviewServiceTests.java | Source | Updated in current turn |
+| UserAccountServiceTests.java | Source | Updated in current turn |
+| WorkflowTaskServiceTests.java | Source | Updated in current turn |

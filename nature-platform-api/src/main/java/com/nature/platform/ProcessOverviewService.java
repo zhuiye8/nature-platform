@@ -1,7 +1,7 @@
 /**
- * @input Node-stage services (project/police/on-site/quality/report/material) and project id
+ * @input Node-stage services (project/police/on-site/report/material) and project id
  * @output Aggregated ProcessOverviewRecord snapshot including current workflow state and attachment list
- * @position Read-only application service for workflow current-state detail view across the full project lifecycle
+ * @position Read-only application service for review-detail page across the full project lifecycle
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 package com.nature.platform;
@@ -17,7 +17,6 @@ public class ProcessOverviewService {
   private final ProjectRegisterService projectRegisterService;
   private final PoliceRegisterService policeRegisterService;
   private final OnSiteAssessmentService onSiteAssessmentService;
-  private final QualityReviewService qualityReviewService;
   private final ReportTechReviewService reportTechReviewService;
   private final ReportContentReviewService reportContentReviewService;
   private final ReportCompileService reportCompileService;
@@ -28,7 +27,6 @@ public class ProcessOverviewService {
       ProjectRegisterService projectRegisterService,
       PoliceRegisterService policeRegisterService,
       OnSiteAssessmentService onSiteAssessmentService,
-      QualityReviewService qualityReviewService,
       ReportTechReviewService reportTechReviewService,
       ReportContentReviewService reportContentReviewService,
       ReportCompileService reportCompileService,
@@ -37,7 +35,6 @@ public class ProcessOverviewService {
     this.projectRegisterService = projectRegisterService;
     this.policeRegisterService = policeRegisterService;
     this.onSiteAssessmentService = onSiteAssessmentService;
-    this.qualityReviewService = qualityReviewService;
     this.reportTechReviewService = reportTechReviewService;
     this.reportContentReviewService = reportContentReviewService;
     this.reportCompileService = reportCompileService;
@@ -61,7 +58,6 @@ public class ProcessOverviewService {
     record.setProjectRegister(projectRegister);
     record.setPoliceRegister(policeRegisterService.detail(projectId).orElse(null));
     record.setOnSiteAssessment(onSiteAssessmentService.detail(projectId).orElse(null));
-    record.setQualityReview(qualityReviewService.detail(projectId).orElse(null));
     record.setReportTechReview(reportTechReviewService.detail(projectId).orElse(null));
     record.setReportContentReview(reportContentReviewService.detail(projectId).orElse(null));
     record.setReportCompileAssignment(reportCompileService.detailAssignment(projectId).orElse(null));
@@ -91,14 +87,18 @@ public class ProcessOverviewService {
       index++;
       addAttachmentList(collector, "项目登记", "系统明细" + index + "-备案证明", item.getFilingCertificateFiles());
       addAttachmentList(collector, "项目登记", "系统明细" + index + "-备案表", item.getFilingFormFiles());
-      addAttachmentList(
-          collector, "项目登记", "系统明细" + index + "-定级报告", item.getClassificationReportFiles());
+      addAttachmentList(collector, "项目登记", "系统明细" + index + "-定级报告", item.getClassificationReportFiles());
     }
   }
 
   private void collectOnSiteAttachments(
       OnSiteAssessmentRecord onSiteAssessment, List<ProcessOverviewRecord.AttachmentItem> collector) {
     if (onSiteAssessment == null) {
+      return;
+    }
+    List<String> evidenceFiles = onSiteAssessment.getEvidenceFiles();
+    if (evidenceFiles != null && !evidenceFiles.isEmpty()) {
+      addAttachmentList(collector, "现场测评", "测评附件", evidenceFiles);
       return;
     }
     addAttachment(collector, "现场测评", "测评压缩包", onSiteAssessment.getPackageObjectKey());
@@ -159,3 +159,4 @@ public class ProcessOverviewService {
     return objectKey.substring(slashIndex + 1);
   }
 }
+

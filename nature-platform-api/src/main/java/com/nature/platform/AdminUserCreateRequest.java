@@ -24,6 +24,8 @@ public class AdminUserCreateRequest {
 
   private Boolean enabled;
 
+  private Long deptId;
+
   private List<String> roles = new ArrayList<>();
 
   public String getUsername() {
@@ -56,6 +58,14 @@ public class AdminUserCreateRequest {
 
   public void setEnabled(Boolean enabled) {
     this.enabled = enabled;
+  }
+
+  public Long getDeptId() {
+    return deptId;
+  }
+
+  public void setDeptId(Long deptId) {
+    this.deptId = deptId;
   }
 
   public List<String> getRoles() {

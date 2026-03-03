@@ -14,6 +14,9 @@ public class AdminUserRecord {
   private String displayName;
   private boolean enabled;
   private String sourceType;
+  private Long deptId;
+  private String deptName;
+  private String dingUserId;
   private List<String> roles = new ArrayList<>();
 
   public String getUsername() {
@@ -46,6 +49,30 @@ public class AdminUserRecord {
 
   public void setSourceType(String sourceType) {
     this.sourceType = sourceType;
+  }
+
+  public Long getDeptId() {
+    return deptId;
+  }
+
+  public void setDeptId(Long deptId) {
+    this.deptId = deptId;
+  }
+
+  public String getDeptName() {
+    return deptName;
+  }
+
+  public void setDeptName(String deptName) {
+    this.deptName = deptName;
+  }
+
+  public String getDingUserId() {
+    return dingUserId;
+  }
+
+  public void setDingUserId(String dingUserId) {
+    this.dingUserId = dingUserId;
   }
 
   public List<String> getRoles() {

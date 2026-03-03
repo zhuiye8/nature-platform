@@ -33,6 +33,43 @@
         <el-drawer v-model="mobileMenuVisible" title="导航" size="260px" class="mobile-drawer" append-to-body>
           <AppSidebar :active-path="activeMenu" :collapsed="false" @select="onSelect" />
         </el-drawer>
+
+        <el-dialog
+          :model-value="mustChangePasswordVisible"
+          title="首次登录请设置密码"
+          width="460px"
+          :show-close="false"
+          :close-on-click-modal="false"
+          :close-on-press-escape="false"
+        >
+          <el-form label-width="90px" class="password-form">
+            <el-form-item label="新密码" required>
+              <el-input
+                v-model="passwordForm.newPassword"
+                type="password"
+                show-password
+                placeholder="请设置 6-64 位密码"
+                maxlength="64"
+              />
+            </el-form-item>
+            <el-form-item label="确认密码" required>
+              <el-input
+                v-model="passwordForm.confirmPassword"
+                type="password"
+                show-password
+                placeholder="请再次输入密码"
+                maxlength="64"
+                @keyup.enter="submitPasswordChange"
+              />
+            </el-form-item>
+          </el-form>
+          <template #footer>
+            <el-button @click="logout">退出登录</el-button>
+            <el-button type="primary" :loading="passwordSubmitting" @click="submitPasswordChange">
+              确认设置
+            </el-button>
+          </template>
+        </el-dialog>
       </template>
 
       <router-view v-else />
@@ -41,11 +78,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, reactive, ref, watch } from "vue";
+import { ElMessage } from "element-plus";
 import { useRoute, useRouter } from "vue-router";
 import zhCn from "element-plus/es/locale/lang/zh-cn";
 import { useAuthStore } from "./auth-store";
 import { resolveNavItem } from "./navigation";
+import { changePassword } from "./auth-service";
 import AppSidebar from "./components/layout/AppSidebar.vue";
 import AppTopbar from "./components/layout/AppTopbar.vue";
 import PageContainer from "./components/layout/PageContainer.vue";
@@ -56,8 +95,16 @@ const authStore = useAuthStore();
 
 const sidebarCollapsed = ref(false);
 const mobileMenuVisible = ref(false);
+const passwordSubmitting = ref(false);
+const passwordForm = reactive({
+  newPassword: "",
+  confirmPassword: ""
+});
 
 const showFrame = computed(() => route.path !== "/login" && !!authStore.token);
+const mustChangePasswordVisible = computed(
+  () => showFrame.value && Boolean(authStore.mustChangePassword)
+);
 
 const activeMenu = computed(() => resolveNavItem(route.path)?.path || "/dashboard");
 
@@ -76,8 +123,50 @@ function toggleSidebar() {
 
 function logout() {
   authStore.clearSession();
+  passwordForm.newPassword = "";
+  passwordForm.confirmPassword = "";
   mobileMenuVisible.value = false;
   void router.push("/login");
+}
+
+function readErrorMessage(error: unknown, fallback: string): string {
+  const message = (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
+  return typeof message === "string" && message.trim().length ? message : fallback;
+}
+
+async function submitPasswordChange() {
+  if (!authStore.token || !authStore.username) {
+    return;
+  }
+  if (!passwordForm.newPassword || passwordForm.newPassword.length < 6) {
+    ElMessage.warning("新密码长度至少 6 位");
+    return;
+  }
+  if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+    ElMessage.warning("两次输入的密码不一致");
+    return;
+  }
+
+  passwordSubmitting.value = true;
+  try {
+    const profile = await changePassword(passwordForm.newPassword);
+    authStore.setSession(
+      authStore.token,
+      profile.username || authStore.username,
+      profile.displayName || profile.username || authStore.displayName || authStore.username,
+      profile.roles || authStore.roles,
+      profile.resources || profile.permissions || authStore.resources,
+      profile.menuTree || authStore.menuTree,
+      false
+    );
+    passwordForm.newPassword = "";
+    passwordForm.confirmPassword = "";
+    ElMessage.success("密码设置成功");
+  } catch (error) {
+    ElMessage.error(readErrorMessage(error, "密码设置失败"));
+  } finally {
+    passwordSubmitting.value = false;
+  }
 }
 
 watch(

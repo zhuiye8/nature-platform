@@ -5,9 +5,7 @@
 $ErrorActionPreference = "Stop"
 
 $scripts = @(
-  "reviewer-candidates.ps1",
   "recycle-bin-forbidden.ps1",
-  "assignment-conflict.ps1",
   "notification-unread-delete.ps1",
   "report-review-reject-recovery.ps1",
   "report-tech-reject-recovery.ps1",

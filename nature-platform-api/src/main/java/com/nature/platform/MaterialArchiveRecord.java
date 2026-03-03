@@ -1,7 +1,7 @@
 /**
  * @input material_archive rows joined with final-review/project/workflow status fields
- * @output MaterialArchiveRecord response model for node-16 material archive APIs
- * @position Node-16 read model for report/form archive package and submit completion state
+ * @output MaterialArchiveRecord response model for node-16 material archive APIs with checklist enum codes
+ * @position Node-16 read model for material-status checklist plus report/form archive package and submit completion state
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 package com.nature.platform;
@@ -14,6 +14,7 @@ public class MaterialArchiveRecord {
   private String applicationName;
   private String finalReviewStatus;
   private String onSitePackageObjectKey;
+  private List<String> materialStatusCodes = new ArrayList<>();
   private List<String> reportFiles = new ArrayList<>();
   private List<String> formFiles = new ArrayList<>();
   private String remark;
@@ -53,6 +54,14 @@ public class MaterialArchiveRecord {
 
   public void setOnSitePackageObjectKey(String onSitePackageObjectKey) {
     this.onSitePackageObjectKey = onSitePackageObjectKey;
+  }
+
+  public List<String> getMaterialStatusCodes() {
+    return materialStatusCodes;
+  }
+
+  public void setMaterialStatusCodes(List<String> materialStatusCodes) {
+    this.materialStatusCodes = materialStatusCodes == null ? new ArrayList<>() : materialStatusCodes;
   }
 
   public List<String> getReportFiles() {

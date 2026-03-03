@@ -1,7 +1,7 @@
 /**
  * @input apiClient and ApiResponse from shared HTTP infrastructure
- * @output Node-8 on-site assessment list/detail/save/submit and reviewer-candidate API wrappers with rectification metadata
- * @position Frontend service layer for on-site assessment stage with ZIP package contract and review-rectification context
+ * @output Node-8 on-site assessment list/detail/save/submit API wrappers with rectification metadata
+ * @position Frontend service layer for on-site assessment stage with ZIP package contract and rectification context
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 import { apiClient, type ApiResponse } from "./api";
@@ -12,6 +12,7 @@ export interface OnSiteAssessmentRecord {
   applicationName: string;
   projectStatus: string;
   status: string;
+  evidenceFiles: string[];
   packageObjectKey?: string;
   techReviewer?: string;
   contentReviewerTech?: string;
@@ -22,6 +23,7 @@ export interface OnSiteAssessmentRecord {
   contentReviewerC?: string;
   assignmentVersionNo: number;
   assessmentDetail?: string;
+  assessmentRemark?: string;
   createdBy?: string;
   updatedBy?: string;
   createdAt?: string;
@@ -34,27 +36,13 @@ export interface OnSiteAssessmentRecord {
 }
 
 export interface OnSiteAssessmentPayload {
+  evidenceFiles?: string[];
   packageObjectKey?: string;
   assessmentDetail?: string;
+  assessmentRemark?: string;
 }
 
-export interface ReviewAssignmentPayload {
-  techReviewer: string;
-  contentReviewerTech: string;
-  contentReviewerManagement: string;
-  contentReviewerNetwork: string;
-  versionNo: number;
-}
-
-export interface ReviewerCandidates {
-  techReviewers: string[];
-  contentReviewersTech: string[];
-  contentReviewersManagement: string[];
-  contentReviewersNetwork: string[];
-  contentReviewersA?: string[];
-  contentReviewersB?: string[];
-  contentReviewersC?: string[];
-}
+export type OnSiteAssessmentMode = "execution" | "result";
 
 function normalizeAssessmentRecord(record: OnSiteAssessmentRecord): OnSiteAssessmentRecord {
   const contentReviewerTech = record.contentReviewerTech ?? record.contentReviewerA;
@@ -64,6 +52,7 @@ function normalizeAssessmentRecord(record: OnSiteAssessmentRecord): OnSiteAssess
 
   return {
     ...record,
+    evidenceFiles: Array.isArray(record.evidenceFiles) ? record.evidenceFiles : [],
     contentReviewerTech,
     contentReviewerManagement,
     contentReviewerNetwork,
@@ -73,27 +62,14 @@ function normalizeAssessmentRecord(record: OnSiteAssessmentRecord): OnSiteAssess
   };
 }
 
-function normalizeCandidates(candidates: ReviewerCandidates): ReviewerCandidates {
-  const contentReviewersTech =
-    candidates.contentReviewersTech ?? candidates.contentReviewersA ?? [];
-  const contentReviewersManagement =
-    candidates.contentReviewersManagement ?? candidates.contentReviewersB ?? [];
-  const contentReviewersNetwork =
-    candidates.contentReviewersNetwork ?? candidates.contentReviewersC ?? [];
-
-  return {
-    ...candidates,
-    contentReviewersTech,
-    contentReviewersManagement,
-    contentReviewersNetwork,
-    contentReviewersA: contentReviewersTech,
-    contentReviewersB: contentReviewersManagement,
-    contentReviewersC: contentReviewersNetwork
-  };
-}
-
-export async function fetchOnSiteAssessments(): Promise<OnSiteAssessmentRecord[]> {
-  const response = await apiClient.get<ApiResponse<OnSiteAssessmentRecord[]>>("/on-site-assessments");
+export async function fetchOnSiteAssessments(
+  mode: OnSiteAssessmentMode = "result"
+): Promise<OnSiteAssessmentRecord[]> {
+  const path =
+    mode === "execution"
+      ? "/on-site-assessments/executions"
+      : "/on-site-assessments/results";
+  const response = await apiClient.get<ApiResponse<OnSiteAssessmentRecord[]>>(path);
   return response.data.data.map(normalizeAssessmentRecord);
 }
 
@@ -106,35 +82,12 @@ export async function fetchOnSiteAssessmentDetail(
   return normalizeAssessmentRecord(response.data.data);
 }
 
-export async function fetchOnSiteAssessmentCandidates(): Promise<string[]> {
-  const response = await apiClient.get<ApiResponse<string[]>>("/on-site-assessments/candidates");
-  return response.data.data;
-}
-
-export async function fetchOnSiteAssessmentReviewerCandidates(): Promise<ReviewerCandidates> {
-  const response = await apiClient.get<ApiResponse<ReviewerCandidates>>(
-    "/on-site-assessments/reviewer-candidates"
-  );
-  return normalizeCandidates(response.data.data);
-}
-
 export async function saveOnSiteAssessment(
   projectId: number,
   payload: OnSiteAssessmentPayload
 ): Promise<OnSiteAssessmentRecord> {
   const response = await apiClient.put<ApiResponse<OnSiteAssessmentRecord>>(
     `/on-site-assessments/${projectId}`,
-    payload
-  );
-  return normalizeAssessmentRecord(response.data.data);
-}
-
-export async function saveOnSiteReviewAssignment(
-  projectId: number,
-  payload: ReviewAssignmentPayload
-): Promise<OnSiteAssessmentRecord> {
-  const response = await apiClient.put<ApiResponse<OnSiteAssessmentRecord>>(
-    `/on-site-assessments/${projectId}/review-assignment`,
     payload
   );
   return normalizeAssessmentRecord(response.data.data);

@@ -43,6 +43,8 @@ public class SecurityConfig {
                 auth.requestMatchers(
                         "/actuator/health",
                         "/api/v1/auth/login",
+                        "/api/v1/auth/dingtalk/login",
+                        "/api/v1/auth/dingtalk/authorize-url",
                         "/api/v1/auth/dingtalk/url",
                         "/api/v1/auth/dingtalk/callback")
                     .permitAll()
@@ -78,3 +80,4 @@ public class SecurityConfig {
     objectMapper.writeValue(response.getWriter(), ApiResponse.failure(errorCode, message));
   }
 }
+

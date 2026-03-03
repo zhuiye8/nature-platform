@@ -1,16 +1,19 @@
 /**
  * @input JdbcTemplate storage, JsonSupport, workflow trace helper, and notifications
- * @output Node-16 material archive save/submit operations with report/form file validation
- * @position Material archive service closing report workflow after final review approval
+ * @output Node-16 material archive save/submit operations with checklist enum validation and report/form file validation
+ * @position Material archive service closing report workflow after final review approval and status-checklist persistence
  * @doc-sync Update this header and folder INDEX.md when this file changes.
  */
 package com.nature.platform;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -21,6 +24,19 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class MaterialArchiveService {
   public static final String NODE_KEY = "MATERIAL_ARCHIVE";
+  public static final List<String> MATERIAL_STATUS_CODES =
+      List.of(
+          "MATERIAL_SUMMARY_PENDING_PRINT",
+          "ASSESSMENT_REPORT",
+          "ASSESSMENT_REPORT_REVIEW_RECORD",
+          "VERIFICATION_TEST",
+          "TOOL_SCAN",
+          "ASSESSMENT_PLAN",
+          "ASSESSMENT_PLAN_REVIEW_RECORD",
+          "ON_SITE_ASSESSMENT",
+          "PROCESS_DOCUMENT",
+          "INFORMATION_COLLECTION",
+          "PROJECT_PLAN");
 
   private final JdbcTemplate jdbcTemplate;
   private final JsonSupport jsonSupport;
@@ -51,6 +67,7 @@ public class MaterialArchiveService {
   @Transactional
   public MaterialArchiveRecord save(long projectId, MaterialArchiveRequest request, String operator) {
     ensureFinalReviewApproved(projectId);
+    List<String> materialStatusCodes = normalizeMaterialStatusCodes(request.getMaterialStatusCodes());
 
     List<Long> rows =
         jdbcTemplate.query(
@@ -63,6 +80,7 @@ public class MaterialArchiveService {
           """
           INSERT INTO material_archive (
             project_register_id,
+            material_status_codes_json,
             report_files_json,
             form_files_json,
             remark,
@@ -70,9 +88,10 @@ public class MaterialArchiveService {
             submitted_by,
             submitted_at,
             updated_by
-          ) VALUES (?, ?, ?, ?, 'DRAFT', NULL, NULL, ?)
+          ) VALUES (?, ?, ?, ?, ?, 'DRAFT', NULL, NULL, ?)
           """,
           projectId,
+          jsonSupport.toJson(materialStatusCodes),
           jsonSupport.toJson(request.getReportFiles()),
           jsonSupport.toJson(request.getFormFiles()),
           normalizeText(request.getRemark()),
@@ -81,11 +100,12 @@ public class MaterialArchiveService {
       jdbcTemplate.update(
           """
           UPDATE material_archive
-          SET report_files_json = ?, form_files_json = ?, remark = ?,
+          SET material_status_codes_json = ?, report_files_json = ?, form_files_json = ?, remark = ?,
               status = CASE WHEN status = 'ARCHIVED' THEN 'ARCHIVED' ELSE 'DRAFT' END,
               updated_by = ?
           WHERE id = ?
           """,
+          jsonSupport.toJson(materialStatusCodes),
           jsonSupport.toJson(request.getReportFiles()),
           jsonSupport.toJson(request.getFormFiles()),
           normalizeText(request.getRemark()),
@@ -197,6 +217,28 @@ public class MaterialArchiveService {
     return normalized.isEmpty() ? null : normalized;
   }
 
+  private List<String> normalizeMaterialStatusCodes(List<String> values) {
+    if (values == null || values.isEmpty()) {
+      return List.of();
+    }
+    Set<String> allowed = Set.copyOf(MATERIAL_STATUS_CODES);
+    LinkedHashSet<String> normalized = new LinkedHashSet<>();
+    for (String item : values) {
+      if (item == null) {
+        continue;
+      }
+      String code = item.trim().toUpperCase();
+      if (code.isEmpty()) {
+        continue;
+      }
+      if (!allowed.contains(code)) {
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid material status code: " + code);
+      }
+      normalized.add(code);
+    }
+    return new ArrayList<>(normalized);
+  }
+
   private String baseSql() {
     return """
         SELECT
@@ -204,6 +246,7 @@ public class MaterialArchiveService {
           p.application_name,
           fr.status final_review_status,
           osa.package_object_key on_site_package_object_key,
+          m.material_status_codes_json,
           m.report_files_json,
           m.form_files_json,
           m.remark,
@@ -236,6 +279,7 @@ public class MaterialArchiveService {
       record.setApplicationName(rs.getString("application_name"));
       record.setFinalReviewStatus(rs.getString("final_review_status"));
       record.setOnSitePackageObjectKey(rs.getString("on_site_package_object_key"));
+      record.setMaterialStatusCodes(jsonSupport.fromJsonList(rs.getString("material_status_codes_json")));
       record.setReportFiles(jsonSupport.fromJsonList(rs.getString("report_files_json")));
       record.setFormFiles(jsonSupport.fromJsonList(rs.getString("form_files_json")));
       record.setRemark(rs.getString("remark"));
