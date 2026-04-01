@@ -1494,3 +1494,125 @@ CREATE TABLE IF NOT EXISTS compile_report_file (
     deleted_at          TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS idx_compile_report_file_project ON compile_report_file (project_register_id);
+
+-- ============================================================================
+-- Migration: Session Changes (2026-04-01)
+-- ============================================================================
+
+-- 1. New role: report_assigner (报告分配人)
+INSERT INTO iam_role (role_code, role_name, description) VALUES
+('report_assigner', '报告分配人', '负责审核测评成果并分配编制任务给编制人'),
+('archiver', '归档员', '负责材料归档')
+ON CONFLICT (role_code) DO NOTHING;
+
+-- 2. New permissions
+INSERT INTO iam_permission (permission_code, description, category) VALUES
+('archive:list', '查看归档列表', 'ARCHIVE'),
+('contract:update_financial', '更新合同财务信息', 'CONTRACT')
+ON CONFLICT (permission_code) DO NOTHING;
+
+-- 3. Role-permission mappings (complete set for all roles)
+-- archiver
+INSERT INTO iam_role_permission (role_code, permission_code) VALUES
+('archiver', 'archive:list'), ('archiver', 'archive:submit'),
+('archiver', 'contract:list'), ('archiver', 'contract:view_all'),
+('archiver', 'customer:list'), ('archiver', 'project:list'),
+('archiver', 'wf_task:operate'), ('archiver', 'wf_task:view')
+ON CONFLICT DO NOTHING;
+
+-- report_assigner
+INSERT INTO iam_role_permission (role_code, permission_code) VALUES
+('report_assigner', 'wf_task:view'), ('report_assigner', 'wf_task:operate'),
+('report_assigner', 'report:list'), ('report_assigner', 'report:view'),
+('report_assigner', 'report:assign'), ('report_assigner', 'assessment:view'),
+('report_assigner', 'contract:list'), ('report_assigner', 'customer:list'),
+('report_assigner', 'project:list')
+ON CONFLICT DO NOTHING;
+
+-- commercial: add contract:archive
+INSERT INTO iam_role_permission (role_code, permission_code) VALUES
+('commercial', 'contract:archive'), ('commercial', 'contract:update_financial')
+ON CONFLICT DO NOTHING;
+
+-- project_manager: add archive permissions
+INSERT INTO iam_role_permission (role_code, permission_code) VALUES
+('project_manager', 'archive:list'), ('project_manager', 'archive:submit')
+ON CONFLICT DO NOTHING;
+
+-- sales: add archive permissions
+INSERT INTO iam_role_permission (role_code, permission_code) VALUES
+('sales', 'archive:list'), ('sales', 'archive:submit')
+ON CONFLICT DO NOTHING;
+
+-- super_admin: add archive:list
+INSERT INTO iam_role_permission (role_code, permission_code) VALUES
+('super_admin', 'archive:list'), ('super_admin', 'archive:submit'),
+('super_admin', 'contract:archive')
+ON CONFLICT DO NOTHING;
+
+-- 4. Workflow: REPORT_ASSIGN node
+INSERT INTO wf_node (definition_id, node_key, node_name, node_type, node_order, config)
+SELECT id, 'REPORT_ASSIGN', '报告编制任务分配', 'REVIEW', 58, NULL
+FROM wf_definition WHERE def_key = 'PROJECT_ASSESSMENT_FLOW' AND status = 'ACTIVE'
+ON CONFLICT DO NOTHING;
+
+-- 5. Workflow: REPORT_COMPILE change to REVIEW type
+UPDATE wf_node SET node_type = 'REVIEW', config = NULL
+WHERE node_key = 'REPORT_COMPILE'
+AND definition_id = (SELECT id FROM wf_definition WHERE def_key = 'PROJECT_ASSESSMENT_FLOW' AND status = 'ACTIVE');
+
+-- 6. Workflow transitions updates
+-- CONTENT_REVIEW ALL_APPROVED → REPORT_ASSIGN (was REPORT_COMPILE)
+UPDATE wf_transition SET to_node_key = 'REPORT_ASSIGN'
+WHERE from_node_key = 'CONTENT_REVIEW' AND event = 'ALL_APPROVED'
+AND definition_id = (SELECT id FROM wf_definition WHERE def_key = 'PROJECT_ASSESSMENT_FLOW' AND status = 'ACTIVE');
+
+-- ON_SITE_ASSESSMENT skip path → REPORT_ASSIGN (was REPORT_COMPILE)
+UPDATE wf_transition SET to_node_key = 'REPORT_ASSIGN'
+WHERE from_node_key = 'ON_SITE_ASSESSMENT' AND to_node_key = 'REPORT_COMPILE'
+AND definition_id = (SELECT id FROM wf_definition WHERE def_key = 'PROJECT_ASSESSMENT_FLOW' AND status = 'ACTIVE');
+
+-- REPORT_ASSIGN → REPORT_COMPILE (APPROVE)
+INSERT INTO wf_transition (definition_id, from_node_key, to_node_key, event, priority)
+SELECT id, 'REPORT_ASSIGN', 'REPORT_COMPILE', 'APPROVE', 0
+FROM wf_definition WHERE def_key = 'PROJECT_ASSESSMENT_FLOW' AND status = 'ACTIVE'
+ON CONFLICT DO NOTHING;
+
+-- REPORT_ASSIGN → ON_SITE_ASSESSMENT (REJECT/review fallback)
+INSERT INTO wf_transition (definition_id, from_node_key, to_node_key, event, priority)
+SELECT id, 'REPORT_ASSIGN', 'ON_SITE_ASSESSMENT', 'REJECT', 0
+FROM wf_definition WHERE def_key = 'PROJECT_ASSESSMENT_FLOW' AND status = 'ACTIVE'
+ON CONFLICT DO NOTHING;
+
+-- REPORT_COMPILE → FINAL_REVIEW (change event from SUBMIT to APPROVE)
+UPDATE wf_transition SET event = 'APPROVE'
+WHERE from_node_key = 'REPORT_COMPILE' AND to_node_key = 'FINAL_REVIEW'
+AND definition_id = (SELECT id FROM wf_definition WHERE def_key = 'PROJECT_ASSESSMENT_FLOW' AND status = 'ACTIVE');
+
+-- 7. Assignment rules
+INSERT INTO wf_assignment_rule (node_key, slot_key, slot_label, role_code, priority) VALUES
+('REPORT_ASSIGN', 'ASSIGNER', '报告分配人', 'report_assigner', 10),
+('REPORT_ASSIGN', 'ASSIGNER', '报告分配人', 'super_admin', 99),
+('MATERIAL_ARCHIVE', 'ARCHIVER', '材料归档人', 'project_manager', 5),
+('MATERIAL_ARCHIVE', 'ARCHIVER', '材料归档人', 'sales', 5)
+ON CONFLICT DO NOTHING;
+
+-- Remove archiver from CONTRACT_ARCHIVE (only commercial handles it)
+DELETE FROM wf_assignment_rule WHERE node_key = 'CONTRACT_ARCHIVE' AND role_code = 'archiver';
+
+-- 8. Opinion templates for REPORT_ASSIGN
+INSERT INTO review_opinion_template (node_key, slot_key, action_type, template_text, sort_order) VALUES
+('REPORT_ASSIGN', NULL, 'APPROVE', '测评成果审核通过，分配编制任务', 140),
+('REPORT_ASSIGN', NULL, 'REVIEW', '测评成果存在问题，请修改后重新提交', 150)
+ON CONFLICT DO NOTHING;
+
+-- 9. Contract table: drop deprecated columns
+ALTER TABLE contract DROP COLUMN IF EXISTS project_name;
+ALTER TABLE contract DROP COLUMN IF EXISTS application_form_no;
+
+-- 10. Project register: add application_no
+ALTER TABLE project_register ADD COLUMN IF NOT EXISTS application_no VARCHAR(32);
+
+-- 11. Material archive: add file_count and storage_location
+ALTER TABLE material_archive ADD COLUMN IF NOT EXISTS file_count INTEGER;
+ALTER TABLE material_archive ADD COLUMN IF NOT EXISTS storage_location VARCHAR(500);
