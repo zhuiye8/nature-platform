@@ -8,11 +8,30 @@
 BEGIN;
 
 -- ============================================================================
--- 1. 删除旧测试用户（保留 admin）
+-- 1. 清理旧数据和测试用户（保留 admin）
 -- ============================================================================
-DELETE FROM user_role WHERE user_id IN (
-  SELECT id FROM user_account WHERE username NOT IN ('admin')
-);
+-- 先清理有外键引用 user_account 的表
+DELETE FROM system_notification WHERE receiver_id IN (SELECT id FROM user_account WHERE username NOT IN ('admin'));
+DELETE FROM project_member WHERE user_id IN (SELECT id FROM user_account WHERE username NOT IN ('admin'));
+DELETE FROM field_change_log WHERE operator_id IN (SELECT id FROM user_account WHERE username NOT IN ('admin'));
+-- 清理业务数据（测试数据）
+DELETE FROM wf_action_log;
+DELETE FROM wf_task;
+DELETE FROM wf_instance;
+DELETE FROM review_opinion;
+DELETE FROM assessment_file;
+DELETE FROM compile_report_file;
+DELETE FROM on_site_assessment;
+DELETE FROM material_archive;
+DELETE FROM police_register;
+DELETE FROM project_system_item;
+DELETE FROM project_register;
+DELETE FROM contract_system_item;
+DELETE FROM contract_serial;
+DELETE FROM contract;
+DELETE FROM file_attachment;
+-- 清理用户
+DELETE FROM user_role WHERE user_id IN (SELECT id FROM user_account WHERE username NOT IN ('admin'));
 DELETE FROM user_account WHERE username NOT IN ('admin');
 
 -- ============================================================================

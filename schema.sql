@@ -619,7 +619,6 @@ CREATE TABLE contract (
         -- Auto-generated: customer + systems + service years
 
     -- Business fields
-    project_name    VARCHAR(255)  NOT NULL,
     payment_company VARCHAR(255)  NULL,
     payment_amount  DECIMAL(18,2) NULL,
     payment_method  VARCHAR(128)  NULL,
@@ -632,7 +631,6 @@ CREATE TABLE contract (
     service_years   JSONB         NOT NULL DEFAULT '[]',
         -- Array of years: [2026, 2027, 2028]
     service_year_detail TEXT      NULL,
-    application_form_no VARCHAR(64) NULL,
 
     -- Financial
     payment_status  VARCHAR(32)   NOT NULL DEFAULT 'UNPAID',
