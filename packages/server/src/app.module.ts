@@ -25,7 +25,7 @@ import { CompileFileModule } from './modules/compile-file/compile-file.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: '../../.env',
+      envFilePath: ['.env', '../../.env'],
     }),
     EventEmitterModule.forRoot(),
     DatabaseModule,

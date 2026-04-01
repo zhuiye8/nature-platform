@@ -467,8 +467,8 @@ CREATE TABLE wf_instance (
     CONSTRAINT uk_wf_instance_biz UNIQUE (biz_type, biz_id)
 );
 
-CREATE INDEX idx_wf_instance_status ON wf_instance (biz_type, status, updated_at);
 ALTER TABLE wf_instance ADD COLUMN updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+CREATE INDEX idx_wf_instance_status ON wf_instance (biz_type, status, updated_at);
 
 COMMENT ON TABLE wf_instance IS 'Active workflow instances. Bound to a specific definition version. One instance per business record.';
 
