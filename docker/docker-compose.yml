@@ -54,13 +54,6 @@ services:
       timeout: 5s
       retries: 5
 
-  gotenberg:
-    image: gotenberg/gotenberg:8
-    container_name: nature-gotenberg
-    restart: unless-stopped
-    ports:
-      - "3011:3000"
-
 volumes:
   nature_pgdata:
   nature_redis:
