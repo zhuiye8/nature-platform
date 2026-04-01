@@ -618,8 +618,14 @@ CREATE TABLE contract (
     contract_name   VARCHAR(500)  NULL,
         -- Auto-generated: customer + systems + service years
 
+    -- Contact info
+    contact_name    VARCHAR(64)   NULL,
+    contact_phone   VARCHAR(32)   NULL,
+
     -- Business fields
     payment_company VARCHAR(255)  NULL,
+    payer_type      VARCHAR(16)   NULL,
+    payer_id        BIGINT        NULL,
     payment_amount  DECIMAL(18,2) NULL,
     payment_method  VARCHAR(128)  NULL,
     partner_name    VARCHAR(255)  NULL,
@@ -634,7 +640,7 @@ CREATE TABLE contract (
 
     -- Financial
     payment_status  VARCHAR(32)   NOT NULL DEFAULT 'UNPAID',
-        -- UNPAID | PARTIAL | PAID
+    payment_remark  TEXT          NULL,
     signed_at       TIMESTAMPTZ   NULL,
 
     -- Archive fields (filled by commercial role at archive step)
@@ -643,6 +649,7 @@ CREATE TABLE contract (
     file_count      INT           NULL,
     storage_location VARCHAR(255) NULL,
     archive_remark  TEXT          NULL,
+    archived_by     BIGINT        NULL,
     scan_file_url   VARCHAR(512)  NULL,
 
     -- Workflow status
@@ -704,8 +711,12 @@ CREATE TABLE project_register (
     contract_year   INT           NOT NULL,
         -- Which service year this project covers
     application_name VARCHAR(500) NOT NULL,
-        -- Auto-generated display name
+    application_no  VARCHAR(32)   NULL,
+    remark          TEXT          NULL,
     status          VARCHAR(32)   NOT NULL DEFAULT 'DRAFT',
+
+    compiled_by     BIGINT        NULL,
+    compiled_at     TIMESTAMPTZ   NULL,
         -- DRAFT | SUBMITTED | APPROVED | REJECTED
 
     -- Audit + Soft delete
@@ -851,9 +862,10 @@ CREATE TABLE material_archive (
     project_register_id BIGINT    NOT NULL,
     material_status_codes JSONB   NOT NULL DEFAULT '[]',
         -- Checklist of material statuses: ["REPORT_PRINTED", "FORM_SIGNED", ...]
+    file_count      INTEGER       NULL,
+    storage_location VARCHAR(500) NULL,
     remark          VARCHAR(1000) NULL,
     status          VARCHAR(32)   NOT NULL DEFAULT 'DRAFT',
-        -- DRAFT | SUBMITTED | ARCHIVED
 
     -- Audit
     submitted_by    BIGINT        NULL,
@@ -1006,6 +1018,11 @@ INSERT INTO iam_role_permission (role_code, permission_code) VALUES
     ('sales', 'project:create'),
     ('sales', 'project:update'),
     ('sales', 'project:delete'),
+    ('sales', 'partner:list'),
+    ('sales', 'partner:create'),
+    ('sales', 'partner:update'),
+    ('sales', 'partner:delete'),
+    ('sales', 'user:list'),
     ('sales', 'wf_task:view');
 
 -- Commercial role permissions
