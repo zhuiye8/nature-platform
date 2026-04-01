@@ -110,7 +110,7 @@ export const statusLabel: Record<string, string> = {
 
   // ── 节点类型 node_type ──
   SIMPLE: '简单节点',
-  REVIEW: '审核节点',
+  // REVIEW: 已在审核操作中定义为'复核'，避免重复 key
   PARALLEL_REVIEW: '并行审核',
   MULTI_ASSIGNEE: '多人协作',
 
