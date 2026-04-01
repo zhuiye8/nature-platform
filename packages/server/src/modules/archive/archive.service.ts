@@ -1,0 +1,424 @@
+import {
+  Inject,
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
+import { eq, and, or, desc, count, inArray } from 'drizzle-orm';
+import { DRIZZLE, DrizzleDB } from '../../database/database.module';
+import {
+  materialArchive,
+  projectRegister,
+  projectMember,
+  projectSystemItem,
+  contract,
+  customer,
+} from '../../database/schema/business';
+import { wfInstance, wfTask } from '../../database/schema/workflow';
+import { userAccount } from '../../database/schema/user';
+import { userRole } from '../../database/schema/iam';
+import { WorkflowService } from '../workflow/workflow.service';
+import { SubmitArchiveDto, QueryArchiveDto } from './dto/archive.dto';
+
+@Injectable()
+export class ArchiveService {
+  constructor(
+    @Inject(DRIZZLE) private readonly db: DrizzleDB,
+    private readonly workflowService: WorkflowService,
+  ) {}
+
+  // -----------------------------------------------------------------------
+  // List archives — shows projects at MATERIAL_ARCHIVE node or completed
+  // -----------------------------------------------------------------------
+  async findPage(query: QueryArchiveDto, userId: number) {
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 20;
+
+    // Check user roles for visibility filtering
+    const roles = await this.db
+      .select({ roleCode: userRole.roleCode })
+      .from(userRole)
+      .where(eq(userRole.userId, userId));
+    const roleCodes = roles.map((r) => r.roleCode);
+    const isSuperAdmin = roleCodes.includes('super_admin');
+    const isArchiver = roleCodes.includes('archiver');
+    const isPM = roleCodes.includes('project_manager');
+    const isSales = roleCodes.includes('sales');
+
+    // Find projects at MATERIAL_ARCHIVE or COMPLETED
+    const instances = await this.db
+      .select({ bizId: wfInstance.bizId, currentNode: wfInstance.currentNode, wfStatus: wfInstance.status })
+      .from(wfInstance)
+      .where(
+        and(
+          eq(wfInstance.bizType, 'PROJECT_REGISTER'),
+          or(
+            eq(wfInstance.currentNode, 'MATERIAL_ARCHIVE'),
+            eq(wfInstance.status, 'COMPLETED'),
+          ),
+        ),
+      );
+
+    let bizIds = instances.map((i) => i.bizId);
+    if (bizIds.length === 0) {
+      return { list: [], total: 0, page, pageSize };
+    }
+
+    // Visibility filter by role
+    if (!isSuperAdmin && !isArchiver) {
+      const visibleIds = new Set<number>();
+
+      // PM: see projects where they are PM
+      if (isPM) {
+        const pmProjects = await this.db
+          .select({ projectId: projectMember.projectId })
+          .from(projectMember)
+          .where(
+            and(
+              eq(projectMember.userId, userId),
+              eq(projectMember.roleType, 'PM'),
+              eq(projectMember.status, 'ACTIVE'),
+            ),
+          );
+        pmProjects.forEach((p) => visibleIds.add(p.projectId));
+      }
+
+      // Sales: see projects they created
+      if (isSales) {
+        const salesProjects = await this.db
+          .select({ id: projectRegister.id })
+          .from(projectRegister)
+          .where(eq(projectRegister.createdBy, userId));
+        salesProjects.forEach((p) => visibleIds.add(p.id));
+      }
+
+      bizIds = bizIds.filter((id) => visibleIds.has(id));
+      if (bizIds.length === 0) {
+        return { list: [], total: 0, page, pageSize };
+      }
+    }
+
+    const bizNodeMap = new Map(instances.map((i) => [i.bizId, { currentNode: i.currentNode, wfStatus: i.wfStatus }]));
+
+    // Get PM name subquery
+    const pmAlias = this.db
+      .select({
+        projectId: projectMember.projectId,
+        pmName: userAccount.displayName,
+      })
+      .from(projectMember)
+      .innerJoin(userAccount, eq(projectMember.userId, userAccount.id))
+      .where(and(eq(projectMember.roleType, 'PM'), eq(projectMember.status, 'ACTIVE')))
+      .as('pm');
+
+    const rows = await this.db
+      .select({
+        id: projectRegister.id,
+        applicationName: projectRegister.applicationName,
+        contractYear: projectRegister.contractYear,
+        compiledBy: projectRegister.compiledBy,
+        createdBy: projectRegister.createdBy,
+        projectManagerName: pmAlias.pmName,
+      })
+      .from(projectRegister)
+      .leftJoin(pmAlias, eq(projectRegister.id, pmAlias.projectId))
+      .where(inArray(projectRegister.id, bizIds))
+      .orderBy(desc(projectRegister.createdAt))
+      .limit(pageSize)
+      .offset((page - 1) * pageSize);
+
+    // Full 18-item material checklist (卷内清单)
+    const ALL_MATERIAL_CODES = [
+      'CX18-01', 'CX18-02', 'CX18-03', 'CX18-05', 'CX18-06',
+      'CX18-07', 'CX18-09', 'CX18-10', 'CX18-11', 'CX18-12',
+      'CX18-14', 'CX18-17', 'CX17-01', 'CX17-02', 'CX22-02',
+      'CX22-03', 'CX07-01', 'REPORT',
+    ];
+    const MATERIAL_LABELS: Record<string, string> = {
+      'CX18-01': '测评项目计划书', 'CX18-02': '基本情况调查表',
+      'CX18-03': '测评方案', 'CX18-05': '方案评审记录表',
+      'CX18-06': '风险告知书', 'CX18-07': '首次会议签到记录',
+      'CX18-09': '现场测评授权书', 'CX18-10': '安全测试授权书',
+      'CX18-11': '系统状态确认书', 'CX18-12': '测评结果记录',
+      'CX18-14': '末次会议签到记录', 'CX18-17': '文档接收/归还记录',
+      'CX17-01': '设备使用申请表', 'CX17-02': '设备使用表',
+      'CX22-02': '报告评审记录表', 'CX22-03': '资料签收单',
+      'CX07-01': '服务评价表', 'REPORT': '测评报告',
+    };
+    const TOTAL_MATERIALS = ALL_MATERIAL_CODES.length;
+
+    // Enrich with names + archive status
+    const enriched = await Promise.all(
+      rows.map(async (row) => {
+        // Compiler name
+        let compilerName: string | null = null;
+        if (row.compiledBy) {
+          const users = await this.db
+            .select({ displayName: userAccount.displayName })
+            .from(userAccount)
+            .where(eq(userAccount.id, row.compiledBy))
+            .limit(1);
+          compilerName = users[0]?.displayName ?? null;
+        }
+
+        // Sales name (createdBy)
+        let salesName: string | null = null;
+        if (row.createdBy) {
+          const users = await this.db
+            .select({ displayName: userAccount.displayName })
+            .from(userAccount)
+            .where(eq(userAccount.id, row.createdBy))
+            .limit(1);
+          salesName = users[0]?.displayName ?? null;
+        }
+
+        // Archive record
+        const archiveRows = await this.db
+          .select()
+          .from(materialArchive)
+          .where(eq(materialArchive.projectRegisterId, row.id!))
+          .limit(1);
+        const archiveRecord = archiveRows[0] ?? null;
+
+        // Archive status: 待归档 / 未完全归档 / 已归档
+        let archiveStatus = '待归档';
+        if (archiveRecord?.status === 'SUBMITTED') {
+          const items = (archiveRecord.materialStatusCodes ?? []) as any[];
+          // Support both old format (string[]) and new format (object[])
+          const checkedItems = items.filter((item) =>
+            typeof item === 'string' ? true : item?.checked === true,
+          );
+          archiveStatus = checkedItems.length >= TOTAL_MATERIALS ? '已归档' : '未完全归档';
+        }
+
+        // Archiver name
+        let archiverName: string | null = null;
+        if (archiveRecord?.submittedBy) {
+          const users = await this.db
+            .select({ displayName: userAccount.displayName })
+            .from(userAccount)
+            .where(eq(userAccount.id, archiveRecord.submittedBy))
+            .limit(1);
+          archiverName = users[0]?.displayName ?? null;
+        }
+
+        const submittedAt = archiveRecord?.submittedAt ?? null;
+        const wfInfo = bizNodeMap.get(row.id!) || { currentNode: '', wfStatus: '' };
+
+        // Missing materials for quick view (support both old/new format)
+        const rawItems = (archiveRecord?.materialStatusCodes ?? []) as any[];
+        const checkedCodesSet = new Set(
+          rawItems
+            .filter((item) => typeof item === 'string' ? true : item?.checked === true)
+            .map((item) => typeof item === 'string' ? item : item?.code),
+        );
+        const missingMaterials = ALL_MATERIAL_CODES
+          .filter((code) => !checkedCodesSet.has(code))
+          .map((code) => MATERIAL_LABELS[code] || code);
+        const checkedCount = checkedCodesSet.size;
+
+        return {
+          ...row, compilerName, salesName, archiverName,
+          archiveStatus, checkedCount, totalMaterials: TOTAL_MATERIALS,
+          missingMaterials, submittedAt, ...wfInfo,
+        };
+      }),
+    );
+
+    // Filter by archive status if requested
+    const filtered = query.archiveStatus
+      ? enriched.filter((row) => row.archiveStatus === query.archiveStatus)
+      : enriched;
+
+    return { list: filtered, total: filtered.length, page, pageSize };
+  }
+
+  // -----------------------------------------------------------------------
+  // Detail — full project archive with all info
+  // -----------------------------------------------------------------------
+  async findByProjectId(projectRegisterId: number) {
+    // Archive record
+    const archiveRows = await this.db
+      .select()
+      .from(materialArchive)
+      .where(eq(materialArchive.projectRegisterId, projectRegisterId))
+      .limit(1);
+
+    const archive = archiveRows[0] ?? null;
+
+    // Project info
+    const projects = await this.db
+      .select({
+        id: projectRegister.id,
+        applicationName: projectRegister.applicationName,
+        contractYear: projectRegister.contractYear,
+        contractId: projectRegister.contractId,
+        status: projectRegister.status,
+      })
+      .from(projectRegister)
+      .where(eq(projectRegister.id, projectRegisterId))
+      .limit(1);
+
+    const project = projects[0];
+    if (!project) throw new NotFoundException('Project not found');
+
+    // Contract + customer info
+    let contractInfo: any = null;
+    if (project.contractId) {
+      const contracts = await this.db
+        .select({
+          contractNo: contract.contractNo,
+          contractName: contract.contractName,
+          customerName: customer.fullName,
+          paymentAmount: contract.paymentAmount,
+          paymentMethod: contract.paymentMethod,
+          paymentCompany: contract.paymentCompany,
+          performanceCity: contract.performanceCity,
+          paymentStatus: contract.paymentStatus,
+          contractType: contract.contractType,
+        })
+        .from(contract)
+        .leftJoin(customer, eq(contract.customerId, customer.id))
+        .where(eq(contract.id, project.contractId))
+        .limit(1);
+      contractInfo = contracts[0] ?? null;
+    }
+
+    // System items
+    const systemItems = await this.db
+      .select({
+        id: projectSystemItem.id,
+        systemName: projectSystemItem.systemName,
+        securityLevel: projectSystemItem.securityLevel,
+        assessedUnitName: projectSystemItem.assessedUnitName,
+        filingAgency: projectSystemItem.filingAgency,
+        filingCertificateNo: projectSystemItem.filingCertificateNo,
+      })
+      .from(projectSystemItem)
+      .where(
+        and(
+          eq(projectSystemItem.projectRegisterId, projectRegisterId),
+          eq(projectSystemItem.deleted, false),
+        ),
+      )
+      .orderBy(projectSystemItem.sortOrder);
+
+    // Project members
+    const members = await this.db
+      .select({
+        userId: projectMember.userId,
+        roleType: projectMember.roleType,
+        displayName: userAccount.displayName,
+      })
+      .from(projectMember)
+      .innerJoin(userAccount, eq(projectMember.userId, userAccount.id))
+      .where(
+        and(
+          eq(projectMember.projectId, projectRegisterId),
+          eq(projectMember.status, 'ACTIVE'),
+        ),
+      );
+
+    // Workflow status
+    const wfRows = await this.db
+      .select({ currentNode: wfInstance.currentNode, status: wfInstance.status })
+      .from(wfInstance)
+      .where(
+        and(
+          eq(wfInstance.bizType, 'PROJECT_REGISTER'),
+          eq(wfInstance.bizId, projectRegisterId),
+        ),
+      )
+      .limit(1);
+
+    return {
+      archive,
+      project: {
+        ...project,
+        contractInfo,
+        systemItems,
+        members,
+      },
+      workflow: wfRows[0] ?? null,
+    };
+  }
+
+  // -----------------------------------------------------------------------
+  // Submit archive
+  // -----------------------------------------------------------------------
+  async submit(dto: SubmitArchiveDto, userId: number) {
+    const existing = await this.db
+      .select()
+      .from(materialArchive)
+      .where(eq(materialArchive.projectRegisterId, dto.projectRegisterId))
+      .limit(1);
+
+    if (existing[0]) {
+      await this.db
+        .update(materialArchive)
+        .set({
+          materialStatusCodes: dto.materialStatusCodes ?? [],
+          fileCount: dto.fileCount ?? null,
+          storageLocation: dto.storageLocation ?? null,
+          remark: dto.remark ?? null,
+          submittedBy: userId,
+          submittedAt: new Date(),
+          updatedBy: userId,
+          updatedAt: new Date(),
+          status: 'SUBMITTED',
+        })
+        .where(eq(materialArchive.id, existing[0].id));
+    } else {
+      await this.db.insert(materialArchive).values({
+        projectRegisterId: dto.projectRegisterId,
+        materialStatusCodes: dto.materialStatusCodes ?? [],
+        fileCount: dto.fileCount ?? null,
+        storageLocation: dto.storageLocation ?? null,
+        remark: dto.remark ?? null,
+        status: 'SUBMITTED',
+        submittedBy: userId,
+        submittedAt: new Date(),
+        updatedBy: userId,
+      });
+    }
+
+    // Signal MATERIAL_ARCHIVE node
+    const instance = await this.db
+      .select()
+      .from(wfInstance)
+      .where(
+        and(
+          eq(wfInstance.bizType, 'PROJECT_REGISTER'),
+          eq(wfInstance.bizId, dto.projectRegisterId),
+          eq(wfInstance.status, 'RUNNING'),
+        ),
+      )
+      .limit(1);
+
+    if (instance[0] && instance[0].currentNode === 'MATERIAL_ARCHIVE') {
+      const tasks = await this.db
+        .select()
+        .from(wfTask)
+        .where(
+          and(
+            eq(wfTask.instanceId, instance[0].id),
+            eq(wfTask.nodeKey, 'MATERIAL_ARCHIVE'),
+            eq(wfTask.status, 'PENDING'),
+          ),
+        )
+        .limit(1);
+
+      if (tasks[0]) {
+        await this.workflowService.signal(
+          instance[0].id,
+          tasks[0].id,
+          'SUBMIT',
+          dto.remark ?? '材料归档完成',
+          userId,
+        );
+      }
+    }
+
+    return { success: true };
+  }
+}

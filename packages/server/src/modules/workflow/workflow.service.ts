@@ -1,0 +1,1110 @@
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { eq, and, or, ne, desc, isNull, inArray } from 'drizzle-orm';
+import { DRIZZLE, DrizzleDB } from '../../database/database.module';
+import {
+  wfDefinition,
+  wfNode,
+  wfInstance,
+  wfTask,
+  wfActionLog,
+  wfTransition,
+  wfAssignmentRule,
+} from '../../database/schema/workflow';
+import { contract, projectRegister } from '../../database/schema/business';
+import { reviewOpinion } from '../../database/schema/review-opinion';
+import { compileReportFile } from '../../database/schema/assessment-file';
+import { userRole } from '../../database/schema/iam';
+import { NodeHandler, NodeContext } from './handlers/handler.interface';
+import { SimpleHandler } from './handlers/simple.handler';
+import { ReviewHandler } from './handlers/review.handler';
+import { ParallelReviewHandler } from './handlers/parallel-review.handler';
+import { MultiAssigneeHandler } from './handlers/multi-assignee.handler';
+import { AutoHandler } from './handlers/auto.handler';
+import { TransitionResolver } from './transition.resolver';
+
+@Injectable()
+export class WorkflowService {
+  private readonly logger = new Logger(WorkflowService.name);
+  private readonly handlers: Map<string, NodeHandler>;
+
+  constructor(
+    @Inject(DRIZZLE) private readonly db: DrizzleDB,
+    private readonly transitionResolver: TransitionResolver,
+    private readonly eventEmitter: EventEmitter2,
+    simpleHandler: SimpleHandler,
+    reviewHandler: ReviewHandler,
+    parallelReviewHandler: ParallelReviewHandler,
+    multiAssigneeHandler: MultiAssigneeHandler,
+    autoHandler: AutoHandler,
+  ) {
+    this.handlers = new Map<string, NodeHandler>([
+      ['SIMPLE', simpleHandler],
+      ['REVIEW', reviewHandler],
+      ['PARALLEL_REVIEW', parallelReviewHandler],
+      ['MULTI_ASSIGNEE', multiAssigneeHandler],
+      ['AUTO', autoHandler],
+    ]);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Start a new workflow instance
+  // ---------------------------------------------------------------------------
+  async startInstance(
+    defKey: string,
+    bizType: string,
+    bizId: number,
+    startedBy: number,
+    variables?: Record<string, any>,
+  ) {
+    return this.db.transaction(async (tx) => {
+      // 1. Find active definition
+      const defs = await tx
+        .select()
+        .from(wfDefinition)
+        .where(
+          and(
+            eq(wfDefinition.defKey, defKey),
+            eq(wfDefinition.status, 'ACTIVE'),
+          ),
+        )
+        .orderBy(desc(wfDefinition.version))
+        .limit(1);
+
+      const def = defs[0];
+      if (!def) {
+        throw new NotFoundException(
+          `No active workflow definition found for key "${defKey}"`,
+        );
+      }
+
+      // 2. Find the first node via the START transition (from_node_key = '')
+      const startTransitions = await tx
+        .select()
+        .from(wfTransition)
+        .where(
+          and(
+            eq(wfTransition.definitionId, def.id),
+            eq(wfTransition.fromNodeKey, ''),
+          ),
+        )
+        .orderBy(desc(wfTransition.priority))
+        .limit(1);
+
+      const startTransition = startTransitions[0];
+      if (!startTransition) {
+        throw new BadRequestException(
+          `Definition "${defKey}" has no start transition (from_node_key = "")`,
+        );
+      }
+
+      const firstNodeKey = startTransition.toNodeKey;
+
+      // 3. Create instance
+      const instances = await tx
+        .insert(wfInstance)
+        .values({
+          definitionId: def.id,
+          bizType,
+          bizId,
+          currentNode: firstNodeKey,
+          status: 'RUNNING',
+          startedBy,
+          variables: variables ?? null,
+        })
+        .returning();
+
+      const instance = instances[0];
+
+      // 4. Get first node definition
+      const nodeDef = await this.loadNodeDef(tx, def.id, firstNodeKey);
+
+      // 5. Get handler and enter node
+      const handler = this.getHandler(nodeDef.nodeType);
+      const ctx: NodeContext = {
+        db: tx as unknown as DrizzleDB,
+        instance,
+        nodeDef,
+        currentUserId: startedBy,
+      };
+
+      await handler.onEnter(ctx);
+
+      // 5b. Emit task.created events for newly created tasks
+      await this.emitTaskCreatedEvents(
+        tx as unknown as DrizzleDB,
+        instance,
+        nodeDef,
+      );
+
+      // 6. Log START action
+      await tx.insert(wfActionLog).values({
+        instanceId: instance.id,
+        nodeKey: firstNodeKey,
+        action: 'START',
+        fromNode: '',
+        toNode: firstNodeKey,
+        operatorId: startedBy,
+      });
+
+      // 7. If auto node, immediately advance
+      if (nodeDef.nodeType === 'AUTO') {
+        await this.advanceFromAutoNode(tx as unknown as DrizzleDB, instance, nodeDef, startedBy);
+      }
+
+      // Return fresh instance
+      const result = await tx
+        .select()
+        .from(wfInstance)
+        .where(eq(wfInstance.id, instance.id))
+        .limit(1);
+
+      return result[0];
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Signal: perform a task action
+  // ---------------------------------------------------------------------------
+  async signal(
+    instanceId: number,
+    taskId: number,
+    action: string,
+    remark: string | null,
+    operatorId: number,
+    extraData?: Record<string, any>,
+  ) {
+    return this.db.transaction(async (tx) => {
+      const txDb = tx as unknown as DrizzleDB;
+
+      // 1. Load instance
+      const instances = await tx
+        .select()
+        .from(wfInstance)
+        .where(eq(wfInstance.id, instanceId))
+        .limit(1);
+
+      const instance = instances[0];
+      if (!instance) {
+        throw new NotFoundException(`Instance #${instanceId} not found`);
+      }
+      if (instance.status !== 'RUNNING') {
+        throw new BadRequestException(
+          `Instance #${instanceId} is not running (status: ${instance.status})`,
+        );
+      }
+
+      // 2. Load task
+      const tasks = await tx
+        .select()
+        .from(wfTask)
+        .where(eq(wfTask.id, taskId))
+        .limit(1);
+
+      const task = tasks[0];
+      if (!task) {
+        throw new NotFoundException(`Task #${taskId} not found`);
+      }
+      if (task.status !== 'PENDING' && task.status !== 'IN_PROGRESS') {
+        throw new BadRequestException(
+          `Task #${taskId} cannot be actioned (status: ${task.status})`,
+        );
+      }
+      // 3. Load current node definition (before assignee check, need node type)
+      const nodeDef = await this.loadNodeDef(
+        tx,
+        instance.definitionId,
+        instance.currentNode,
+      );
+
+      // Assignee check:
+      // - SIMPLE/AUTO nodes: skip check (business operations, any authorized user can signal)
+      // - REVIEW/PARALLEL_REVIEW: strict check (only assignee or super_admin)
+      // - assigneeId null: allow anyone
+      const isStrictNode = ['REVIEW', 'PARALLEL_REVIEW'].includes(nodeDef.nodeType);
+      if (isStrictNode && task.assigneeId && task.assigneeId !== operatorId) {
+        const adminRoles = await tx
+          .select()
+          .from(userRole)
+          .where(
+            and(
+              eq(userRole.userId, operatorId),
+              eq(userRole.roleCode, 'super_admin'),
+            ),
+          )
+          .limit(1);
+        if (adminRoles.length === 0) {
+          throw new BadRequestException(
+            `Task #${taskId} is not assigned to user #${operatorId}`,
+          );
+        }
+      }
+
+      // 4. Get handler
+      const handler = this.getHandler(nodeDef.nodeType);
+      const ctx: NodeContext = {
+        db: txDb,
+        instance,
+        nodeDef,
+        currentUserId: operatorId,
+      };
+
+      // 4b. REPORT_COMPILE APPROVE: require compile report file uploaded
+      if (
+        instance.currentNode === 'REPORT_COMPILE' &&
+        action === 'APPROVE' &&
+        instance.bizType === 'PROJECT_REGISTER'
+      ) {
+        const files = await tx
+          .select({ id: compileReportFile.id })
+          .from(compileReportFile)
+          .where(
+            and(
+              eq(compileReportFile.projectRegisterId, instance.bizId),
+              isNull(compileReportFile.deletedAt),
+            ),
+          )
+          .limit(1);
+        if (files.length === 0) {
+          throw new BadRequestException('请先上传编制报告后再提交');
+        }
+      }
+
+      // 5. Execute task action
+      const isNodeComplete = await handler.onTaskAction(
+        ctx,
+        taskId,
+        action,
+        remark,
+      );
+
+      // 6. Log action
+      await tx.insert(wfActionLog).values({
+        instanceId: instance.id,
+        taskId,
+        nodeKey: instance.currentNode,
+        action,
+        operatorId,
+        remark,
+      });
+
+      // 6b. Record review opinion if opinionText provided
+      if (extraData?.opinionText && instance.bizType === 'PROJECT_REGISTER') {
+        await tx.insert(reviewOpinion).values({
+          projectRegisterId: instance.bizId,
+          roundNo: instance.roundNo,
+          nodeKey: instance.currentNode,
+          slotKey: task.slotKey ?? null,
+          actionType: action,
+          opinionText: extraData.opinionText,
+          attachmentIds: extraData.attachmentIds ?? null,
+          operatorId,
+        });
+      }
+
+      // 7. If node is not complete, return early
+      if (!isNodeComplete) {
+        // FINAL_REVIEW REVIEW: roll back to REPORT_COMPILE (report needs revision, not assessment)
+        if (instance.currentNode === 'FINAL_REVIEW' && action === 'REVIEW') {
+          // Cancel the PENDING_RECTIFICATION task (set by handler)
+          await tx
+            .update(wfTask)
+            .set({ status: 'CANCELLED', updatedAt: new Date() })
+            .where(
+              and(
+                eq(wfTask.instanceId, instance.id),
+                eq(wfTask.nodeKey, 'FINAL_REVIEW'),
+                eq(wfTask.status, 'PENDING_RECTIFICATION'),
+              ),
+            );
+
+          // Roll back to REPORT_COMPILE
+          const targetNode = 'REPORT_COMPILE';
+          await tx
+            .update(wfInstance)
+            .set({ currentNode: targetNode, updatedAt: new Date() })
+            .where(eq(wfInstance.id, instance.id));
+
+          // Create new REPORT_COMPILE task
+          const compileNodeDef = await this.loadNodeDef(tx, instance.definitionId, targetNode);
+          const compileHandler = this.getHandler(compileNodeDef.nodeType);
+          const refreshed = await this.loadInstance(tx, instance.id);
+          const compileCtx: NodeContext = {
+            db: txDb,
+            instance: refreshed,
+            nodeDef: compileNodeDef,
+            currentUserId: operatorId,
+          };
+          await compileHandler.onEnter(compileCtx);
+
+          // Emit task.created for notification
+          await this.emitTaskCreatedEvents(txDb, refreshed, compileNodeDef);
+
+          // Log
+          await tx.insert(wfActionLog).values({
+            instanceId: instance.id,
+            nodeKey: 'FINAL_REVIEW',
+            action: 'REVIEW_TO_COMPILE',
+            fromNode: 'FINAL_REVIEW',
+            toNode: targetNode,
+            operatorId,
+            remark,
+          });
+
+          this.logger.log(
+            `Instance #${instance.id} FINAL_REVIEW reviewed, rolled back to REPORT_COMPILE`,
+          );
+
+          // Emit event for notification listener
+          this.eventEmitter.emit('workflow.task.review', {
+            instanceId: instance.id,
+            taskId,
+            nodeKey: instance.currentNode,
+            bizType: instance.bizType,
+            bizId: instance.bizId,
+            operatorId,
+            remark,
+          });
+
+          return this.loadInstance(tx, instanceId);
+        }
+
+        // Other REVIEW actions: notify PM for rectification
+        if (action === 'REVIEW') {
+          this.eventEmitter.emit('workflow.task.review', {
+            instanceId: instance.id,
+            taskId,
+            nodeKey: instance.currentNode,
+            bizType: instance.bizType,
+            bizId: instance.bizId,
+            operatorId,
+            remark,
+          });
+        }
+        return this.loadInstance(tx, instanceId);
+      }
+
+      // 8. Node is complete — resolve transition and advance
+      const event = await handler.resolveCompletionEvent(ctx);
+
+      // FINAL_REVIEW REJECT is handled by assessment.listener.ts (rejectToTechReview)
+      // Don't go through advanceToNextNode which would mark instance COMPLETED (no transition defined)
+      if (instance.currentNode === 'FINAL_REVIEW' && event === 'REJECT') {
+        this.eventEmitter.emit('workflow.node.completed', {
+          bizType: instance.bizType,
+          bizId: instance.bizId,
+          instanceId: instance.id,
+          nodeKey: instance.currentNode,
+          event,
+          operatorId,
+          remark,
+          extraData,
+        });
+        return this.loadInstance(tx, instanceId);
+      }
+
+      await this.advanceToNextNode(txDb, instance, nodeDef, event, operatorId, extraData);
+
+      return this.loadInstance(tx, instanceId);
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // My tasks
+  // ---------------------------------------------------------------------------
+  // Nodes that should NOT appear in the todo center (user initiates via business page)
+  private readonly HIDDEN_NODES = new Set([
+    'CONTRACT_CREATE',
+    'PROJECT_REGISTER',
+  ]);
+
+  async getMyTasks(userId: number, status?: string) {
+    const taskStatus = status || 'PENDING';
+    // Only show PENDING tasks in todo center
+    // PENDING_RECTIFICATION tasks are handled via notifications + assessment detail page by PM
+    const statusFilter = eq(wfTask.status, taskStatus);
+
+    // Get user's role codes for pool task matching
+    const userRoles = await this.db
+      .select({ roleCode: userRole.roleCode })
+      .from(userRole)
+      .where(eq(userRole.userId, userId));
+    const roleCodes = userRoles.map((r) => r.roleCode);
+    const isSuperAdmin = roleCodes.includes('super_admin');
+
+    // Get pool-eligible node keys based on user's roles
+    let poolNodeKeys: string[] = [];
+    if (!isSuperAdmin && roleCodes.length > 0) {
+      const poolRules = await this.db
+        .select({ nodeKey: wfAssignmentRule.nodeKey })
+        .from(wfAssignmentRule)
+        .where(inArray(wfAssignmentRule.roleCode, roleCodes));
+      poolNodeKeys = [...new Set(poolRules.map((r) => r.nodeKey))];
+    }
+
+    // Query: assigned to me OR (pool task + I have the role)
+    const conditions = [
+      statusFilter,
+      isSuperAdmin
+        ? or(eq(wfTask.assigneeId, userId), isNull(wfTask.assigneeId))!
+        : poolNodeKeys.length > 0
+          ? or(
+              eq(wfTask.assigneeId, userId),
+              and(isNull(wfTask.assigneeId), inArray(wfTask.nodeKey, poolNodeKeys)),
+            )!
+          : eq(wfTask.assigneeId, userId),
+    ];
+
+    const rows = await this.db
+      .select({
+        id: wfTask.id,
+        instanceId: wfTask.instanceId,
+        nodeKey: wfTask.nodeKey,
+        slotKey: wfTask.slotKey,
+        status: wfTask.status,
+        result: wfTask.result,
+        remark: wfTask.remark,
+        createdAt: wfTask.createdAt,
+        bizType: wfInstance.bizType,
+        bizId: wfInstance.bizId,
+        currentNode: wfInstance.currentNode,
+      })
+      .from(wfTask)
+      .innerJoin(wfInstance, eq(wfTask.instanceId, wfInstance.id))
+      .where(and(...conditions))
+      .orderBy(wfTask.createdAt);
+
+    // Enrich with node display name, node type, and business name
+    const enriched = await Promise.all(
+      rows
+        .filter((row) => !this.HIDDEN_NODES.has(row.nodeKey))
+        .map(async (row) => {
+          // Get node display name + node type
+          const nodeDefs = await this.db
+            .select({
+              nodeName: wfNode.nodeName,
+              nodeType: wfNode.nodeType,
+            })
+            .from(wfNode)
+            .innerJoin(wfDefinition, eq(wfNode.definitionId, wfDefinition.id))
+            .innerJoin(wfInstance, eq(wfInstance.definitionId, wfDefinition.id))
+            .where(
+              and(
+                eq(wfInstance.bizType, row.bizType),
+                eq(wfInstance.bizId, row.bizId),
+                eq(wfNode.nodeKey, row.nodeKey),
+              ),
+            )
+            .limit(1);
+
+          // Get business name based on bizType
+          let bizName = '';
+          if (row.bizType === 'CONTRACT') {
+            const contracts = await this.db
+              .select({ contractName: contract.contractName })
+              .from(contract)
+              .where(eq(contract.id, row.bizId))
+              .limit(1);
+            bizName = contracts[0]?.contractName ?? '';
+          } else if (row.bizType === 'PROJECT_REGISTER') {
+            const projects = await this.db
+              .select({ applicationName: projectRegister.applicationName })
+              .from(projectRegister)
+              .where(eq(projectRegister.id, row.bizId))
+              .limit(1);
+            bizName = projects[0]?.applicationName ?? '';
+          }
+
+          return {
+            ...row,
+            nodeName: nodeDefs[0]?.nodeName ?? row.nodeKey,
+            nodeType: nodeDefs[0]?.nodeType ?? 'SIMPLE',
+            bizName,
+          };
+        }),
+    );
+
+    return enriched;
+  }
+
+  async getMyTaskCount(userId: number) {
+    const rows = await this.db
+      .select({ id: wfTask.id })
+      .from(wfTask)
+      .where(and(eq(wfTask.assigneeId, userId), eq(wfTask.status, 'PENDING')));
+    return rows.length;
+  }
+
+  async getInstanceByBiz(bizType: string, bizId: number) {
+    const instances = await this.db
+      .select()
+      .from(wfInstance)
+      .where(and(eq(wfInstance.bizType, bizType), eq(wfInstance.bizId, bizId)))
+      .limit(1);
+    const instance = instances[0];
+    if (!instance) return null;
+
+    const [tasks, logs] = await Promise.all([
+      this.db.select().from(wfTask).where(eq(wfTask.instanceId, instance.id)),
+      this.db
+        .select()
+        .from(wfActionLog)
+        .where(eq(wfActionLog.instanceId, instance.id))
+        .orderBy(wfActionLog.createdAt),
+    ]);
+    return { instance, tasks, logs };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Task detail (single task + its instance context)
+  // ---------------------------------------------------------------------------
+  async getTaskDetail(taskId: number) {
+    const taskRows = await this.db
+      .select()
+      .from(wfTask)
+      .where(eq(wfTask.id, taskId));
+
+    if (taskRows.length === 0) {
+      throw new NotFoundException(`Task #${taskId} not found`);
+    }
+
+    const task = taskRows[0];
+    const instanceDetail = await this.getInstanceDetail(task.instanceId);
+
+    // Get node name
+    const nodeRows = await this.db
+      .select({ nodeName: wfNode.nodeName })
+      .from(wfNode)
+      .where(
+        and(
+          eq(wfNode.definitionId, instanceDetail.instance.definitionId),
+          eq(wfNode.nodeKey, task.nodeKey),
+        ),
+      );
+
+    return {
+      ...task,
+      nodeName: nodeRows[0]?.nodeName ?? task.nodeKey,
+      instance: instanceDetail,
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Instance detail
+  // ---------------------------------------------------------------------------
+  async getInstanceDetail(instanceId: number) {
+    const instances = await this.db
+      .select()
+      .from(wfInstance)
+      .where(eq(wfInstance.id, instanceId))
+      .limit(1);
+
+    const instance = instances[0];
+    if (!instance) {
+      throw new NotFoundException(`Instance #${instanceId} not found`);
+    }
+
+    const [tasks, logs] = await Promise.all([
+      this.db
+        .select()
+        .from(wfTask)
+        .where(eq(wfTask.instanceId, instanceId)),
+      this.db
+        .select()
+        .from(wfActionLog)
+        .where(eq(wfActionLog.instanceId, instanceId))
+        .orderBy(wfActionLog.createdAt),
+    ]);
+
+    return { instance, tasks, logs };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Resubmit from rectification — PM resets PENDING_RECTIFICATION tasks to PENDING
+  // ---------------------------------------------------------------------------
+  async resubmitFromRectification(instanceId: number, userId: number) {
+    return this.db.transaction(async (tx) => {
+      // 1. Load instance
+      const instances = await tx
+        .select()
+        .from(wfInstance)
+        .where(eq(wfInstance.id, instanceId))
+        .limit(1);
+
+      const instance = instances[0];
+      if (!instance) {
+        throw new NotFoundException(`Instance #${instanceId} not found`);
+      }
+      if (instance.status !== 'RUNNING') {
+        throw new BadRequestException(`Instance #${instanceId} is not running`);
+      }
+
+      // 2. Find all PENDING_RECTIFICATION tasks for the current node
+      const rectTasks = await tx
+        .select()
+        .from(wfTask)
+        .where(
+          and(
+            eq(wfTask.instanceId, instanceId),
+            eq(wfTask.nodeKey, instance.currentNode),
+            eq(wfTask.status, 'PENDING_RECTIFICATION'),
+          ),
+        );
+
+      if (rectTasks.length === 0) {
+        throw new BadRequestException(
+          'No tasks in PENDING_RECTIFICATION status for current node',
+        );
+      }
+
+      // 3. Reset all to PENDING
+      await tx
+        .update(wfTask)
+        .set({
+          status: 'PENDING',
+          result: null,
+          remark: null,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(wfTask.instanceId, instanceId),
+            eq(wfTask.nodeKey, instance.currentNode),
+            eq(wfTask.status, 'PENDING_RECTIFICATION'),
+          ),
+        );
+
+      // 4. Log RESUBMIT action
+      await tx.insert(wfActionLog).values({
+        instanceId,
+        nodeKey: instance.currentNode,
+        action: 'RESUBMIT',
+        operatorId: userId,
+        remark: '项目经理重新提交整改',
+      });
+
+      // 5. Emit event for notifications
+      this.eventEmitter.emit('workflow.task.resubmitted', {
+        instanceId,
+        nodeKey: instance.currentNode,
+        bizType: instance.bizType,
+        bizId: instance.bizId,
+        operatorId: userId,
+        taskIds: rectTasks.map((t) => t.id),
+        assigneeIds: rectTasks
+          .map((t) => t.assigneeId)
+          .filter((id): id is number => id != null),
+      });
+
+      return { success: true };
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Reject to tech review — FINAL_REVIEW REJECT rolls back to TECH_REVIEW
+  // ---------------------------------------------------------------------------
+  async rejectToTechReview(
+    instanceId: number,
+    userId: number,
+    remark: string,
+  ) {
+    return this.db.transaction(async (tx) => {
+      const txDb = tx as unknown as DrizzleDB;
+
+      // 1. Load instance
+      const instances = await tx
+        .select()
+        .from(wfInstance)
+        .where(eq(wfInstance.id, instanceId))
+        .limit(1);
+
+      const instance = instances[0];
+      if (!instance) {
+        throw new NotFoundException(`Instance #${instanceId} not found`);
+      }
+
+      // 2. Increment roundNo
+      const newRoundNo = instance.roundNo + 1;
+
+      // 3. Cancel all non-terminal tasks
+      await tx
+        .update(wfTask)
+        .set({ status: 'CANCELLED', updatedAt: new Date() })
+        .where(
+          and(
+            eq(wfTask.instanceId, instanceId),
+            ne(wfTask.status, 'COMPLETED'),
+            ne(wfTask.status, 'CANCELLED'),
+          ),
+        );
+
+      // 4. Update instance: roundNo+1, currentNode = TECH_REVIEW
+      const targetNode = 'TECH_REVIEW';
+      await tx
+        .update(wfInstance)
+        .set({
+          roundNo: newRoundNo,
+          currentNode: targetNode,
+          updatedAt: new Date(),
+        })
+        .where(eq(wfInstance.id, instanceId));
+
+      // 5. Load TECH_REVIEW node definition and enter
+      const nodeDef = await this.loadNodeDef(
+        tx,
+        instance.definitionId,
+        targetNode,
+      );
+      const handler = this.getHandler(nodeDef.nodeType);
+
+      const refreshed = await this.loadInstance(tx, instanceId);
+      const ctx: NodeContext = {
+        db: txDb,
+        instance: refreshed,
+        nodeDef,
+        currentUserId: userId,
+      };
+
+      await handler.onEnter(ctx);
+
+      // 6. Emit task.created events
+      await this.emitTaskCreatedEvents(txDb, refreshed, nodeDef);
+
+      // 7. Log REJECT_TO_TECH action
+      await tx.insert(wfActionLog).values({
+        instanceId,
+        nodeKey: 'FINAL_REVIEW',
+        action: 'REJECT_TO_TECH',
+        fromNode: 'FINAL_REVIEW',
+        toNode: targetNode,
+        operatorId: userId,
+        remark,
+      });
+
+      this.logger.log(
+        `Instance #${instanceId} rejected from FINAL_REVIEW to TECH_REVIEW (round ${newRoundNo})`,
+      );
+
+      return refreshed;
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Reject to assessment — FINAL_REVIEW REJECT rolls back to ON_SITE_ASSESSMENT
+  // Preserves all historical task records from previous rounds
+  // ---------------------------------------------------------------------------
+  async rejectToAssessment(
+    instanceId: number,
+    userId: number,
+    remark: string,
+  ) {
+    return this.db.transaction(async (tx) => {
+      const txDb = tx as unknown as DrizzleDB;
+
+      const instances = await tx
+        .select()
+        .from(wfInstance)
+        .where(eq(wfInstance.id, instanceId))
+        .limit(1);
+
+      const instance = instances[0];
+      if (!instance) {
+        throw new NotFoundException(`Instance #${instanceId} not found`);
+      }
+
+      // Increment roundNo
+      const newRoundNo = instance.roundNo + 1;
+
+      // Only cancel PENDING/PENDING_RECTIFICATION tasks (preserve COMPLETED history)
+      await tx
+        .update(wfTask)
+        .set({ status: 'CANCELLED', updatedAt: new Date() })
+        .where(
+          and(
+            eq(wfTask.instanceId, instanceId),
+            inArray(wfTask.status, ['PENDING', 'PENDING_RECTIFICATION']),
+          ),
+        );
+
+      // Update instance: roundNo+1, currentNode = ON_SITE_ASSESSMENT
+      const targetNode = 'ON_SITE_ASSESSMENT';
+      await tx
+        .update(wfInstance)
+        .set({
+          roundNo: newRoundNo,
+          currentNode: targetNode,
+          updatedAt: new Date(),
+        })
+        .where(eq(wfInstance.id, instanceId));
+
+      // Load ON_SITE_ASSESSMENT node definition and enter (MULTI_ASSIGNEE handler)
+      const nodeDef = await this.loadNodeDef(
+        tx,
+        instance.definitionId,
+        targetNode,
+      );
+      const handler = this.getHandler(nodeDef.nodeType);
+
+      const refreshed = await this.loadInstance(tx, instanceId);
+      const ctx: NodeContext = {
+        db: txDb,
+        instance: refreshed,
+        nodeDef,
+        currentUserId: userId,
+      };
+
+      await handler.onEnter(ctx);
+
+      // Emit task.created events (notify PM + assessors)
+      await this.emitTaskCreatedEvents(txDb, refreshed, nodeDef);
+
+      // Log
+      await tx.insert(wfActionLog).values({
+        instanceId,
+        nodeKey: 'FINAL_REVIEW',
+        action: 'REJECT_TO_ASSESSMENT',
+        fromNode: 'FINAL_REVIEW',
+        toNode: targetNode,
+        operatorId: userId,
+        remark,
+      });
+
+      this.logger.log(
+        `Instance #${instanceId} rejected from FINAL_REVIEW to ON_SITE_ASSESSMENT (round ${newRoundNo})`,
+      );
+
+      return refreshed;
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private helpers
+  // ---------------------------------------------------------------------------
+
+  private getHandler(nodeType: string): NodeHandler {
+    const handler = this.handlers.get(nodeType);
+    if (!handler) {
+      throw new BadRequestException(`Unknown node type: ${nodeType}`);
+    }
+    return handler;
+  }
+
+  private async loadNodeDef(db: any, definitionId: number, nodeKey: string) {
+    const nodes = await db
+      .select()
+      .from(wfNode)
+      .where(
+        and(
+          eq(wfNode.definitionId, definitionId),
+          eq(wfNode.nodeKey, nodeKey),
+        ),
+      )
+      .limit(1);
+
+    const nodeDef = nodes[0];
+    if (!nodeDef) {
+      throw new NotFoundException(
+        `Node "${nodeKey}" not found in definition #${definitionId}`,
+      );
+    }
+    return nodeDef;
+  }
+
+  private async loadInstance(db: any, instanceId: number) {
+    const rows = await db
+      .select()
+      .from(wfInstance)
+      .where(eq(wfInstance.id, instanceId))
+      .limit(1);
+
+    return rows[0];
+  }
+
+  /**
+   * Advance from the current completed node to the next node.
+   * Handles auto-node chaining recursively.
+   */
+  private async advanceToNextNode(
+    db: DrizzleDB,
+    instance: typeof wfInstance.$inferSelect,
+    fromNodeDef: typeof wfNode.$inferSelect,
+    event: string,
+    operatorId: number,
+    extraData?: Record<string, any>,
+  ): Promise<void> {
+    // Emit node-completed event for listeners (includes extraData for contextual actions)
+    this.eventEmitter.emit('workflow.node.completed', {
+      bizType: instance.bizType,
+      bizId: instance.bizId,
+      instanceId: instance.id,
+      nodeKey: fromNodeDef.nodeKey,
+      event,
+      operatorId,
+      extraData,
+    });
+
+    const transition = await this.transitionResolver.resolve(
+      instance.definitionId,
+      fromNodeDef.nodeKey,
+      event,
+      instance,
+    );
+
+    if (!transition) {
+      // No transition — mark instance completed
+      await (db as any)
+        .update(wfInstance)
+        .set({
+          status: 'COMPLETED',
+          finishedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(wfInstance.id, instance.id));
+
+      await (db as any).insert(wfActionLog).values({
+        instanceId: instance.id,
+        nodeKey: fromNodeDef.nodeKey,
+        action: 'COMPLETE',
+        fromNode: fromNodeDef.nodeKey,
+        toNode: '',
+        operatorId,
+      });
+
+      this.logger.log(`Instance #${instance.id} completed`);
+      return;
+    }
+
+    const nextNodeKey = transition.toNodeKey;
+
+    // Empty toNodeKey means END — mark instance completed
+    if (!nextNodeKey) {
+      await (db as any)
+        .update(wfInstance)
+        .set({
+          status: 'COMPLETED',
+          finishedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(wfInstance.id, instance.id));
+
+      await (db as any).insert(wfActionLog).values({
+        instanceId: instance.id,
+        nodeKey: fromNodeDef.nodeKey,
+        action: 'COMPLETE',
+        fromNode: fromNodeDef.nodeKey,
+        toNode: '',
+        operatorId,
+      });
+
+      this.logger.log(`Instance #${instance.id} completed (end transition)`);
+      return;
+    }
+
+    // Update instance current_node
+    await (db as any)
+      .update(wfInstance)
+      .set({
+        currentNode: nextNodeKey,
+        updatedAt: new Date(),
+      })
+      .where(eq(wfInstance.id, instance.id));
+
+    // Log transition
+    await (db as any).insert(wfActionLog).values({
+      instanceId: instance.id,
+      nodeKey: nextNodeKey,
+      action: 'TRANSITION',
+      fromNode: fromNodeDef.nodeKey,
+      toNode: nextNodeKey,
+      operatorId,
+    });
+
+    // Load next node and enter
+    const nextNodeDef = await this.loadNodeDef(
+      db,
+      instance.definitionId,
+      nextNodeKey,
+    );
+
+    const handler = this.getHandler(nextNodeDef.nodeType);
+
+    // Refresh instance for context
+    const refreshed = await this.loadInstance(db, instance.id);
+
+    const ctx: NodeContext = {
+      db,
+      instance: refreshed,
+      nodeDef: nextNodeDef,
+      currentUserId: operatorId,
+    };
+
+    await handler.onEnter(ctx);
+
+    // Emit task.created events for newly created tasks
+    await this.emitTaskCreatedEvents(db, refreshed, nextNodeDef);
+
+    // If next node is AUTO, immediately advance again
+    if (nextNodeDef.nodeType === 'AUTO') {
+      await this.advanceFromAutoNode(db, refreshed, nextNodeDef, operatorId);
+    }
+  }
+
+  /**
+   * Advance from an AUTO node (no tasks, resolves immediately).
+   */
+  private async advanceFromAutoNode(
+    db: DrizzleDB,
+    instance: typeof wfInstance.$inferSelect,
+    nodeDef: typeof wfNode.$inferSelect,
+    operatorId: number,
+  ): Promise<void> {
+    const handler = this.getHandler('AUTO');
+    const ctx: NodeContext = {
+      db,
+      instance,
+      nodeDef,
+      currentUserId: operatorId,
+    };
+
+    const event = await handler.resolveCompletionEvent(ctx);
+    await this.advanceToNextNode(db, instance, nodeDef, event, operatorId);
+  }
+
+  /**
+   * Emit 'workflow.task.created' for each PENDING task created during onEnter.
+   */
+  private async emitTaskCreatedEvents(
+    db: DrizzleDB,
+    instance: typeof wfInstance.$inferSelect,
+    nodeDef: typeof wfNode.$inferSelect,
+  ) {
+    const pendingTasks = await (db as any)
+      .select()
+      .from(wfTask)
+      .where(
+        and(
+          eq(wfTask.instanceId, instance.id),
+          eq(wfTask.nodeKey, nodeDef.nodeKey),
+          eq(wfTask.status, 'PENDING'),
+        ),
+      );
+
+    for (const task of pendingTasks) {
+      this.eventEmitter.emit('workflow.task.created', {
+        taskId: task.id,
+        assigneeId: task.assigneeId,
+        instanceId: instance.id,
+        nodeKey: nodeDef.nodeKey,
+        nodeName: nodeDef.nodeName,
+        bizType: instance.bizType,
+        bizId: instance.bizId,
+      });
+    }
+  }
+}

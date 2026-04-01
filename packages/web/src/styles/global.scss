@@ -1,0 +1,189 @@
+/* ============================================================================
+   Nature 等保测评平台 — Global Styles
+   Theme: "Slate & Copper"
+   ============================================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap');
+
+/* ── Reset ──────────────────────────────────────────────────────────────── */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: var(--n-font-family);
+  font-size: var(--n-font-size-md);
+  line-height: var(--n-line-height);
+  letter-spacing: var(--n-letter-spacing);
+  color: var(--n-text-primary);
+  background: var(--n-page-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#app { height: 100%; }
+
+/* ── Selection ──────────────────────────────────────────────────────────── */
+
+::selection {
+  background: rgba(184, 134, 78, 0.15);
+  color: var(--n-text-primary);
+}
+
+/* ── Scrollbar ──────────────────────────────────────────────────────────── */
+
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.08); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.15); }
+
+/* ── Page Layout Utilities ──────────────────────────────────────────────── */
+
+.n-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--n-space-5);
+}
+
+.n-page-title {
+  font-family: var(--n-font-display);
+  font-size: var(--n-font-size-xl);
+  font-weight: var(--n-font-weight-semibold);
+  color: var(--n-text-primary);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--n-space-3);
+}
+
+.n-page-title::before {
+  content: '';
+  width: 3px;
+  height: 18px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, var(--n-primary), var(--n-primary-light));
+  flex-shrink: 0;
+}
+
+/* ── Search Bar ─────────────────────────────────────────────────────────── */
+
+.n-search-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--n-space-3);
+  margin-bottom: var(--n-space-4);
+  padding: var(--n-space-3) var(--n-space-4);
+  background: #faf8f5;
+  border-radius: var(--n-radius-lg);
+  border: 1px solid #f0ece7;
+}
+
+/* ── Status Badges ──────────────────────────────────────────────────────── */
+
+.n-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: var(--n-radius-full);
+  font-size: var(--n-font-size-xs);
+  font-weight: var(--n-font-weight-medium);
+  letter-spacing: 0.02em;
+}
+
+.n-badge--success { background: var(--n-success-light); color: var(--n-success); }
+.n-badge--warning { background: var(--n-warning-light); color: var(--n-warning); }
+.n-badge--danger  { background: var(--n-danger-light);  color: var(--n-danger); }
+.n-badge--info    { background: var(--n-info-light);    color: var(--n-info); }
+.n-badge--primary { background: var(--n-primary-lighter); color: var(--n-primary-dark); }
+
+.n-badge::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.7;
+}
+
+/* ── Section Title ──────────────────────────────────────────────────────── */
+
+.n-section-title {
+  font-family: var(--n-font-display);
+  font-size: var(--n-font-size-md);
+  font-weight: var(--n-font-weight-semibold);
+  color: var(--n-text-primary);
+  margin: var(--n-space-6) 0 var(--n-space-3);
+  padding-bottom: var(--n-space-2);
+  border-bottom: 1px solid var(--n-card-border);
+}
+
+.n-section-title:first-child { margin-top: 0; }
+
+/* ── Pagination ─────────────────────────────────────────────────────────── */
+
+.n-pagination-wrapper {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--n-space-4);
+  padding-top: var(--n-space-4);
+  border-top: 1px solid #f0ece7;
+}
+
+/* ── Transitions ────────────────────────────────────────────────────────── */
+
+.n-fade-enter-active, .n-fade-leave-active { transition: opacity var(--n-transition-base); }
+.n-fade-enter-from, .n-fade-leave-to { opacity: 0; }
+
+.n-slide-up-enter-active { transition: all var(--n-transition-slow); }
+.n-slide-up-leave-active { transition: all 150ms var(--n-ease-in-out); }
+.n-slide-up-enter-from { opacity: 0; transform: translateY(6px); }
+.n-slide-up-leave-to { opacity: 0; }
+
+/* ── Form Layout ───────────────────────────────────────────────────────── */
+
+.n-form-section {
+  margin-bottom: var(--n-space-5);
+}
+
+.n-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 24px;
+}
+
+.n-form-full {
+  grid-column: 1 / -1;
+}
+
+.n-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--n-space-3);
+  padding-top: var(--n-space-5);
+  margin-top: var(--n-space-5);
+  border-top: 1px solid var(--n-card-border);
+}
+
+/* Dialog 表单内间距统一 */
+.n-form-dialog .el-dialog__body {
+  padding: 20px 24px 8px;
+}
+
+.n-form-dialog .el-dialog__footer {
+  padding: 12px 24px 20px;
+}
+
+/* ── Empty State ────────────────────────────────────────────────────────── */
+
+.n-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--n-space-12) var(--n-space-8);
+  color: var(--n-text-tertiary);
+}

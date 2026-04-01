@@ -1,0 +1,6 @@
+{
+  "name": "@nature/terminal",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Electron offline assessment terminal (V2 placeholder)"
+}

@@ -1,0 +1,119 @@
+/* ============================================================================
+   Nature 等保测评平台 — Design Tokens
+   Theme: "Slate & Copper" — Warm Industrial Enterprise
+
+   A grounded, authoritative aesthetic pairing deep charcoal surfaces
+   with warm copper accents. Conveys security and craftsmanship.
+   ============================================================================ */
+
+:root {
+  /* ── Sidebar ──────────────────────────────────────────────────────────── */
+  --n-sidebar-bg: #1a1d23;
+  --n-sidebar-bg-hover: rgba(255, 255, 255, 0.04);
+  --n-sidebar-bg-active: rgba(210, 160, 100, 0.1);
+  --n-sidebar-text: rgba(255, 255, 255, 0.45);
+  --n-sidebar-text-hover: rgba(255, 255, 255, 0.75);
+  --n-sidebar-text-active: #d4a574;
+  --n-sidebar-border: rgba(255, 255, 255, 0.05);
+  --n-sidebar-width: 236px;
+  --n-sidebar-collapsed-width: 64px;
+
+  /* ── Header ───────────────────────────────────────────────────────────── */
+  --n-header-bg: #ffffff;
+  --n-header-border: #eae6e1;
+  --n-header-height: 54px;
+
+  /* ── Page Canvas ──────────────────────────────────────────────────────── */
+  --n-page-bg: #f7f5f2;
+  --n-card-bg: #ffffff;
+  --n-card-border: #eae6e1;
+  --n-card-radius: 10px;
+  --n-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.03), 0 0 0 1px rgba(0, 0, 0, 0.02);
+  --n-card-shadow-hover: 0 6px 16px rgba(0, 0, 0, 0.05), 0 0 0 1px rgba(0, 0, 0, 0.03);
+
+  /* ── Brand: Warm Copper ───────────────────────────────────────────────── */
+  --n-primary: #b8864e;
+  --n-primary-light: #d4a574;
+  --n-primary-lighter: #f5ece2;
+  --n-primary-dark: #96693a;
+  --n-primary-bg: rgba(184, 134, 78, 0.06);
+  --n-primary-ring: rgba(184, 134, 78, 0.2);
+
+  /* ── Semantic ─────────────────────────────────────────────────────────── */
+  --n-success: #2d8a56;
+  --n-success-light: #e6f5ed;
+  --n-warning: #c8851e;
+  --n-warning-light: #fdf3e2;
+  --n-danger: #c03744;
+  --n-danger-light: #fce8ea;
+  --n-info: #5b6abf;
+  --n-info-light: #edeef8;
+
+  /* ── Typography ───────────────────────────────────────────────────────── */
+  --n-font-display: "Plus Jakarta Sans", "Noto Sans SC", -apple-system,
+    BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --n-font-family: "Noto Sans SC", "Plus Jakarta Sans", -apple-system,
+    BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --n-font-mono: "JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace;
+
+  --n-font-size-xs: 11px;
+  --n-font-size-sm: 12px;
+  --n-font-size-base: 13px;
+  --n-font-size-md: 14px;
+  --n-font-size-lg: 15px;
+  --n-font-size-xl: 17px;
+  --n-font-size-2xl: 21px;
+  --n-font-size-3xl: 28px;
+
+  --n-font-weight-normal: 400;
+  --n-font-weight-medium: 500;
+  --n-font-weight-semibold: 600;
+  --n-font-weight-bold: 700;
+
+  --n-line-height: 1.65;
+  --n-letter-spacing: 0.005em;
+
+  /* ── Text ──────────────────────────────────────────────────────────────── */
+  --n-text-primary: #1a1d23;
+  --n-text-secondary: #5a5d66;
+  --n-text-tertiary: #9a9da6;
+  --n-text-disabled: #c5c8ce;
+  --n-text-inverse: #ffffff;
+
+  /* ── Spacing ──────────────────────────────────────────────────────────── */
+  --n-space-1: 4px;
+  --n-space-2: 8px;
+  --n-space-3: 12px;
+  --n-space-4: 16px;
+  --n-space-5: 20px;
+  --n-space-6: 24px;
+  --n-space-8: 32px;
+  --n-space-10: 40px;
+  --n-space-12: 48px;
+
+  /* ── Radius ───────────────────────────────────────────────────────────── */
+  --n-radius-sm: 4px;
+  --n-radius-md: 6px;
+  --n-radius-lg: 10px;
+  --n-radius-xl: 14px;
+  --n-radius-full: 9999px;
+
+  /* ── Motion ───────────────────────────────────────────────────────────── */
+  --n-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --n-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --n-transition-fast: 120ms var(--n-ease-in-out);
+  --n-transition-base: 200ms var(--n-ease-in-out);
+  --n-transition-slow: 350ms var(--n-ease-out);
+
+  /* ── Z-Index ──────────────────────────────────────────────────────────── */
+  --n-z-sidebar: 100;
+  --n-z-header: 200;
+  --n-z-dropdown: 300;
+  --n-z-modal: 1000;
+  --n-z-notification: 2000;
+
+  /* ── Login ────────────────────────────────────────────────────────────── */
+  --n-login-bg: #131518;
+  --n-login-card-bg: rgba(255, 255, 255, 0.025);
+  --n-login-card-border: rgba(255, 255, 255, 0.06);
+}

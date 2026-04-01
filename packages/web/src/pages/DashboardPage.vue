@@ -1,0 +1,204 @@
+<script setup lang="ts">
+import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
+import { getMyTasks } from '@/api/workflow'
+import type { TaskItem } from '@/api/workflow'
+import { getStatusLabel, getStatusTagType } from '@/utils/status-map'
+import { formatTime } from '@/utils/format'
+
+const authStore = useAuthStore()
+const router = useRouter()
+const allTasks = ref<TaskItem[]>([])
+const loading = ref(false)
+const activeTab = ref('review')
+
+async function fetchTasks() {
+  loading.value = true
+  try {
+    allTasks.value = (await getMyTasks()) as unknown as TaskItem[]
+  } catch {
+    // handled by interceptor
+  } finally {
+    loading.value = false
+  }
+}
+
+// Split tasks into review tasks and business reminders
+const reviewTasks = computed(() =>
+  allTasks.value.filter((t) => t.nodeType === 'REVIEW' || t.nodeType === 'PARALLEL_REVIEW'),
+)
+
+const businessTasks = computed(() =>
+  allTasks.value.filter((t) => t.nodeType !== 'REVIEW' && t.nodeType !== 'PARALLEL_REVIEW'),
+)
+
+function getReviewActionLabel(_task: TaskItem): string {
+  return '审核'
+}
+
+function getReviewActionType(_task: TaskItem): string {
+  return 'primary'
+}
+
+// Route mapping for business reminders — nodeKey → target route
+const businessRouteMap: Record<string, (task: TaskItem) => string> = {
+  CONTRACT_ARCHIVE: () => '/contract',
+  POLICE_REGISTER: () => '/police',
+  ON_SITE_ASSESSMENT: () => '/assessment',
+  TECH_REVIEW: (t) => `/workflow/task/${t.id}`,
+  CONTENT_REVIEW: (t) => `/workflow/task/${t.id}`,
+  FINAL_REVIEW: (t) => `/workflow/task/${t.id}`,
+  CONTRACT_REVIEW: (t) => `/workflow/task/${t.id}`,
+  PROJECT_REVIEW: (t) => `/workflow/task/${t.id}`,
+  REPORT_COMPILE: () => '/report',
+  MATERIAL_ARCHIVE: (t) => `/archive/${t.bizId}`,
+}
+
+// Smart display for task type — uses nodeKey + slotKey instead of raw bizType
+function getTaskTypeLabel(task: TaskItem): string {
+  const t = task as any
+  if (t.nodeKey === 'TECH_REVIEW') return '技术审核'
+  if (t.nodeKey === 'CONTENT_REVIEW') {
+    const slotMap: Record<string, string> = {
+      CONTENT_A: '内容审核(技术)',
+      CONTENT_B: '内容审核(管理)',
+      CONTENT_C: '内容审核(网络)',
+    }
+    return slotMap[t.slotKey] || '内容审核'
+  }
+  if (t.nodeKey === 'FINAL_REVIEW') return '最终审核'
+  if (t.nodeKey === 'CONTRACT_REVIEW') return '合同审核'
+  if (t.nodeKey === 'PROJECT_REVIEW') return '项目审核'
+  if (t.nodeKey === 'CONTRACT_ARCHIVE') return '合同归档'
+  if (t.nodeKey === 'POLICE_REGISTER') return '公安登记'
+  if (t.nodeKey === 'ON_SITE_ASSESSMENT') return '现场测评'
+  if (t.nodeKey === 'REPORT_ASSIGN') return '编制任务分配'
+  if (t.nodeKey === 'REPORT_COMPILE') return '报告编制'
+  if (t.nodeKey === 'MATERIAL_ARCHIVE') return '材料归档'
+  return getStatusLabel(t.bizType) || t.nodeKey
+}
+
+function handleReviewAction(task: TaskItem) {
+  router.push(`/workflow/task/${task.id}`)
+}
+
+function handleBusinessAction(task: TaskItem) {
+  const routeFn = businessRouteMap[task.nodeKey]
+  if (routeFn) {
+    router.push(routeFn(task))
+  } else {
+    // Fallback: go to task detail
+    router.push(`/workflow/task/${task.id}`)
+  }
+}
+
+
+onMounted(() => {
+  fetchTasks()
+})
+</script>
+
+<template>
+  <div>
+    <!-- Welcome card -->
+    <el-card shadow="never" style="margin-bottom: 16px">
+      <div style="display: flex; align-items: center; justify-content: space-between">
+        <div>
+          <h2 style="color: #303133; margin: 0 0 8px; font-size: 18px">
+            欢迎使用 Nature 等保测评平台
+          </h2>
+          <p style="color: #909399; margin: 0; font-size: 14px">
+            {{ authStore.user?.displayName ?? authStore.user?.username }}，祝您工作顺利！
+          </p>
+        </div>
+        <el-tag v-if="allTasks.length > 0" type="danger" size="large" effect="dark" round>
+          {{ allTasks.length }} 项待办
+        </el-tag>
+      </div>
+    </el-card>
+
+    <!-- Task tabs -->
+    <el-card shadow="never">
+      <template #header>
+        <div style="display: flex; align-items: center; justify-content: space-between">
+          <span style="font-weight: 600; font-size: 16px">待办中心</span>
+          <el-button text type="primary" @click="fetchTasks">刷新</el-button>
+        </div>
+      </template>
+
+      <el-tabs v-model="activeTab">
+        <!-- 审核任务 tab -->
+        <el-tab-pane :label="`审核任务 (${reviewTasks.length})`" name="review">
+          <el-table v-loading="loading" :data="reviewTasks" stripe border style="width: 100%">
+            <el-table-column label="业务类型" width="120" align="center">
+              <template #default="{ row }">
+                <el-tag type="primary" size="small">
+                  {{ getTaskTypeLabel(row) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="bizName" label="业务名称" min-width="200" show-overflow-tooltip />
+            <el-table-column prop="nodeName" label="审核节点" min-width="140">
+              <template #default="{ row }">
+                {{ getStatusLabel(row.nodeName) || row.nodeName }}
+              </template>
+            </el-table-column>
+            <el-table-column label="状态" width="100" align="center">
+              <template #default="{ row }">
+                <el-tag :type="getStatusTagType(row.status)" size="small">
+                  {{ getStatusLabel(row.status) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="创建时间" min-width="170">
+              <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="120" fixed="right" align="center">
+              <template #default="{ row }">
+                <el-button :type="getReviewActionType(row)" size="small" @click="handleReviewAction(row)">
+                  {{ getReviewActionLabel(row) }}
+                </el-button>
+              </template>
+            </el-table-column>
+            <template #empty>
+              <el-empty description="暂无审核任务" :image-size="80" />
+            </template>
+          </el-table>
+        </el-tab-pane>
+
+        <!-- 业务提醒 tab -->
+        <el-tab-pane :label="`业务提醒 (${businessTasks.length})`" name="business">
+          <el-table v-loading="loading" :data="businessTasks" stripe border style="width: 100%">
+            <el-table-column label="业务类型" width="120" align="center">
+              <template #default="{ row }">
+                <el-tag type="primary" size="small">
+                  {{ getTaskTypeLabel(row) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="bizName" label="业务名称" min-width="200" show-overflow-tooltip />
+            <el-table-column label="待处理事项" min-width="160">
+              <template #default="{ row }">
+                {{ row.nodeName }}
+              </template>
+            </el-table-column>
+            <el-table-column label="创建时间" min-width="170">
+              <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="120" fixed="right" align="center">
+              <template #default="{ row }">
+                <el-button type="primary" size="small" @click="handleBusinessAction(row)">
+                  查看
+                </el-button>
+              </template>
+            </el-table-column>
+            <template #empty>
+              <el-empty description="暂无业务提醒" :image-size="80" />
+            </template>
+          </el-table>
+        </el-tab-pane>
+      </el-tabs>
+    </el-card>
+  </div>
+</template>
