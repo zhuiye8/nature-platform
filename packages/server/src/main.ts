@@ -29,8 +29,8 @@ async function bootstrap() {
   app.useGlobalInterceptors(new ResponseInterceptor());
 
   const port = process.env.SERVER_PORT || 3010;
-  await app.listen(port);
-  console.log(`Nature API server running on http://localhost:${port}`);
+  await app.listen(port, '0.0.0.0');
+  console.log(`Nature API server running on http://0.0.0.0:${port}`);
 }
 
 bootstrap();
