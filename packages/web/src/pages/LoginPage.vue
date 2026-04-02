@@ -1,24 +1,27 @@
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { ElMessage } from 'element-plus'
-import { User, Lock } from '@element-plus/icons-vue'
+import { User, Lock, Right } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
-const formRef = ref()
 const loading = ref(false)
+const particleCanvas = ref<HTMLCanvasElement | null>(null)
+const year = new Date().getFullYear()
 
 const form = reactive({ username: '', password: '' })
-const rules = {
-  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
-}
+
+let animationFrame = 0
+let detachResize: (() => void) | null = null
 
 async function handleLogin() {
-  await formRef.value?.validate()
+  if (!form.username || !form.password) {
+    ElMessage.warning('请输入用户名和密码')
+    return
+  }
   loading.value = true
   try {
     await authStore.login(form.username, form.password)
@@ -28,250 +31,313 @@ async function handleLogin() {
   } catch { /* handled by interceptor */ }
   finally { loading.value = false }
 }
+
+function initParticles() {
+  const canvas = particleCanvas.value
+  if (!canvas) return
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+
+  const resize = () => {
+    canvas.width = window.innerWidth
+    canvas.height = window.innerHeight
+  }
+  resize()
+  window.addEventListener('resize', resize)
+  detachResize = () => window.removeEventListener('resize', resize)
+
+  const particles = Array.from({ length: 60 }).map(() => ({
+    x: Math.random() * canvas.width,
+    y: Math.random() * canvas.height,
+    vx: (Math.random() - 0.5) * 0.3,
+    vy: (Math.random() - 0.5) * 0.3,
+    radius: Math.random() * 1.6 + 0.6,
+    alpha: Math.random() * 0.4 + 0.15,
+  }))
+
+  const tick = () => {
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    for (let i = 0; i < particles.length; i++) {
+      for (let j = i + 1; j < particles.length; j++) {
+        const dx = particles[i].x - particles[j].x
+        const dy = particles[i].y - particles[j].y
+        const dist = Math.sqrt(dx * dx + dy * dy)
+        if (dist < 120) {
+          ctx.beginPath()
+          ctx.moveTo(particles[i].x, particles[i].y)
+          ctx.lineTo(particles[j].x, particles[j].y)
+          ctx.strokeStyle = `rgba(184, 158, 120, ${0.1 * (1 - dist / 120)})`
+          ctx.lineWidth = 0.6
+          ctx.stroke()
+        }
+      }
+    }
+    particles.forEach((p) => {
+      p.x += p.vx
+      p.y += p.vy
+      if (p.x < 0 || p.x > canvas.width) p.vx *= -1
+      if (p.y < 0 || p.y > canvas.height) p.vy *= -1
+      ctx.beginPath()
+      ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2)
+      ctx.fillStyle = `rgba(200, 175, 140, ${p.alpha})`
+      ctx.fill()
+    })
+    animationFrame = window.requestAnimationFrame(tick)
+  }
+  tick()
+}
+
+onMounted(() => initParticles())
+onUnmounted(() => {
+  if (animationFrame) cancelAnimationFrame(animationFrame)
+  if (detachResize) detachResize()
+})
 </script>
 
 <template>
   <div class="lp">
-    <!-- Ambient background -->
-    <div class="lp-bg">
-      <div class="lp-bg__noise" />
-      <div class="lp-bg__orb lp-bg__orb--warm" />
-      <div class="lp-bg__orb lp-bg__orb--cool" />
-      <div class="lp-bg__grid" />
+    <canvas ref="particleCanvas" class="lp-particles" />
+    <div class="lp-grid" />
+
+    <div class="lp-orbs" aria-hidden="true">
+      <div class="lp-orb lp-orb--1" />
+      <div class="lp-orb lp-orb--2" />
+      <div class="lp-orb lp-orb--3" />
     </div>
 
-    <!-- Card -->
-    <div class="lp-card">
-      <div class="lp-card__accent" />
+    <div class="lp-wrapper">
+      <!-- Brand Section -->
+      <section class="lp-brand">
+        <div class="lp-logo">
+          <div class="lp-logo__ring" />
+          <div class="lp-logo__ring lp-logo__ring--2" />
+          <div class="lp-logo__core">N</div>
+        </div>
+        <h1 class="lp-brand__title"><span class="lp-gradient">Nature</span> Platform</h1>
+        <p class="lp-brand__tagline">等保测评 · 项目流程管理系统</p>
+        <div class="lp-brand__lines">
+          <span v-for="i in 3" :key="i" class="lp-brand__line" />
+        </div>
+      </section>
 
-      <div class="lp-brand">
-        <div class="lp-brand__mark">N</div>
-        <div class="lp-brand__text">
-          <h1>Nature</h1>
-          <p>等保测评管理平台</p>
+      <!-- Login Card -->
+      <div class="lp-card">
+        <div class="lp-card__glow" />
+
+        <div class="lp-card__header">
+          <div class="lp-card__icon">
+            <el-icon><Lock /></el-icon>
+          </div>
+          <h2>欢迎登录</h2>
+          <p>使用账号密码登录系统</p>
+        </div>
+
+        <form class="lp-form" @submit.prevent="handleLogin">
+          <div class="lp-field">
+            <label>用户名</label>
+            <el-input v-model="form.username" placeholder="请输入用户名" size="large" @keyup.enter="handleLogin">
+              <template #prefix><el-icon><User /></el-icon></template>
+            </el-input>
+          </div>
+
+          <div class="lp-field">
+            <label>密码</label>
+            <el-input v-model="form.password" type="password" show-password placeholder="请输入密码" size="large" @keyup.enter="handleLogin">
+              <template #prefix><el-icon><Lock /></el-icon></template>
+            </el-input>
+          </div>
+
+          <button type="submit" class="lp-btn" :disabled="loading">
+            <span class="lp-btn__bg" />
+            <span class="lp-btn__content">
+              <template v-if="!loading">
+                <el-icon><Right /></el-icon>
+                登 录
+              </template>
+              <template v-else>
+                <span class="lp-spinner" />
+                登录中...
+              </template>
+            </span>
+          </button>
+        </form>
+
+        <div class="lp-badge">
+          <span>安全认证 · 全量操作留痕</span>
         </div>
       </div>
-
-      <el-form ref="formRef" :model="form" :rules="rules" size="large" @keyup.enter="handleLogin">
-        <el-form-item prop="username">
-          <el-input v-model="form.username" placeholder="用户名" :prefix-icon="User" />
-        </el-form-item>
-        <el-form-item prop="password">
-          <el-input v-model="form.password" type="password" placeholder="密码" show-password :prefix-icon="Lock" />
-        </el-form-item>
-        <el-form-item style="margin-bottom: 0">
-          <el-button type="primary" :loading="loading" class="lp-submit" @click="handleLogin">
-            登 录
-          </el-button>
-        </el-form-item>
-      </el-form>
-
-      <div class="lp-alt">
-        <span class="lp-alt__line" />
-        <span class="lp-alt__text">其他方式</span>
-        <span class="lp-alt__line" />
-      </div>
-
-      <button class="lp-dingtalk" title="钉钉扫码登录（即将上线）">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .38z"/></svg>
-        <span>钉钉登录</span>
-      </button>
     </div>
 
-    <footer class="lp-footer">Nature System · 2026</footer>
+    <footer class="lp-footer">
+      <p>&copy; {{ year }} Nature Platform · 等保测评项目管理系统</p>
+    </footer>
   </div>
 </template>
 
 <style scoped>
 .lp {
   min-height: 100vh;
+  background: #0c1218;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: var(--n-login-bg);
   position: relative;
   overflow: hidden;
 }
 
-/* ── Background ─────────────────────────────────────────────────────── */
-.lp-bg { position: absolute; inset: 0; pointer-events: none; }
+/* ── Particles ── */
+.lp-particles { position: fixed; inset: 0; z-index: 0; }
 
-.lp-bg__noise {
-  position: absolute; inset: 0;
-  background: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
-  background-size: 256px;
+/* ── Grid ── */
+.lp-grid {
+  position: fixed; inset: 0; z-index: 1;
+  background: linear-gradient(90deg, rgba(184,158,120,0.04) 1px, transparent 1px),
+              linear-gradient(rgba(184,158,120,0.04) 1px, transparent 1px);
+  background-size: 50px 50px;
+  animation: grid-drift 22s linear infinite;
+}
+@keyframes grid-drift {
+  0% { transform: perspective(500px) rotateX(55deg) translateY(0); }
+  100% { transform: perspective(500px) rotateX(55deg) translateY(50px); }
 }
 
-.lp-bg__grid {
-  position: absolute; inset: 0;
-  background-image:
-    linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
-  background-size: 48px 48px;
-  mask-image: radial-gradient(ellipse at center, black 30%, transparent 70%);
+/* ── Orbs ── */
+.lp-orbs { position: fixed; inset: 0; z-index: 2; pointer-events: none; }
+.lp-orb { position: absolute; border-radius: 50%; filter: blur(80px); animation: orb-drift 16s ease-in-out infinite; }
+.lp-orb--1 { width: 380px; height: 380px; background: radial-gradient(circle, rgba(184,134,78,0.25), transparent 70%); top: -10%; right: 5%; }
+.lp-orb--2 { width: 300px; height: 300px; background: radial-gradient(circle, rgba(91,106,191,0.2), transparent 70%); bottom: 5%; left: -5%; animation-delay: -5s; }
+.lp-orb--3 { width: 220px; height: 220px; background: radial-gradient(circle, rgba(160,140,100,0.18), transparent 70%); top: 50%; left: 45%; animation-delay: -10s; }
+@keyframes orb-drift {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(20px, -18px) scale(1.06); }
 }
 
-.lp-bg__orb {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(120px);
+/* ── Wrapper ── */
+.lp-wrapper {
+  position: relative; z-index: 10;
+  display: flex; align-items: center; gap: 70px; padding: 36px;
 }
 
-.lp-bg__orb--warm {
-  width: 500px; height: 500px;
-  background: rgba(184, 134, 78, 0.08);
-  top: -150px; right: -100px;
-  animation: float-warm 20s ease-in-out infinite;
+/* ── Brand ── */
+.lp-brand { text-align: center; animation: slide-left 0.8s ease-out; }
+@keyframes slide-left { from { opacity: 0; transform: translateX(-30px); } }
+
+.lp-logo { position: relative; width: 110px; height: 110px; margin: 0 auto 28px; }
+.lp-logo__ring {
+  position: absolute; inset: -10px;
+  border: 2px solid transparent; border-top-color: #c8a870;
+  border-radius: 50%; animation: ring-spin 3s linear infinite;
+}
+.lp-logo__ring--2 { inset: -18px; border-top-color: #7b8ec6; animation-direction: reverse; animation-duration: 4.5s; }
+.lp-logo__core {
+  width: 100%; height: 100%; border-radius: 28px;
+  background: linear-gradient(140deg, rgba(120,95,60,0.9), rgba(80,65,45,0.9));
+  display: grid; place-items: center;
+  font-size: 46px; font-weight: 700; color: #f0e6d6;
+  box-shadow: 0 0 28px rgba(184,134,78,0.25);
+  font-family: 'Plus Jakarta Sans', serif;
+}
+@keyframes ring-spin { to { transform: rotate(360deg); } }
+
+.lp-brand__title {
+  font-size: 38px; font-weight: 700; color: #f5f0ea;
+  margin: 0 0 10px; letter-spacing: 1.5px;
+  font-family: 'Plus Jakarta Sans', serif;
+}
+.lp-gradient {
+  background: linear-gradient(135deg, #c8a870 0%, #9eaee0 100%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+}
+.lp-brand__tagline { font-size: 13px; color: rgba(220,210,195,0.7); letter-spacing: 4px; margin-bottom: 30px; }
+.lp-brand__lines { display: flex; justify-content: center; gap: 7px; }
+.lp-brand__line {
+  width: 50px; height: 3px; border-radius: 2px;
+  background: linear-gradient(90deg, transparent, #c8a870, transparent);
+  animation: line-pulse 2.2s ease-in-out infinite;
+}
+.lp-brand__line:nth-child(2) { width: 70px; animation-delay: 0.3s; }
+.lp-brand__line:nth-child(3) { animation-delay: 0.6s; }
+@keyframes line-pulse {
+  0%, 100% { opacity: 0.3; transform: scaleX(0.8); }
+  50% { opacity: 1; transform: scaleX(1); }
 }
 
-.lp-bg__orb--cool {
-  width: 350px; height: 350px;
-  background: rgba(91, 106, 191, 0.06);
-  bottom: -100px; left: -80px;
-  animation: float-cool 25s ease-in-out infinite;
-}
-
-@keyframes float-warm {
-  0%, 100% { transform: translate(0, 0); }
-  50% { transform: translate(-30px, 20px); }
-}
-@keyframes float-cool {
-  0%, 100% { transform: translate(0, 0); }
-  50% { transform: translate(20px, -15px); }
-}
-
-/* ── Card ───────────────────────────────────────────────────────────── */
+/* ── Card ── */
 .lp-card {
-  width: 380px;
-  padding: 36px 32px 28px;
-  background: var(--n-login-card-bg);
-  border: 1px solid var(--n-login-card-border);
-  border-radius: 16px;
-  backdrop-filter: blur(24px) saturate(1.2);
-  position: relative;
-  z-index: 1;
-  animation: card-in 0.7s var(--n-ease-out) both;
-  overflow: hidden;
+  width: 430px; position: relative; border-radius: 22px;
+  border: 1px solid rgba(160,145,120,0.18);
+  background: rgba(14,20,28,0.85); backdrop-filter: blur(20px);
+  padding: 36px; color: #f0ece5; animation: slide-right 0.8s ease-out;
+}
+@keyframes slide-right { from { opacity: 0; transform: translateX(30px); } }
+
+.lp-card__glow {
+  position: absolute; top: -1px; left: 16%; right: 16%; height: 2px;
+  background: linear-gradient(90deg, transparent, #c8a870, #8a9bd4, transparent);
+  filter: blur(1px);
 }
 
-.lp-card__accent {
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--n-primary-light), transparent);
-  opacity: 0.6;
+.lp-card__header { text-align: center; margin-bottom: 22px; }
+.lp-card__icon {
+  width: 50px; height: 50px; margin: 0 auto 12px; border-radius: 14px;
+  display: flex; align-items: center; justify-content: center;
+  color: #d4b88a; border: 1px solid rgba(200,168,112,0.3);
+  background: linear-gradient(135deg, rgba(184,134,78,0.18), rgba(120,140,200,0.1));
+}
+.lp-card__icon .el-icon { font-size: 26px; }
+.lp-card__header h2 { margin: 0 0 6px; font-size: 22px; letter-spacing: 1px; font-weight: 600; }
+.lp-card__header p { margin: 0; color: rgba(210,200,185,0.7); font-size: 13px; }
+
+/* ── Form ── */
+.lp-field { margin-bottom: 16px; }
+.lp-field label { display: block; font-size: 12px; font-weight: 600; color: rgba(210,200,185,0.8); margin-bottom: 6px; }
+.lp-field :deep(.el-input__wrapper) {
+  min-height: 46px; border: 1px solid rgba(140,130,115,0.25);
+  background: rgba(30,38,48,0.7); box-shadow: none !important; color: #ede6da;
+}
+.lp-field :deep(.el-input__wrapper.is-focus) { border-color: #c8a870; box-shadow: 0 0 0 3px rgba(200,168,112,0.18) !important; }
+.lp-field :deep(.el-input__inner) { color: #ede8e0; }
+.lp-field :deep(.el-input__inner::placeholder) { color: rgba(200,190,175,0.5); }
+.lp-field :deep(.el-input__prefix-inner .el-icon) { color: rgba(190,180,160,0.6); }
+
+.lp-btn {
+  width: 100%; height: 48px; border: none; border-radius: 12px;
+  background: none; cursor: pointer; position: relative; overflow: hidden; margin-top: 4px;
+}
+.lp-btn__bg {
+  position: absolute; inset: 0;
+  background: linear-gradient(135deg, #c8a870 0%, #8a9bd4 100%);
+  transition: all 0.3s;
+}
+.lp-btn__content {
+  position: relative; z-index: 1; color: #fff; font-size: 15px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+}
+.lp-btn:hover:not(:disabled) .lp-btn__bg { filter: brightness(1.1); box-shadow: 0 8px 28px rgba(184,134,78,0.3); }
+.lp-btn:disabled { opacity: 0.7; cursor: not-allowed; }
+
+.lp-spinner {
+  width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff;
+  border-radius: 50%; animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.lp-badge {
+  margin-top: 18px; padding-top: 14px;
+  border-top: 1px solid rgba(160,145,120,0.18);
+  text-align: center; font-size: 11px; color: rgba(200,190,175,0.6);
 }
 
-@keyframes card-in {
-  from { opacity: 0; transform: translateY(16px) scale(0.98); }
-  to { opacity: 1; transform: none; }
-}
+/* ── Footer ── */
+.lp-footer { position: absolute; bottom: 18px; text-align: center; z-index: 10; }
+.lp-footer p { margin: 0; font-size: 11px; color: rgba(200,190,175,0.4); }
 
-/* ── Brand ──────────────────────────────────────────────────────────── */
-.lp-brand {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-bottom: 32px;
+/* ── Responsive ── */
+@media (max-width: 900px) {
+  .lp-wrapper { flex-direction: column; gap: 30px; padding: 20px; }
+  .lp-brand { display: none; }
+  .lp-card { width: 100%; max-width: 400px; padding: 28px; }
 }
-
-.lp-brand__mark {
-  width: 44px; height: 44px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, rgba(184,134,78,0.15), rgba(184,134,78,0.05));
-  border: 1px solid rgba(184,134,78,0.12);
-  color: var(--n-primary-light);
-  font-family: var(--n-font-display);
-  font-size: 22px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.lp-brand__text h1 {
-  font-family: var(--n-font-display);
-  font-size: 22px;
-  font-weight: 700;
-  color: rgba(255,255,255,0.92);
-  margin: 0;
-  letter-spacing: 0.03em;
-}
-
-.lp-brand__text p {
-  font-size: 12px;
-  color: rgba(255,255,255,0.3);
-  margin: 3px 0 0;
-  letter-spacing: 0.04em;
-}
-
-/* ── Form Skin ──────────────────────────────────────────────────────── */
-.lp-card :deep(.el-input__wrapper) {
-  background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.07);
-  box-shadow: none;
-  border-radius: 8px;
-}
-.lp-card :deep(.el-input__wrapper:hover) { border-color: rgba(255,255,255,0.12); }
-.lp-card :deep(.el-input__wrapper.is-focus) {
-  border-color: var(--n-primary-light) !important;
-  box-shadow: 0 0 0 3px rgba(184,134,78,0.12) !important;
-}
-.lp-card :deep(.el-input__inner) { color: rgba(255,255,255,0.88); }
-.lp-card :deep(.el-input__inner::placeholder) { color: rgba(255,255,255,0.2); }
-.lp-card :deep(.el-input__prefix .el-icon) { color: rgba(255,255,255,0.25); }
-.lp-card :deep(.el-form-item__error) { color: #e57373; }
-
-.lp-submit {
-  width: 100%;
-  height: 42px;
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  border-radius: 8px;
-}
-
-/* ── Alt Login ──────────────────────────────────────────────────────── */
-.lp-alt {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 22px 0 14px;
-}
-
-.lp-alt__line { flex: 1; height: 1px; background: rgba(255,255,255,0.05); }
-.lp-alt__text { font-size: 11px; color: rgba(255,255,255,0.18); letter-spacing: 0.04em; }
-
-.lp-dingtalk {
-  width: 100%;
-  height: 38px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  background: rgba(255,255,255,0.025);
-  border: 1px solid rgba(255,255,255,0.06);
-  border-radius: 8px;
-  color: rgba(255,255,255,0.3);
-  font-size: 13px;
-  cursor: pointer;
-  transition: all var(--n-transition-fast);
-  font-family: inherit;
-}
-.lp-dingtalk:hover {
-  border-color: rgba(255,255,255,0.1);
-  color: rgba(255,255,255,0.5);
-  background: rgba(255,255,255,0.04);
-}
-
-/* ── Footer ─────────────────────────────────────────────────────────── */
-.lp-footer {
-  position: absolute;
-  bottom: 20px;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 11px;
-  color: rgba(255,255,255,0.1);
-  letter-spacing: 0.05em;
-}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; } }
 </style>
