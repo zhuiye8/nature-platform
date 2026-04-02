@@ -195,32 +195,22 @@ html, body {
   }
 }
 
-/* Element Plus 表格：始终显示水平滚动条 + 底部间距 */
-.el-table .el-table__body-wrapper {
-  overflow-x: scroll !important;
-  padding-bottom: 4px;
+/* Element Plus 表格滚动条：始终可见 + 加粗加深 + 底部间距 */
+.el-table .el-scrollbar__bar.is-horizontal {
+  height: 12px !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
 }
-.el-table .el-table__body-wrapper::-webkit-scrollbar {
-  height: 12px;
-}
-.el-table .el-table__body-wrapper::-webkit-scrollbar-track {
-  background: #ebeef2;
-  border-radius: 6px;
-}
-.el-table .el-table__body-wrapper::-webkit-scrollbar-thumb {
-  background: #b0b4bc;
-  border-radius: 6px;
+.el-table .el-scrollbar__bar.is-horizontal .el-scrollbar__thumb {
+  background-color: rgba(100, 100, 120, 0.45) !important;
+  border-radius: 6px !important;
   &:hover {
-    background: #7a7e88;
+    background-color: rgba(100, 100, 120, 0.75) !important;
   }
 }
-/* 隐藏 Element Plus 自带的悬浮滚动条（用原生替代） */
-.el-table .el-scrollbar__bar.is-horizontal {
-  display: none !important;
-}
 /* 最后一行和滚动条之间留间距 */
-.el-table .el-table__body {
-  margin-bottom: 8px;
+.el-table .el-scrollbar__wrap {
+  padding-bottom: 14px !important;
 }
 
 /* ── Empty State ────────────────────────────────────────────────────────── */
