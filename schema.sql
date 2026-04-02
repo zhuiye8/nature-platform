@@ -1029,7 +1029,6 @@ INSERT INTO iam_role_permission (role_code, permission_code) VALUES
 INSERT INTO iam_role_permission (role_code, permission_code) VALUES
     ('commercial', 'customer:list'),
     ('commercial', 'contract:list'),
-    ('commercial', 'contract:review'),
     ('commercial', 'contract:archive'),
     ('commercial', 'contract:view_all'),
     ('commercial', 'project:list'),
@@ -1108,9 +1107,14 @@ INSERT INTO iam_role_permission (role_code, permission_code) VALUES
     ('dept_manager', 'project:list'),
     ('dept_manager', 'project:review'),
     ('dept_manager', 'project:assign_team'),
+    ('dept_manager', 'assessment:view'),
     ('dept_manager', 'report:assign'),
+    ('dept_manager', 'report:list'),
+    ('dept_manager', 'report:view'),
     ('dept_manager', 'report:review'),
+    ('dept_manager', 'archive:list'),
     ('dept_manager', 'archive:submit'),
+    ('dept_manager', 'user:list'),
     ('dept_manager', 'wf_task:view'),
     ('dept_manager', 'wf_task:operate');
 
@@ -1336,7 +1340,7 @@ INSERT INTO wf_assignment_rule (node_key, slot_key, slot_label, role_code, avoid
 
 -- Contract review assignment rule
 INSERT INTO wf_assignment_rule (node_key, slot_key, slot_label, role_code, avoidance_rule, priority) VALUES
-    ('CONTRACT_REVIEW', 'REVIEWER', '合同审核人',      'commercial',              'NONE',         10),
+    -- commercial 不参与合同审核，只负责合同归档
     ('CONTRACT_REVIEW', 'REVIEWER', '合同审核人',      'super_admin',             'NONE',         99);
 
 -- Contract archive assignment rule
