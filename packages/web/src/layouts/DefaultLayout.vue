@@ -225,14 +225,14 @@ onUnmounted(() => {
               <template #title>回收站</template>
             </el-menu-item>
           </el-sub-menu>
+
+          <!-- 个人中心 -->
+          <el-menu-item index="/profile" @click="navigateTo('/profile')">
+            <el-icon><UserFilled /></el-icon>
+            <template #title>个人中心</template>
+          </el-menu-item>
         </el-menu>
       </el-scrollbar>
-
-      <!-- 个人中心 -->
-      <el-menu-item index="/profile" @click="navigateTo('/profile')" style="margin-top: auto">
-        <el-icon><UserFilled /></el-icon>
-        <template #title>个人中心</template>
-      </el-menu-item>
 
       <!-- Collapse Toggle -->
       <div class="n-sidebar__footer" @click="toggleSidebar">
