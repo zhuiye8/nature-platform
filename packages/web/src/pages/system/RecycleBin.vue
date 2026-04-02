@@ -59,7 +59,7 @@ onMounted(() => fetchData())
         <el-table-column prop="displayName" label="名称" min-width="300" show-overflow-tooltip />
         <el-table-column prop="deletedAt" label="删除时间" min-width="170" />
         <el-table-column prop="remark" label="备注" min-width="150" show-overflow-tooltip />
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column label="操作" width="200">
           <template #default="{ row }">
             <el-popconfirm title="确定要恢复吗？" @confirm="handleRestore(row)">
               <template #reference>

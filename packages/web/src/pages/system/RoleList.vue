@@ -86,7 +86,7 @@ onMounted(() => fetchData())
             <el-tag :type="row.enabled ? 'success' : 'danger'" size="small">{{ row.enabled ? '启用' : '禁用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="220" fixed="right">
+        <el-table-column label="操作" width="220">
           <template #default="{ row }">
             <el-button v-permission="'role:update'" type="primary" link size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button v-permission="'role:update'" link size="small" @click="openPermDialog(row)">权限</el-button>

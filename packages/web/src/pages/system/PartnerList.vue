@@ -91,7 +91,7 @@ onMounted(fetchList)
         <el-table-column prop="contactName" label="联系人" width="120" />
         <el-table-column prop="contactPhone" label="联系电话" width="140" />
         <el-table-column prop="remark" label="备注" min-width="180" show-overflow-tooltip />
-        <el-table-column label="操作" width="140" align="center" fixed="right">
+        <el-table-column label="操作" width="140" align="center">
           <template #default="{ row }">
             <el-button type="primary" link size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button type="danger" link size="small" @click="handleDelete(row)">删除</el-button>

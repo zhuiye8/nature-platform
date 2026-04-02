@@ -154,7 +154,7 @@ onMounted(() => {
             <el-table-column label="创建时间" min-width="170">
               <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
             </el-table-column>
-            <el-table-column label="操作" width="120" fixed="right" align="center">
+            <el-table-column label="操作" width="120" align="center">
               <template #default="{ row }">
                 <el-button :type="getReviewActionType(row)" size="small" @click="handleReviewAction(row)">
                   {{ getReviewActionLabel(row) }}
@@ -186,7 +186,7 @@ onMounted(() => {
             <el-table-column label="创建时间" min-width="170">
               <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
             </el-table-column>
-            <el-table-column label="操作" width="120" fixed="right" align="center">
+            <el-table-column label="操作" width="120" align="center">
               <template #default="{ row }">
                 <el-button type="primary" size="small" @click="handleBusinessAction(row)">
                   查看

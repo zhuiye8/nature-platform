@@ -177,9 +177,8 @@ html, body {
   padding: 12px 24px 20px;
 }
 
-/* ── Scrollbar 美化（全局 + 表格） ──────────────────────────────────────── */
+/* ── Scrollbar 美化（全局） ─────────────────────────────────────────────── */
 
-/* 全局滚动条 */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -196,28 +195,25 @@ html, body {
   }
 }
 
-/* Element Plus 表格滚动条加粗加深 */
-.el-table__body-wrapper::-webkit-scrollbar,
-.el-scrollbar__bar {
-  height: 10px;
-  width: 10px;
+/* Element Plus 表格水平滚动条：更粗更醒目，始终可见 */
+.el-table .el-table__inner-wrapper::before {
+  /* 底部渐变提示条，暗示可以滚动 */
+  display: none;
 }
-.el-table__body-wrapper::-webkit-scrollbar-thumb,
-.el-scrollbar__thumb {
-  background: #a0a4ad;
-  border-radius: 5px;
+.el-scrollbar__bar.is-horizontal {
+  height: 12px !important;
+}
+.el-scrollbar__bar.is-horizontal .el-scrollbar__thumb {
+  background: rgba(100, 100, 120, 0.4) !important;
+  border-radius: 6px !important;
   &:hover {
-    background: #606266;
+    background: rgba(100, 100, 120, 0.7) !important;
   }
 }
-.el-table__body-wrapper::-webkit-scrollbar-track {
-  background: #e8eaed;
-  border-radius: 5px;
-}
-
-/* 水平滚动条始终可见提示 */
-.el-table .el-table__body-wrapper {
-  overflow-x: auto !important;
+/* 始终显示水平滚动条（不自动隐藏） */
+.el-table .el-scrollbar__bar.is-horizontal {
+  opacity: 1 !important;
+  pointer-events: auto !important;
 }
 
 /* ── Empty State ────────────────────────────────────────────────────────── */

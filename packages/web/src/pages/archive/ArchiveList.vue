@@ -99,7 +99,7 @@ onMounted(fetchData)
         <el-table-column label="归档时间" width="170">
           <template #default="{ row }">{{ formatTime(row.submittedAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="80" fixed="right" align="center">
+        <el-table-column label="操作" width="80" align="center">
           <template #default="{ row }">
             <el-button type="primary" link size="small" @click="handleView(row)">查看</el-button>
           </template>

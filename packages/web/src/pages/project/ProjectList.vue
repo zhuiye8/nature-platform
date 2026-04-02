@@ -248,7 +248,7 @@ onMounted(() => {
         </el-table-column>
         <el-table-column prop="createdAt" label="创建时间" min-width="170" />
         <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip />
-        <el-table-column label="操作" width="300" fixed="right">
+        <el-table-column label="操作" width="300">
           <template #default="{ row }">
             <el-button type="primary" link size="small" @click="handleView(row)">
               查看
