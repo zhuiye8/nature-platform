@@ -461,6 +461,8 @@ CREATE TABLE wf_instance (
     started_by      BIGINT        NOT NULL,
     started_at      TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
     finished_at     TIMESTAMPTZ   NULL,
+    round_no        INTEGER       NOT NULL DEFAULT 1,
+        -- Tracks final-review reject round for re-assessment cycles
     variables       JSONB         NULL,
         -- Process-level variables (e.g. generated contract_no, assignment results)
 
@@ -882,6 +884,65 @@ CREATE INDEX idx_material_status ON material_archive (status, updated_at);
 COMMENT ON TABLE material_archive IS 'Final material archiving. Report and form files tracked via file_attachment (biz_type=ARCHIVE).';
 
 
+-- ---------------------------------------------------------------------------
+-- Review opinions (quality review audit trail)
+-- ---------------------------------------------------------------------------
+CREATE TABLE review_opinion (
+    id                  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    project_register_id BIGINT        NOT NULL,
+    round_no            INTEGER       NOT NULL DEFAULT 1,
+    node_key            VARCHAR(64)   NOT NULL,
+    slot_key            VARCHAR(64),
+    action_type         VARCHAR(32)   NOT NULL,
+    opinion_text        TEXT,
+    attachment_ids      JSONB,
+    operator_id         BIGINT        NOT NULL,
+    created_at          TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_review_opinion_project ON review_opinion (project_register_id, round_no, node_key);
+
+CREATE TABLE review_opinion_template (
+    id              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    node_key        VARCHAR(64)   NOT NULL,
+    slot_key        VARCHAR(64),
+    action_type     VARCHAR(32)   NOT NULL,
+    template_text   TEXT          NOT NULL,
+    sort_order      INTEGER       NOT NULL DEFAULT 0
+);
+
+-- ---------------------------------------------------------------------------
+-- File pools (assessment files + compile report files)
+-- ---------------------------------------------------------------------------
+CREATE TABLE assessment_file (
+    id                  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    project_register_id BIGINT        NOT NULL,
+    file_pool           VARCHAR(32)   NOT NULL,  -- ASSESSMENT_FILE | ASSESSMENT_RESULT
+    file_name           VARCHAR(500)  NOT NULL,
+    object_key          VARCHAR(512)  NOT NULL,
+    file_size           BIGINT        NOT NULL DEFAULT 0,
+    content_type        VARCHAR(128),
+    remark              VARCHAR(500),
+    uploaded_by         BIGINT        NOT NULL,
+    uploaded_at         TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    deleted_at          TIMESTAMPTZ
+);
+CREATE INDEX idx_assessment_file_project ON assessment_file (project_register_id, file_pool);
+
+CREATE TABLE compile_report_file (
+    id                  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    project_register_id BIGINT        NOT NULL,
+    file_name           VARCHAR(500)  NOT NULL,
+    object_key          VARCHAR(512)  NOT NULL,
+    file_size           BIGINT        NOT NULL DEFAULT 0,
+    content_type        VARCHAR(128),
+    remark              VARCHAR(500),
+    compiled_by         BIGINT        NOT NULL,
+    uploaded_at         TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    deleted_at          TIMESTAMPTZ
+);
+CREATE INDEX idx_compile_report_file_project ON compile_report_file (project_register_id);
+
+
 -- ============================================================================
 -- SECTION 3.5: APPLY UPDATED_AT TRIGGERS TO ALL TABLES
 -- ============================================================================
@@ -909,21 +970,23 @@ $$;
 -- ============================================================================
 
 -- ---------------------------------------------------------------------------
--- 4.1 Roles (12 business roles + 1 baseline)
+-- 4.1 Roles (14 business roles)
 -- ---------------------------------------------------------------------------
-INSERT INTO iam_role (role_code, role_name, description, system_flag, enabled) VALUES
-    ('super_admin',             '超级管理员',         '系统全局管理角色，拥有所有权限',             TRUE, TRUE),
-    ('sales',                   '销售',               '负责客户管理和合同创建',                    TRUE, TRUE),
-    ('commercial',              '商务',               '负责合同审核和归档',                        TRUE, TRUE),
-    ('police_register',         '公安登记专员',        '负责公安登记操作',                         TRUE, TRUE),
-    ('project_manager',         '项目经理',           '负责项目管理和现场测评组织',                 TRUE, TRUE),
-    ('assessor',                '测评师',             '负责现场测评实施',                          TRUE, TRUE),
-    ('tech_reviewer',           '整体技术审核员',      '负责整体技术审核',                         TRUE, TRUE),
-    ('content_reviewer_tech',   '内容审核员（技术）',   '负责技术向内容审核',                       TRUE, TRUE),
-    ('content_reviewer_mgmt',   '内容审核员（管理）',   '负责管理向内容审核',                       TRUE, TRUE),
-    ('content_reviewer_network','内容审核员（网络）',   '负责网络向内容审核',                       TRUE, TRUE),
-    ('report_writer',           '报告编制员',          '负责报告编制和提交',                       TRUE, TRUE),
-    ('dept_manager',            '部门经理',           '负责报告最终审核',                          TRUE, TRUE);
+INSERT INTO iam_role (role_code, role_name, description, enabled, built_in) VALUES
+    ('super_admin',              '超级管理员',           '系统全局管理角色，拥有所有权限',              TRUE, TRUE),
+    ('sales',                    '销售',                '负责客户管理和合同创建',                     TRUE, TRUE),
+    ('commercial',               '商务',                '负责合同归档',                               TRUE, TRUE),
+    ('dept_manager',             '部门经理',            '负责合同审核、项目审核、最终审核',            TRUE, TRUE),
+    ('project_manager',          '项目经理',            '负责项目管理和现场测评组织',                  TRUE, TRUE),
+    ('assessor',                 '测评师',              '负责现场测评实施',                           TRUE, TRUE),
+    ('police_register',          '公安登记专员',         '负责公安登记操作',                          TRUE, TRUE),
+    ('tech_reviewer',            '整体技术审核员',       '负责整体技术审核',                          TRUE, TRUE),
+    ('content_reviewer_tech',    '内容审核员（技术）',   '负责技术向内容审核',                        TRUE, TRUE),
+    ('content_reviewer_mgmt',    '内容审核员（管理）',   '负责管理向内容审核',                        TRUE, TRUE),
+    ('content_reviewer_network', '内容审核员（网络）',   '负责网络向内容审核',                        TRUE, TRUE),
+    ('report_writer',            '报告编制员',          '负责报告编制和提交',                         TRUE, TRUE),
+    ('report_assigner',          '报告分配人',          '负责审核测评成果并分配编制任务给编制人',       TRUE, TRUE),
+    ('archiver',                 '归档员',              '负责材料归档',                               TRUE, TRUE);
 
 -- ---------------------------------------------------------------------------
 -- 4.2 Default admin user (password: admin123 — must be bcrypt hashed in app)
@@ -970,6 +1033,10 @@ INSERT INTO iam_permission (permission_code, permission_name, category, enabled,
     ('partner:delete',      '删除合作方',      'PARTNER',    TRUE, TRUE),
 
     -- Police register
+    ('police:list',         '公安登记列表',    'POLICE',     TRUE, TRUE),
+    ('police:create',       '创建公安登记',    'POLICE',     TRUE, TRUE),
+    ('police:update',       '编辑公安登记',    'POLICE',     TRUE, TRUE),
+    ('police:complete',     '完成公安登记',    'POLICE',     TRUE, TRUE),
     ('police:operate',      '公安登记操作',    'POLICE',     TRUE, TRUE),
 
     -- Assessment
@@ -983,140 +1050,143 @@ INSERT INTO iam_permission (permission_code, permission_name, category, enabled,
     -- Report
     ('report:assign',       '分配报告编制',    'REPORT',     TRUE, TRUE),
     ('report:compile',      '编制报告',       'REPORT',     TRUE, TRUE),
+    ('report:list',         '报告列表',       'REPORT',     TRUE, TRUE),
     ('report:review',       '审核报告',       'REPORT',     TRUE, TRUE),
+    ('report:submit',       '提交报告',       'REPORT',     TRUE, TRUE),
+    ('report:view',         '查看报告',       'REPORT',     TRUE, TRUE),
 
     -- Archive
+    ('archive:list',        '归档列表',       'ARCHIVE',    TRUE, TRUE),
     ('archive:submit',      '提交材料归档',    'ARCHIVE',    TRUE, TRUE),
 
     -- Workflow task (generic)
     ('wf_task:view',        '查看待办任务',    'WORKFLOW',   TRUE, TRUE),
     ('wf_task:operate',     '操作待办任务',    'WORKFLOW',   TRUE, TRUE),
 
+    -- Contract financial
+    ('contract:update_financial', '更新合同财务信息', 'CONTRACT', TRUE, TRUE),
+
     -- System administration
+    ('user:list',           '用户列表',       'IAM',        TRUE, TRUE),
+    ('user:create',         '创建用户',       'IAM',        TRUE, TRUE),
+    ('user:update',         '编辑用户',       'IAM',        TRUE, TRUE),
+    ('user:delete',         '删除用户',       'IAM',        TRUE, TRUE),
     ('user:manage',         '用户管理',       'IAM',        TRUE, TRUE),
+    ('role:list',           '角色列表',       'IAM',        TRUE, TRUE),
+    ('role:create',         '创建角色',       'IAM',        TRUE, TRUE),
+    ('role:update',         '编辑角色',       'IAM',        TRUE, TRUE),
+    ('role:delete',         '删除角色',       'IAM',        TRUE, TRUE),
     ('role:manage',         '角色管理',       'IAM',        TRUE, TRUE),
     ('resource:manage',     '资源管理',       'IAM',        TRUE, TRUE),
     ('department:manage',   '部门管理',       'IAM',        TRUE, TRUE),
     ('workflow:manage',     '流程管理',       'IAM',        TRUE, TRUE),
     ('audit:view',          '审计日志查看',    'AUDIT',      TRUE, TRUE),
+    ('recycle:list',        '回收站列表',     'IAM',        TRUE, TRUE),
+    ('recycle:restore',     '回收站恢复',     'IAM',        TRUE, TRUE),
+    ('recycle:delete',      '回收站删除',     'IAM',        TRUE, TRUE),
     ('recycle:manage',      '回收站管理',     'IAM',        TRUE, TRUE);
 
--- Super admin gets all permissions
-INSERT INTO iam_role_permission (role_code, permission_code)
-SELECT 'super_admin', permission_code FROM iam_permission;
-
--- Sales role permissions
 INSERT INTO iam_role_permission (role_code, permission_code) VALUES
-    ('sales', 'customer:list'),
-    ('sales', 'customer:create'),
-    ('sales', 'customer:update'),
-    ('sales', 'contract:list'),
-    ('sales', 'contract:create'),
-    ('sales', 'contract:update'),
-    ('sales', 'contract:delete'),
-    ('sales', 'project:list'),
-    ('sales', 'project:create'),
-    ('sales', 'project:update'),
-    ('sales', 'project:delete'),
-    ('sales', 'partner:list'),
-    ('sales', 'partner:create'),
-    ('sales', 'partner:update'),
-    ('sales', 'partner:delete'),
-    ('sales', 'user:list'),
-    ('sales', 'wf_task:view');
+    -- super_admin: all permissions
+    ('super_admin', 'customer:list'), ('super_admin', 'customer:create'), ('super_admin', 'customer:update'), ('super_admin', 'customer:delete'),
+    ('super_admin', 'contract:list'), ('super_admin', 'contract:create'), ('super_admin', 'contract:update'), ('super_admin', 'contract:delete'),
+    ('super_admin', 'contract:review'), ('super_admin', 'contract:archive'), ('super_admin', 'contract:view_all'),
+    ('super_admin', 'partner:list'), ('super_admin', 'partner:create'), ('super_admin', 'partner:update'), ('super_admin', 'partner:delete'),
+    ('super_admin', 'project:list'), ('super_admin', 'project:create'), ('super_admin', 'project:update'), ('super_admin', 'project:delete'),
+    ('super_admin', 'project:review'), ('super_admin', 'project:assign_team'),
+    ('super_admin', 'police:list'), ('super_admin', 'police:create'), ('super_admin', 'police:update'), ('super_admin', 'police:complete'), ('super_admin', 'police:operate'),
+    ('super_admin', 'assessment:submit'), ('super_admin', 'assessment:view'), ('super_admin', 'assessment:start_qr'),
+    ('super_admin', 'quality_review:review'),
+    ('super_admin', 'report:assign'), ('super_admin', 'report:compile'), ('super_admin', 'report:list'), ('super_admin', 'report:review'), ('super_admin', 'report:submit'), ('super_admin', 'report:view'),
+    ('super_admin', 'archive:list'), ('super_admin', 'archive:submit'),
+    ('super_admin', 'user:list'), ('super_admin', 'user:create'), ('super_admin', 'user:update'), ('super_admin', 'user:delete'), ('super_admin', 'user:manage'),
+    ('super_admin', 'role:list'), ('super_admin', 'role:create'), ('super_admin', 'role:update'), ('super_admin', 'role:delete'), ('super_admin', 'role:manage'),
+    ('super_admin', 'resource:manage'), ('super_admin', 'department:manage'), ('super_admin', 'workflow:manage'),
+    ('super_admin', 'audit:view'),
+    ('super_admin', 'recycle:list'), ('super_admin', 'recycle:restore'), ('super_admin', 'recycle:delete'), ('super_admin', 'recycle:manage'),
+    ('super_admin', 'wf_task:view'), ('super_admin', 'wf_task:operate'),
 
--- Commercial role permissions
-INSERT INTO iam_role_permission (role_code, permission_code) VALUES
+    -- sales
+    ('sales', 'customer:list'), ('sales', 'customer:create'), ('sales', 'customer:update'),
+    ('sales', 'contract:list'), ('sales', 'contract:create'), ('sales', 'contract:update'), ('sales', 'contract:delete'),
+    ('sales', 'partner:list'), ('sales', 'partner:create'), ('sales', 'partner:update'), ('sales', 'partner:delete'),
+    ('sales', 'project:list'), ('sales', 'project:create'), ('sales', 'project:update'), ('sales', 'project:delete'),
+    ('sales', 'archive:list'), ('sales', 'archive:submit'),
+    ('sales', 'user:list'), ('sales', 'wf_task:view'),
+
+    -- commercial
     ('commercial', 'customer:list'),
-    ('commercial', 'contract:list'),
-    ('commercial', 'contract:archive'),
-    ('commercial', 'contract:view_all'),
+    ('commercial', 'contract:list'), ('commercial', 'contract:archive'), ('commercial', 'contract:view_all'),
+    ('commercial', 'contract:update'), ('commercial', 'contract:update_financial'),
     ('commercial', 'project:list'),
-    ('commercial', 'wf_task:view'),
-    ('commercial', 'wf_task:operate');
+    ('commercial', 'wf_task:view'), ('commercial', 'wf_task:operate'),
 
--- Project manager permissions
-INSERT INTO iam_role_permission (role_code, permission_code) VALUES
-    ('project_manager', 'customer:list'),
-    ('project_manager', 'contract:list'),
-    ('project_manager', 'project:list'),
-    ('project_manager', 'assessment:submit'),
-    ('project_manager', 'assessment:view'),
-    ('project_manager', 'assessment:start_qr'),
-    ('project_manager', 'wf_task:view'),
-    ('project_manager', 'wf_task:operate');
-
--- Assessor permissions
-INSERT INTO iam_role_permission (role_code, permission_code) VALUES
-    ('assessor', 'customer:list'),
-    ('assessor', 'project:list'),
-    ('assessor', 'assessment:submit'),
-    ('assessor', 'assessment:view'),
-    ('assessor', 'wf_task:view'),
-    ('assessor', 'wf_task:operate');
-
--- Police register role
-INSERT INTO iam_role_permission (role_code, permission_code) VALUES
-    ('police_register', 'customer:list'),
-    ('police_register', 'project:list'),
-    ('police_register', 'police:operate'),
-    ('police_register', 'wf_task:view'),
-    ('police_register', 'wf_task:operate');
-
--- Tech reviewer
-INSERT INTO iam_role_permission (role_code, permission_code) VALUES
-    ('tech_reviewer', 'customer:list'),
-    ('tech_reviewer', 'project:list'),
-    ('tech_reviewer', 'quality_review:review'),
-    ('tech_reviewer', 'wf_task:view'),
-    ('tech_reviewer', 'wf_task:operate');
-
--- Content reviewers (all three subtypes get same permissions)
-INSERT INTO iam_role_permission (role_code, permission_code) VALUES
-    ('content_reviewer_tech', 'customer:list'),
-    ('content_reviewer_tech', 'project:list'),
-    ('content_reviewer_tech', 'quality_review:review'),
-    ('content_reviewer_tech', 'wf_task:view'),
-    ('content_reviewer_tech', 'wf_task:operate'),
-
-    ('content_reviewer_mgmt', 'customer:list'),
-    ('content_reviewer_mgmt', 'project:list'),
-    ('content_reviewer_mgmt', 'quality_review:review'),
-    ('content_reviewer_mgmt', 'wf_task:view'),
-    ('content_reviewer_mgmt', 'wf_task:operate'),
-
-    ('content_reviewer_network', 'customer:list'),
-    ('content_reviewer_network', 'project:list'),
-    ('content_reviewer_network', 'quality_review:review'),
-    ('content_reviewer_network', 'wf_task:view'),
-    ('content_reviewer_network', 'wf_task:operate');
-
--- Report writer
-INSERT INTO iam_role_permission (role_code, permission_code) VALUES
-    ('report_writer', 'customer:list'),
-    ('report_writer', 'project:list'),
-    ('report_writer', 'report:compile'),
-    ('report_writer', 'wf_task:view'),
-    ('report_writer', 'wf_task:operate');
-
--- Dept manager (report final reviewer)
-INSERT INTO iam_role_permission (role_code, permission_code) VALUES
+    -- dept_manager
     ('dept_manager', 'customer:list'),
-    ('dept_manager', 'contract:list'),
-    ('dept_manager', 'contract:view_all'),
-    ('dept_manager', 'project:list'),
-    ('dept_manager', 'project:review'),
-    ('dept_manager', 'project:assign_team'),
+    ('dept_manager', 'contract:list'), ('dept_manager', 'contract:view_all'),
+    ('dept_manager', 'project:list'), ('dept_manager', 'project:review'), ('dept_manager', 'project:assign_team'),
     ('dept_manager', 'assessment:view'),
-    ('dept_manager', 'report:assign'),
-    ('dept_manager', 'report:list'),
-    ('dept_manager', 'report:view'),
-    ('dept_manager', 'report:review'),
-    ('dept_manager', 'archive:list'),
-    ('dept_manager', 'archive:submit'),
+    ('dept_manager', 'report:assign'), ('dept_manager', 'report:list'), ('dept_manager', 'report:view'), ('dept_manager', 'report:review'),
+    ('dept_manager', 'archive:list'), ('dept_manager', 'archive:submit'),
     ('dept_manager', 'user:list'),
-    ('dept_manager', 'wf_task:view'),
-    ('dept_manager', 'wf_task:operate');
+    ('dept_manager', 'wf_task:view'), ('dept_manager', 'wf_task:operate'),
+
+    -- project_manager
+    ('project_manager', 'customer:list'), ('project_manager', 'contract:list'), ('project_manager', 'project:list'),
+    ('project_manager', 'assessment:submit'), ('project_manager', 'assessment:view'), ('project_manager', 'assessment:start_qr'),
+    ('project_manager', 'report:assign'), ('project_manager', 'report:list'), ('project_manager', 'report:view'),
+    ('project_manager', 'archive:list'), ('project_manager', 'archive:submit'),
+    ('project_manager', 'wf_task:view'), ('project_manager', 'wf_task:operate'),
+
+    -- assessor
+    ('assessor', 'customer:list'), ('assessor', 'contract:list'), ('assessor', 'project:list'),
+    ('assessor', 'assessment:submit'), ('assessor', 'assessment:view'),
+    ('assessor', 'report:list'), ('assessor', 'report:view'),
+    ('assessor', 'wf_task:view'), ('assessor', 'wf_task:operate'),
+
+    -- police_register
+    ('police_register', 'customer:list'), ('police_register', 'contract:list'), ('police_register', 'project:list'),
+    ('police_register', 'police:list'), ('police_register', 'police:create'), ('police_register', 'police:update'),
+    ('police_register', 'police:complete'), ('police_register', 'police:operate'),
+    ('police_register', 'wf_task:view'), ('police_register', 'wf_task:operate'),
+
+    -- tech_reviewer
+    ('tech_reviewer', 'customer:list'), ('tech_reviewer', 'contract:list'), ('tech_reviewer', 'project:list'),
+    ('tech_reviewer', 'quality_review:review'),
+    ('tech_reviewer', 'report:list'), ('tech_reviewer', 'report:view'),
+    ('tech_reviewer', 'wf_task:view'), ('tech_reviewer', 'wf_task:operate'),
+
+    -- content_reviewer_tech
+    ('content_reviewer_tech', 'customer:list'), ('content_reviewer_tech', 'contract:list'), ('content_reviewer_tech', 'project:list'),
+    ('content_reviewer_tech', 'quality_review:review'),
+    ('content_reviewer_tech', 'wf_task:view'), ('content_reviewer_tech', 'wf_task:operate'),
+
+    -- content_reviewer_mgmt
+    ('content_reviewer_mgmt', 'customer:list'), ('content_reviewer_mgmt', 'contract:list'), ('content_reviewer_mgmt', 'project:list'),
+    ('content_reviewer_mgmt', 'quality_review:review'), ('content_reviewer_mgmt', 'assessment:view'),
+    ('content_reviewer_mgmt', 'wf_task:view'), ('content_reviewer_mgmt', 'wf_task:operate'),
+
+    -- content_reviewer_network
+    ('content_reviewer_network', 'customer:list'), ('content_reviewer_network', 'contract:list'), ('content_reviewer_network', 'project:list'),
+    ('content_reviewer_network', 'quality_review:review'), ('content_reviewer_network', 'assessment:view'),
+    ('content_reviewer_network', 'wf_task:view'), ('content_reviewer_network', 'wf_task:operate'),
+
+    -- report_writer
+    ('report_writer', 'customer:list'), ('report_writer', 'contract:list'), ('report_writer', 'project:list'),
+    ('report_writer', 'assessment:view'),
+    ('report_writer', 'report:compile'), ('report_writer', 'report:list'), ('report_writer', 'report:submit'), ('report_writer', 'report:view'),
+    ('report_writer', 'wf_task:view'), ('report_writer', 'wf_task:operate'),
+
+    -- report_assigner
+    ('report_assigner', 'customer:list'), ('report_assigner', 'contract:list'), ('report_assigner', 'project:list'),
+    ('report_assigner', 'assessment:view'),
+    ('report_assigner', 'report:assign'), ('report_assigner', 'report:list'), ('report_assigner', 'report:view'),
+    ('report_assigner', 'wf_task:view'), ('report_assigner', 'wf_task:operate'),
+
+    -- archiver
+    ('archiver', 'customer:list'), ('archiver', 'contract:list'), ('archiver', 'contract:view_all'), ('archiver', 'project:list'),
+    ('archiver', 'archive:list'), ('archiver', 'archive:submit'),
+    ('archiver', 'wf_task:view'), ('archiver', 'wf_task:operate');
 
 -- ---------------------------------------------------------------------------
 -- 4.4 Resources (frontend navigation tree)
@@ -1280,78 +1350,103 @@ INSERT INTO wf_definition (def_key, version, def_name, description, status) VALU
 
 -- Project Assessment Flow nodes
 INSERT INTO wf_node (definition_id, node_key, node_name, node_type, node_order, config)
-SELECT id, v.node_key, v.node_name, v.node_type, v.node_order, v.config::JSONB
-FROM wf_definition,
-     (VALUES
-        ('PROJECT_REGISTER',     '项目登记申请',   'SIMPLE',           10, NULL),
-        ('PROJECT_REVIEW',       '审核项目登记',   'REVIEW',           20, '{"reject_target":"PROJECT_REGISTER"}'),
-        ('POLICE_REGISTER',      '公安登记',       'SIMPLE',           30, NULL),
-        ('ON_SITE_ASSESSMENT',   '现场测评实施',   'MULTI_ASSIGNEE',   40, '{"source":"project_member","role_types":["PM","ASSESSOR"]}'),
-        ('QUALITY_REVIEW',       '质量审核',       'PARALLEL_REVIEW',  50, '{"slots":["TECH","CONTENT_A","CONTENT_B","CONTENT_C"]}'),
-        ('REPORT_ASSIGNMENT',    '报告编制分配',   'SIMPLE',           60, NULL),
-        ('REPORT_COMPILE',       '报告编制上传',   'SIMPLE',           70, NULL),
-        ('REPORT_REVIEW',        '报告审核',       'REVIEW',           80, '{"reject_target":"REPORT_COMPILE"}'),
-        ('MATERIAL_ARCHIVE',     '材料归档',       'SIMPLE',           90, NULL)
-     ) AS v(node_key, node_name, node_type, node_order, config)
-WHERE def_key = 'PROJECT_ASSESSMENT_FLOW' AND version = 1;
+SELECT d.id, v.node_key, v.node_name, v.node_type, v.node_order, v.config::JSONB
+FROM wf_definition d,
+(VALUES
+    ('PROJECT_REGISTER',   '项目登记申请',     'SIMPLE',          10, NULL),
+    ('PROJECT_REVIEW',     '审核项目登记',     'REVIEW',          20, '{"reject_target":"PROJECT_REGISTER"}'),
+    ('POLICE_REGISTER',    '公安登记',         'SIMPLE',          30, '{"assignMode":"pool"}'),
+    ('ON_SITE_ASSESSMENT', '现场测评实施',     'MULTI_ASSIGNEE',  40, '{"source":"project_member","role_types":["PM","ASSESSOR"]}'),
+    ('TECH_REVIEW',        '技术审核',         'REVIEW',          50, '{"reject_target":"ON_SITE_ASSESSMENT"}'),
+    ('CONTENT_REVIEW',     '内容审核',         'PARALLEL_REVIEW', 55, '{"slots":["CONTENT_A","CONTENT_B","CONTENT_C"]}'),
+    ('REPORT_ASSIGN',      '报告编制任务分配', 'REVIEW',          58, NULL),
+    ('REPORT_COMPILE',     '报告编制上传',     'REVIEW',          60, NULL),
+    ('FINAL_REVIEW',       '最终审核',         'REVIEW',          70, '{"reject_action":"ADJUST","reject_target":"ON_SITE_ASSESSMENT"}'),
+    ('MATERIAL_ARCHIVE',   '材料归档',         'SIMPLE',          90, '{"assignMode":"pool"}')
+) AS v(node_key, node_name, node_type, node_order, config)
+WHERE d.def_key = 'PROJECT_ASSESSMENT_FLOW' AND d.status = 'ACTIVE';
 
 -- Project Assessment Flow transitions
-INSERT INTO wf_transition (definition_id, from_node_key, to_node_key, event, priority)
-SELECT id, v.from_key, v.to_key, v.event, 0
-FROM wf_definition,
-     (VALUES
-        ('',                    'PROJECT_REGISTER',   'AUTO'),
-        ('PROJECT_REGISTER',    'PROJECT_REVIEW',     'SUBMIT'),
-        ('PROJECT_REVIEW',      'POLICE_REGISTER',    'APPROVE'),
-        ('PROJECT_REVIEW',      'PROJECT_REGISTER',   'REJECT'),
-        ('POLICE_REGISTER',     'ON_SITE_ASSESSMENT', 'SUBMIT'),
-        ('ON_SITE_ASSESSMENT',  'QUALITY_REVIEW',     'ALL_COMPLETE'),
-        ('QUALITY_REVIEW',      'REPORT_ASSIGNMENT',  'ALL_APPROVED'),
-        ('QUALITY_REVIEW',      'ON_SITE_ASSESSMENT', 'ANY_REJECTED'),
-        ('REPORT_ASSIGNMENT',   'REPORT_COMPILE',     'SUBMIT'),
-        ('REPORT_COMPILE',      'REPORT_REVIEW',      'SUBMIT'),
-        ('REPORT_REVIEW',       'MATERIAL_ARCHIVE',   'APPROVE'),
-        ('REPORT_REVIEW',       'REPORT_COMPILE',     'REJECT'),
-        ('MATERIAL_ARCHIVE',    '',                   'SUBMIT')
-     ) AS v(from_key, to_key, event)
-WHERE def_key = 'PROJECT_ASSESSMENT_FLOW' AND version = 1;
+INSERT INTO wf_transition (definition_id, from_node_key, to_node_key, event, guard_expr, priority)
+SELECT d.id, v.from_key, v.to_key, v.event, v.guard, v.priority
+FROM wf_definition d,
+(VALUES
+    ('',                   'PROJECT_REGISTER',   'AUTO',         NULL, 0),
+    ('PROJECT_REGISTER',   'PROJECT_REVIEW',     'SUBMIT',       NULL, 0),
+    ('PROJECT_REVIEW',     'POLICE_REGISTER',    'APPROVE',      NULL, 0),
+    ('PROJECT_REVIEW',     'PROJECT_REGISTER',   'REJECT',       NULL, 0),
+    ('POLICE_REGISTER',    'ON_SITE_ASSESSMENT', 'SUBMIT',       NULL, 0),
+    ('ON_SITE_ASSESSMENT', 'TECH_REVIEW',        'ALL_COMPLETE', NULL, 0),
+    ('ON_SITE_ASSESSMENT', 'REPORT_ASSIGN',      'ALL_COMPLETE', 'skip_to_final', 10),
+    ('TECH_REVIEW',        'CONTENT_REVIEW',     'APPROVE',      NULL, 0),
+    ('TECH_REVIEW',        'ON_SITE_ASSESSMENT', 'REJECT',       NULL, 0),
+    ('CONTENT_REVIEW',     'REPORT_ASSIGN',      'ALL_APPROVED', NULL, 0),
+    ('CONTENT_REVIEW',     'ON_SITE_ASSESSMENT', 'ANY_REJECTED', NULL, 0),
+    ('REPORT_ASSIGN',      'REPORT_COMPILE',     'APPROVE',      NULL, 0),
+    ('REPORT_ASSIGN',      'ON_SITE_ASSESSMENT', 'REJECT',       NULL, 0),
+    ('REPORT_COMPILE',     'FINAL_REVIEW',       'APPROVE',      NULL, 0),
+    ('FINAL_REVIEW',       'MATERIAL_ARCHIVE',   'APPROVE',      NULL, 0),
+    ('FINAL_REVIEW',       'ON_SITE_ASSESSMENT', 'ADJUST',       NULL, 0),
+    ('MATERIAL_ARCHIVE',   '',                   'SUBMIT',       NULL, 0)
+) AS v(from_key, to_key, event, guard, priority)
+WHERE d.def_key = 'PROJECT_ASSESSMENT_FLOW' AND d.status = 'ACTIVE';
 
 -- ---------------------------------------------------------------------------
--- 4.7 Assignment Rules for Quality Review (4 parallel slots with avoidance)
+-- 4.7 Assignment Rules
 -- ---------------------------------------------------------------------------
--- TECH slot: tech_reviewer role, avoid same-project members
 INSERT INTO wf_assignment_rule (node_key, slot_key, slot_label, role_code, avoidance_rule, priority) VALUES
-    ('QUALITY_REVIEW', 'TECH',      '整体技术审核',     'tech_reviewer',           'SAME_PROJECT', 10),
-    ('QUALITY_REVIEW', 'TECH',      '整体技术审核',     'super_admin',             'SAME_PROJECT', 99),
+    -- Contract
+    ('CONTRACT_REVIEW',  'REVIEWER',  '合同审核人',       'dept_manager',            'NONE',         5),
+    ('CONTRACT_REVIEW',  'REVIEWER',  '合同审核人',       'super_admin',             'NONE',         99),
+    ('CONTRACT_ARCHIVE', 'ARCHIVER',  '合同归档人',       'commercial',              'NONE',         10),
+    ('CONTRACT_ARCHIVE', 'ARCHIVER',  '合同归档人',       'super_admin',             'NONE',         99),
+    -- Project
+    ('PROJECT_REVIEW',   'REVIEWER',  '项目审核人',       'dept_manager',            'NONE',         10),
+    ('PROJECT_REVIEW',   'REVIEWER',  '项目审核人',       'super_admin',             'NONE',         99),
+    ('POLICE_REGISTER',  'OPERATOR',  '公安登记人',       'police_register',         'NONE',         10),
+    ('POLICE_REGISTER',  'OPERATOR',  '公安登记人',       'super_admin',             'NONE',         99),
+    -- Quality Review
+    ('TECH_REVIEW',      'TECH',      '技术审核',         'tech_reviewer',           'SAME_PROJECT', 10),
+    ('TECH_REVIEW',      'TECH',      '技术审核',         'super_admin',             'SAME_PROJECT', 99),
+    ('CONTENT_REVIEW',   'CONTENT_A', '内容审核（技术）', 'content_reviewer_tech',   'SAME_PROJECT', 10),
+    ('CONTENT_REVIEW',   'CONTENT_A', '内容审核（技术）', 'super_admin',             'SAME_PROJECT', 99),
+    ('CONTENT_REVIEW',   'CONTENT_B', '内容审核（管理）', 'content_reviewer_mgmt',   'SAME_PROJECT', 10),
+    ('CONTENT_REVIEW',   'CONTENT_B', '内容审核（管理）', 'super_admin',             'SAME_PROJECT', 99),
+    ('CONTENT_REVIEW',   'CONTENT_C', '内容审核（网络）', 'content_reviewer_network','SAME_PROJECT', 10),
+    ('CONTENT_REVIEW',   'CONTENT_C', '内容审核（网络）', 'super_admin',             'SAME_PROJECT', 99),
+    -- Report
+    ('REPORT_ASSIGN',    'ASSIGNER',  '报告分配人',       'report_assigner',         'NONE',         10),
+    ('REPORT_ASSIGN',    'ASSIGNER',  '报告分配人',       'super_admin',             'NONE',         99),
+    ('REPORT_COMPILE',   'WRITER',    '报告编制人',       'report_writer',           'NONE',         10),
+    ('REPORT_COMPILE',   'WRITER',    '报告编制人',       'super_admin',             'NONE',         99),
+    ('FINAL_REVIEW',     'REVIEWER',  '最终审核人',       'dept_manager',            'NONE',         10),
+    ('FINAL_REVIEW',     'REVIEWER',  '最终审核人',       'super_admin',             'NONE',         99),
+    -- Material Archive
+    ('MATERIAL_ARCHIVE', 'ARCHIVER',  '材料归档人',       'archiver',                'NONE',         10),
+    ('MATERIAL_ARCHIVE', 'ARCHIVER',  '材料归档人',       'project_manager',         'NONE',         5),
+    ('MATERIAL_ARCHIVE', 'ARCHIVER',  '材料归档人',       'sales',                   'NONE',         5),
+    ('MATERIAL_ARCHIVE', 'ARCHIVER',  '材料归档人',       'dept_manager',            'NONE',         5),
+    ('MATERIAL_ARCHIVE', 'ARCHIVER',  '材料归档人',       'super_admin',             'NONE',         0);
 
-    ('QUALITY_REVIEW', 'CONTENT_A', '内容审核（技术）',  'content_reviewer_tech',   'SAME_PROJECT', 10),
-    ('QUALITY_REVIEW', 'CONTENT_A', '内容审核（技术）',  'super_admin',             'SAME_PROJECT', 99),
-
-    ('QUALITY_REVIEW', 'CONTENT_B', '内容审核（管理）',  'content_reviewer_mgmt',   'SAME_PROJECT', 10),
-    ('QUALITY_REVIEW', 'CONTENT_B', '内容审核（管理）',  'super_admin',             'SAME_PROJECT', 99),
-
-    ('QUALITY_REVIEW', 'CONTENT_C', '内容审核（网络）',  'content_reviewer_network', 'SAME_PROJECT', 10),
-    ('QUALITY_REVIEW', 'CONTENT_C', '内容审核（网络）',  'super_admin',             'SAME_PROJECT', 99);
-
--- Report review assignment rule (dept_manager reviews)
-INSERT INTO wf_assignment_rule (node_key, slot_key, slot_label, role_code, avoidance_rule, priority) VALUES
-    ('REPORT_REVIEW', 'REVIEWER',  '报告审核人',       'dept_manager',            'NONE',         10),
-    ('REPORT_REVIEW', 'REVIEWER',  '报告审核人',       'super_admin',             'NONE',         99);
-
--- Contract review assignment rule
-INSERT INTO wf_assignment_rule (node_key, slot_key, slot_label, role_code, avoidance_rule, priority) VALUES
-    -- commercial 不参与合同审核，只负责合同归档
-    ('CONTRACT_REVIEW', 'REVIEWER', '合同审核人',      'super_admin',             'NONE',         99);
-
--- Contract archive assignment rule
-INSERT INTO wf_assignment_rule (node_key, slot_key, slot_label, role_code, avoidance_rule, priority) VALUES
-    ('CONTRACT_ARCHIVE', 'ARCHIVER', '合同归档人',      'commercial',              'NONE',         10),
-    ('CONTRACT_ARCHIVE', 'ARCHIVER', '合同归档人',      'super_admin',             'NONE',         99);
-
--- Project review assignment rule
-INSERT INTO wf_assignment_rule (node_key, slot_key, slot_label, role_code, avoidance_rule, priority) VALUES
-    ('PROJECT_REVIEW', 'REVIEWER',  '项目审核人',      'dept_manager',            'NONE',         10),
-    ('PROJECT_REVIEW', 'REVIEWER',  '项目审核人',      'super_admin',             'NONE',         99);
+-- ---------------------------------------------------------------------------
+-- Review opinion templates
+-- ---------------------------------------------------------------------------
+INSERT INTO review_opinion_template (node_key, slot_key, action_type, template_text, sort_order) VALUES
+    ('TECH_REVIEW',    NULL,        'APPROVE', '技术审核通过，符合要求',                              10),
+    ('TECH_REVIEW',    NULL,        'REVIEW',  '技术审核复核，请修改后重新提交',                      20),
+    ('CONTENT_REVIEW', 'CONTENT_A', 'APPROVE', '内容（技术）审核通过，符合要求',                      30),
+    ('CONTENT_REVIEW', 'CONTENT_A', 'REVIEW',  '内容（技术）审核复核，请修改后重新提交',              40),
+    ('CONTENT_REVIEW', 'CONTENT_B', 'APPROVE', '内容（管理）审核通过，符合要求',                      50),
+    ('CONTENT_REVIEW', 'CONTENT_B', 'REVIEW',  '内容（管理）审核复核，请修改后重新提交',              60),
+    ('CONTENT_REVIEW', 'CONTENT_C', 'APPROVE', '内容（网络）审核通过，符合要求',                      70),
+    ('CONTENT_REVIEW', 'CONTENT_C', 'REVIEW',  '内容（网络）审核复核，请修改后重新提交',              80),
+    ('REPORT_COMPILE', NULL,        'APPROVE', '报告编制完成，提交最终审核',                          90),
+    ('REPORT_COMPILE', NULL,        'REVIEW',  '报告编制复核，测评成果存在问题，请修改后重新提交',    100),
+    ('FINAL_REVIEW',   NULL,        'APPROVE', '最终审核通过，符合要求',                             110),
+    ('FINAL_REVIEW',   NULL,        'REVIEW',  '最终审核复核，请修改后重新提交',                     120),
+    ('FINAL_REVIEW',   NULL,        'REJECT',  '最终审核驳回，流程需从技术审核重新开始',             130),
+    ('REPORT_ASSIGN',  NULL,        'APPROVE', '测评成果审核通过，分配编制任务',                     140),
+    ('REPORT_ASSIGN',  NULL,        'REVIEW',  '测评成果存在问题，请修改后重新提交',                 150);
 
 
 -- ============================================================================
@@ -1432,206 +1527,4 @@ INSERT INTO wf_assignment_rule (node_key, slot_key, slot_label, role_code, avoid
 -- 3. project_member tracks who has what data for selective export
 -- ============================================================================
 
--- ============================================================================
--- Migration: Quality Review Refactor (2026-03-31)
--- ============================================================================
 
--- wf_instance: add round_no for final-review reject round tracking
-ALTER TABLE wf_instance ADD COLUMN IF NOT EXISTS round_no INTEGER NOT NULL DEFAULT 1;
-
--- review_opinion: audit trail for all review actions (approve/review/reject)
-CREATE TABLE IF NOT EXISTS review_opinion (
-    id                  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    project_register_id BIGINT        NOT NULL,
-    round_no            INTEGER       NOT NULL DEFAULT 1,
-    node_key            VARCHAR(64)   NOT NULL,
-    slot_key            VARCHAR(64),
-    action_type         VARCHAR(32)   NOT NULL,
-    opinion_text        TEXT,
-    attachment_ids      JSONB,
-    operator_id         BIGINT        NOT NULL,
-    created_at          TIMESTAMPTZ   NOT NULL DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_review_opinion_project ON review_opinion (project_register_id, round_no, node_key);
-
--- review_opinion_template: auto-fill templates per node/slot/action
-CREATE TABLE IF NOT EXISTS review_opinion_template (
-    id              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    node_key        VARCHAR(64)   NOT NULL,
-    slot_key        VARCHAR(64),
-    action_type     VARCHAR(32)   NOT NULL,
-    template_text   TEXT          NOT NULL,
-    sort_order      INTEGER       NOT NULL DEFAULT 0
-);
-
--- Seed opinion templates
-INSERT INTO review_opinion_template (node_key, slot_key, action_type, template_text, sort_order) VALUES
-('TECH_REVIEW', NULL, 'APPROVE', '技术审核通过，符合要求', 10),
-('TECH_REVIEW', NULL, 'REVIEW',  '技术审核复核，请修改后重新提交', 20),
-('CONTENT_REVIEW', 'CONTENT_A', 'APPROVE', '内容（技术）审核通过，符合要求', 30),
-('CONTENT_REVIEW', 'CONTENT_A', 'REVIEW',  '内容（技术）审核复核，请修改后重新提交', 40),
-('CONTENT_REVIEW', 'CONTENT_B', 'APPROVE', '内容（管理）审核通过，符合要求', 50),
-('CONTENT_REVIEW', 'CONTENT_B', 'REVIEW',  '内容（管理）审核复核，请修改后重新提交', 60),
-('CONTENT_REVIEW', 'CONTENT_C', 'APPROVE', '内容（网络）审核通过，符合要求', 70),
-('CONTENT_REVIEW', 'CONTENT_C', 'REVIEW',  '内容（网络）审核复核，请修改后重新提交', 80),
-('REPORT_COMPILE', NULL, 'APPROVE', '报告编制完成，提交最终审核', 90),
-('REPORT_COMPILE', NULL, 'REVIEW',  '报告编制复核，测评成果存在问题，请修改后重新提交', 100),
-('FINAL_REVIEW', NULL, 'APPROVE', '最终审核通过，符合要求', 110),
-('FINAL_REVIEW', NULL, 'REVIEW',  '最终审核复核，请修改后重新提交', 120),
-('FINAL_REVIEW', NULL, 'REJECT',  '最终审核驳回，流程需从技术审核重新开始', 130)
-ON CONFLICT DO NOTHING;
-
--- ============================================================================
--- 文件池表（测评文件/测评成果 + 编制报告）
--- ============================================================================
-
-CREATE TABLE IF NOT EXISTS assessment_file (
-    id                  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    project_register_id BIGINT        NOT NULL,
-    file_pool           VARCHAR(32)   NOT NULL,  -- ASSESSMENT_FILE | ASSESSMENT_RESULT
-    file_name           VARCHAR(500)  NOT NULL,
-    object_key          VARCHAR(512)  NOT NULL,
-    file_size           BIGINT        NOT NULL DEFAULT 0,
-    content_type        VARCHAR(128),
-    remark              VARCHAR(500),
-    uploaded_by         BIGINT        NOT NULL,
-    uploaded_at         TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
-    deleted_at          TIMESTAMPTZ
-);
-CREATE INDEX IF NOT EXISTS idx_assessment_file_project ON assessment_file (project_register_id, file_pool);
-
-CREATE TABLE IF NOT EXISTS compile_report_file (
-    id                  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    project_register_id BIGINT        NOT NULL,
-    file_name           VARCHAR(500)  NOT NULL,
-    object_key          VARCHAR(512)  NOT NULL,
-    file_size           BIGINT        NOT NULL DEFAULT 0,
-    content_type        VARCHAR(128),
-    remark              VARCHAR(500),
-    compiled_by         BIGINT        NOT NULL,
-    uploaded_at         TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
-    deleted_at          TIMESTAMPTZ
-);
-CREATE INDEX IF NOT EXISTS idx_compile_report_file_project ON compile_report_file (project_register_id);
-
--- ============================================================================
--- Migration: Session Changes (2026-04-01)
--- ============================================================================
-
--- 1. New role: report_assigner (报告分配人)
-INSERT INTO iam_role (role_code, role_name, description) VALUES
-('report_assigner', '报告分配人', '负责审核测评成果并分配编制任务给编制人'),
-('archiver', '归档员', '负责材料归档')
-ON CONFLICT (role_code) DO NOTHING;
-
--- 2. New permissions
-INSERT INTO iam_permission (permission_code, description, category) VALUES
-('archive:list', '查看归档列表', 'ARCHIVE'),
-('contract:update_financial', '更新合同财务信息', 'CONTRACT')
-ON CONFLICT (permission_code) DO NOTHING;
-
--- 3. Role-permission mappings (complete set for all roles)
--- archiver
-INSERT INTO iam_role_permission (role_code, permission_code) VALUES
-('archiver', 'archive:list'), ('archiver', 'archive:submit'),
-('archiver', 'contract:list'), ('archiver', 'contract:view_all'),
-('archiver', 'customer:list'), ('archiver', 'project:list'),
-('archiver', 'wf_task:operate'), ('archiver', 'wf_task:view')
-ON CONFLICT DO NOTHING;
-
--- report_assigner
-INSERT INTO iam_role_permission (role_code, permission_code) VALUES
-('report_assigner', 'wf_task:view'), ('report_assigner', 'wf_task:operate'),
-('report_assigner', 'report:list'), ('report_assigner', 'report:view'),
-('report_assigner', 'report:assign'), ('report_assigner', 'assessment:view'),
-('report_assigner', 'contract:list'), ('report_assigner', 'customer:list'),
-('report_assigner', 'project:list')
-ON CONFLICT DO NOTHING;
-
--- commercial: add contract:archive
-INSERT INTO iam_role_permission (role_code, permission_code) VALUES
-('commercial', 'contract:archive'), ('commercial', 'contract:update_financial')
-ON CONFLICT DO NOTHING;
-
--- project_manager: add archive permissions
-INSERT INTO iam_role_permission (role_code, permission_code) VALUES
-('project_manager', 'archive:list'), ('project_manager', 'archive:submit')
-ON CONFLICT DO NOTHING;
-
--- sales: add archive permissions
-INSERT INTO iam_role_permission (role_code, permission_code) VALUES
-('sales', 'archive:list'), ('sales', 'archive:submit')
-ON CONFLICT DO NOTHING;
-
--- super_admin: add archive:list
-INSERT INTO iam_role_permission (role_code, permission_code) VALUES
-('super_admin', 'archive:list'), ('super_admin', 'archive:submit'),
-('super_admin', 'contract:archive')
-ON CONFLICT DO NOTHING;
-
--- 4. Workflow: REPORT_ASSIGN node
-INSERT INTO wf_node (definition_id, node_key, node_name, node_type, node_order, config)
-SELECT id, 'REPORT_ASSIGN', '报告编制任务分配', 'REVIEW', 58, NULL
-FROM wf_definition WHERE def_key = 'PROJECT_ASSESSMENT_FLOW' AND status = 'ACTIVE'
-ON CONFLICT DO NOTHING;
-
--- 5. Workflow: REPORT_COMPILE change to REVIEW type
-UPDATE wf_node SET node_type = 'REVIEW', config = NULL
-WHERE node_key = 'REPORT_COMPILE'
-AND definition_id = (SELECT id FROM wf_definition WHERE def_key = 'PROJECT_ASSESSMENT_FLOW' AND status = 'ACTIVE');
-
--- 6. Workflow transitions updates
--- CONTENT_REVIEW ALL_APPROVED → REPORT_ASSIGN (was REPORT_COMPILE)
-UPDATE wf_transition SET to_node_key = 'REPORT_ASSIGN'
-WHERE from_node_key = 'CONTENT_REVIEW' AND event = 'ALL_APPROVED'
-AND definition_id = (SELECT id FROM wf_definition WHERE def_key = 'PROJECT_ASSESSMENT_FLOW' AND status = 'ACTIVE');
-
--- ON_SITE_ASSESSMENT skip path → REPORT_ASSIGN (was REPORT_COMPILE)
-UPDATE wf_transition SET to_node_key = 'REPORT_ASSIGN'
-WHERE from_node_key = 'ON_SITE_ASSESSMENT' AND to_node_key = 'REPORT_COMPILE'
-AND definition_id = (SELECT id FROM wf_definition WHERE def_key = 'PROJECT_ASSESSMENT_FLOW' AND status = 'ACTIVE');
-
--- REPORT_ASSIGN → REPORT_COMPILE (APPROVE)
-INSERT INTO wf_transition (definition_id, from_node_key, to_node_key, event, priority)
-SELECT id, 'REPORT_ASSIGN', 'REPORT_COMPILE', 'APPROVE', 0
-FROM wf_definition WHERE def_key = 'PROJECT_ASSESSMENT_FLOW' AND status = 'ACTIVE'
-ON CONFLICT DO NOTHING;
-
--- REPORT_ASSIGN → ON_SITE_ASSESSMENT (REJECT/review fallback)
-INSERT INTO wf_transition (definition_id, from_node_key, to_node_key, event, priority)
-SELECT id, 'REPORT_ASSIGN', 'ON_SITE_ASSESSMENT', 'REJECT', 0
-FROM wf_definition WHERE def_key = 'PROJECT_ASSESSMENT_FLOW' AND status = 'ACTIVE'
-ON CONFLICT DO NOTHING;
-
--- REPORT_COMPILE → FINAL_REVIEW (change event from SUBMIT to APPROVE)
-UPDATE wf_transition SET event = 'APPROVE'
-WHERE from_node_key = 'REPORT_COMPILE' AND to_node_key = 'FINAL_REVIEW'
-AND definition_id = (SELECT id FROM wf_definition WHERE def_key = 'PROJECT_ASSESSMENT_FLOW' AND status = 'ACTIVE');
-
--- 7. Assignment rules
-INSERT INTO wf_assignment_rule (node_key, slot_key, slot_label, role_code, priority) VALUES
-('REPORT_ASSIGN', 'ASSIGNER', '报告分配人', 'report_assigner', 10),
-('REPORT_ASSIGN', 'ASSIGNER', '报告分配人', 'super_admin', 99),
-('MATERIAL_ARCHIVE', 'ARCHIVER', '材料归档人', 'project_manager', 5),
-('MATERIAL_ARCHIVE', 'ARCHIVER', '材料归档人', 'sales', 5)
-ON CONFLICT DO NOTHING;
-
--- Remove archiver from CONTRACT_ARCHIVE (only commercial handles it)
-DELETE FROM wf_assignment_rule WHERE node_key = 'CONTRACT_ARCHIVE' AND role_code = 'archiver';
-
--- 8. Opinion templates for REPORT_ASSIGN
-INSERT INTO review_opinion_template (node_key, slot_key, action_type, template_text, sort_order) VALUES
-('REPORT_ASSIGN', NULL, 'APPROVE', '测评成果审核通过，分配编制任务', 140),
-('REPORT_ASSIGN', NULL, 'REVIEW', '测评成果存在问题，请修改后重新提交', 150)
-ON CONFLICT DO NOTHING;
-
--- 9. Contract table: drop deprecated columns
-ALTER TABLE contract DROP COLUMN IF EXISTS project_name;
-ALTER TABLE contract DROP COLUMN IF EXISTS application_form_no;
-
--- 10. Project register: add application_no
-ALTER TABLE project_register ADD COLUMN IF NOT EXISTS application_no VARCHAR(32);
-
--- 11. Material archive: add file_count and storage_location
-ALTER TABLE material_archive ADD COLUMN IF NOT EXISTS file_count INTEGER;
-ALTER TABLE material_archive ADD COLUMN IF NOT EXISTS storage_location VARCHAR(500);
