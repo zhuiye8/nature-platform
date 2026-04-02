@@ -177,6 +177,49 @@ html, body {
   padding: 12px 24px 20px;
 }
 
+/* ── Scrollbar 美化（全局 + 表格） ──────────────────────────────────────── */
+
+/* 全局滚动条 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #f0f2f5;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb {
+  background: #c0c4cc;
+  border-radius: 4px;
+  &:hover {
+    background: #909399;
+  }
+}
+
+/* Element Plus 表格滚动条加粗加深 */
+.el-table__body-wrapper::-webkit-scrollbar,
+.el-scrollbar__bar {
+  height: 10px;
+  width: 10px;
+}
+.el-table__body-wrapper::-webkit-scrollbar-thumb,
+.el-scrollbar__thumb {
+  background: #a0a4ad;
+  border-radius: 5px;
+  &:hover {
+    background: #606266;
+  }
+}
+.el-table__body-wrapper::-webkit-scrollbar-track {
+  background: #e8eaed;
+  border-radius: 5px;
+}
+
+/* 水平滚动条始终可见提示 */
+.el-table .el-table__body-wrapper {
+  overflow-x: auto !important;
+}
+
 /* ── Empty State ────────────────────────────────────────────────────────── */
 
 .n-empty-state {
