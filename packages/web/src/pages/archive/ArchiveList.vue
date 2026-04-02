@@ -46,6 +46,7 @@ onMounted(fetchData)
         </el-select>
       </div>
 
+      <div style="text-align: right; color: #909399; font-size: 12px; margin-bottom: 6px">&larr; 可左右滑动查看更多信息 &rarr;</div>
       <el-table v-loading="loading" :data="tableData" stripe border style="width: 100%">
         <el-table-column label="项目名称" min-width="250">
           <template #default="{ row }">
@@ -99,7 +100,7 @@ onMounted(fetchData)
         <el-table-column label="归档时间" width="170">
           <template #default="{ row }">{{ formatTime(row.submittedAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="80" align="center">
+        <el-table-column label="操作" width="80" align="center" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link size="small" @click="handleView(row)">查看</el-button>
           </template>

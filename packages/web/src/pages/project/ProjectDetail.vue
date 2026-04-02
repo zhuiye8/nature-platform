@@ -242,7 +242,7 @@ onMounted(() => {
                 {{ row.requiredReportDeliveryDate || '--' }}
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="80" align="center">
+            <el-table-column label="操作" width="80" align="center" fixed="right">
               <template #default="{ row }">
                 <el-button type="primary" link size="small" @click="showSystemItemDetail(row)">详情</el-button>
               </template>

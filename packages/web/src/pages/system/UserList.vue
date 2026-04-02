@@ -95,6 +95,7 @@ onMounted(() => fetchData())
         <el-button :icon="Refresh" @click="handleReset">重置</el-button>
       </div>
 
+      <div style="text-align: right; color: #909399; font-size: 12px; margin-bottom: 6px">&larr; 可左右滑动查看更多信息 &rarr;</div>
       <el-table v-loading="loading" :data="tableData" stripe border style="width: 100%">
         <el-table-column prop="username" label="用户名" min-width="120" />
         <el-table-column prop="displayName" label="姓名" min-width="100" />
@@ -110,7 +111,7 @@ onMounted(() => fetchData())
           </template>
         </el-table-column>
         <el-table-column prop="createdAt" label="创建时间" min-width="170" />
-        <el-table-column label="操作" width="280">
+        <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
             <el-button v-permission="'user:update'" type="primary" link size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button v-permission="'user:update'" link size="small" @click="openRoleDialog(row)">角色</el-button>

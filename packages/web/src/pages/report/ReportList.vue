@@ -56,6 +56,7 @@ onMounted(() => fetchData())
 
       <el-empty v-if="!loading && tableData.length === 0" description="暂无报告编制任务" />
 
+      <div style="text-align: right; color: #909399; font-size: 12px; margin-bottom: 6px">&larr; 可左右滑动查看更多信息 &rarr;</div>
       <el-table v-if="tableData.length > 0" v-loading="loading" :data="tableData" stripe border style="width: 100%">
         <el-table-column label="项目名称" min-width="300" show-overflow-tooltip>
           <template #default="{ row }">
@@ -74,7 +75,7 @@ onMounted(() => fetchData())
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="100">
+        <el-table-column label="操作" width="100" fixed="right">
           <template #default="{ row }">
             <el-button v-if="row.currentTaskId" type="primary" link size="small" @click="handleView(row)">
               {{ row.needsRevision ? '去修改' : '编制' }}

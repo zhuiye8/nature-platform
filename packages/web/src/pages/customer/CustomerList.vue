@@ -126,6 +126,7 @@ onMounted(() => {
       </div>
 
       <!-- Table -->
+      <div style="text-align: right; color: #909399; font-size: 12px; margin-bottom: 6px">&larr; 可左右滑动查看更多信息 &rarr;</div>
       <el-table
         v-loading="loading"
         :data="tableData"
@@ -149,7 +150,7 @@ onMounted(() => {
           </template>
         </el-table-column>
         <el-table-column prop="createdAt" label="创建时间" min-width="170" />
-        <el-table-column label="操作" width="200">
+        <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link size="small" @click="router.push(`/customer/${row.id}`)">
               查看

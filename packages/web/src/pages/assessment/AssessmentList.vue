@@ -123,6 +123,7 @@ onMounted(fetchData)
       </div>
 
       <!-- Table — one row per project -->
+      <div style="text-align: right; color: #909399; font-size: 12px; margin-bottom: 6px">&larr; 可左右滑动查看更多信息 &rarr;</div>
       <el-table :data="list" v-loading="loading" stripe border style="width: 100%">
         <el-table-column label="项目名称" min-width="250">
           <template #default="{ row }">
@@ -145,7 +146,7 @@ onMounted(fetchData)
         <el-table-column label="创建时间" width="170">
           <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="80" align="center">
+        <el-table-column label="操作" width="80" align="center" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link @click="viewDetail(row.id)">查看</el-button>
           </template>

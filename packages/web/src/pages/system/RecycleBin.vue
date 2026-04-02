@@ -55,11 +55,12 @@ onMounted(() => fetchData())
         <el-tab-pane label="项目登记" name="PROJECT_REGISTER" />
       </el-tabs>
 
+      <div style="text-align: right; color: #909399; font-size: 12px; margin-bottom: 6px">&larr; 可左右滑动查看更多信息 &rarr;</div>
       <el-table v-loading="loading" :data="tableData" stripe border style="width: 100%">
         <el-table-column prop="displayName" label="名称" min-width="300" show-overflow-tooltip />
         <el-table-column prop="deletedAt" label="删除时间" min-width="170" />
         <el-table-column prop="remark" label="备注" min-width="150" show-overflow-tooltip />
-        <el-table-column label="操作" width="200">
+        <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
             <el-popconfirm title="确定要恢复吗？" @confirm="handleRestore(row)">
               <template #reference>

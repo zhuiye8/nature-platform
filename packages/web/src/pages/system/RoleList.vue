@@ -71,6 +71,7 @@ onMounted(() => fetchData())
         </div>
       </template>
 
+      <div style="text-align: right; color: #909399; font-size: 12px; margin-bottom: 6px">&larr; 可左右滑动查看更多信息 &rarr;</div>
       <el-table v-loading="loading" :data="tableData" stripe border style="width: 100%">
         <el-table-column prop="roleCode" label="角色编码" min-width="150" />
         <el-table-column prop="roleName" label="角色名称" min-width="120" />
@@ -86,7 +87,7 @@ onMounted(() => fetchData())
             <el-tag :type="row.enabled ? 'success' : 'danger'" size="small">{{ row.enabled ? '启用' : '禁用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="220">
+        <el-table-column label="操作" width="220" fixed="right">
           <template #default="{ row }">
             <el-button v-permission="'role:update'" type="primary" link size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button v-permission="'role:update'" link size="small" @click="openPermDialog(row)">权限</el-button>
