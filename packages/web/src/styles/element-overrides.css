@@ -4,11 +4,11 @@
 
 :root {
   --el-color-primary: var(--n-primary);
-  --el-color-primary-light-3: #d4a574;
-  --el-color-primary-light-5: #e4c4a0;
-  --el-color-primary-light-7: #f0dcc6;
-  --el-color-primary-light-8: #f5ece2;
-  --el-color-primary-light-9: #faf5ef;
+  --el-color-primary-light-3: #66b1ff;
+  --el-color-primary-light-5: #a0cfff;
+  --el-color-primary-light-7: #c6e2ff;
+  --el-color-primary-light-8: #d9ecff;
+  --el-color-primary-light-9: #ecf5ff;
   --el-color-primary-dark-2: var(--n-primary-dark);
   --el-color-success: var(--n-success);
   --el-color-warning: var(--n-warning);
@@ -25,10 +25,10 @@
   --el-border-radius-round: var(--n-radius-full);
 
   --el-border-color: var(--n-card-border);
-  --el-border-color-light: #f0ece7;
-  --el-border-color-lighter: #f7f5f2;
+  --el-border-color-light: #e4e7ed;
+  --el-border-color-lighter: #ebeef5;
 
-  --el-fill-color-light: #faf8f5;
+  --el-fill-color-light: #f5f7fa;
   --el-fill-color-lighter: var(--n-page-bg);
   --el-fill-color-blank: #ffffff;
 
@@ -62,14 +62,14 @@
 .el-card__header {
   padding: 14px 20px;
   border-bottom: 1px solid var(--n-card-border);
-  background: linear-gradient(to bottom, #fdfcfb, #faf8f5);
+  background: linear-gradient(to bottom, #fafbfc, #f5f7fa);
 }
 
 /* ── Tables ─────────────────────────────────────────────────────────────── */
 
 .el-table {
   --el-table-border-color: var(--n-card-border);
-  --el-table-header-bg-color: #faf8f5;
+  --el-table-header-bg-color: #f5f7fa;
   --el-table-header-text-color: var(--n-text-tertiary);
   --el-table-text-color: var(--n-text-primary);
   --el-table-row-hover-bg-color: var(--n-primary-lighter);
@@ -89,7 +89,7 @@
 }
 
 .el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell {
-  background: #fdfcfb;
+  background: #fafbfc;
 }
 
 /* ── Buttons ────────────────────────────────────────────────────────────── */
@@ -170,7 +170,7 @@
   padding: 18px 24px;
   border-bottom: 1px solid var(--n-card-border);
   margin-right: 0;
-  background: linear-gradient(to bottom, #fdfcfb, #faf8f5);
+  background: linear-gradient(to bottom, #fafbfc, #f5f7fa);
   border-radius: var(--n-radius-xl) var(--n-radius-xl) 0 0;
 }
 
@@ -240,7 +240,7 @@
   width: 3px;
   border-radius: 0 3px 3px 0;
   background: var(--n-sidebar-text-active);
-  box-shadow: 0 0 8px rgba(210, 160, 100, 0.3);
+  box-shadow: 0 0 8px rgba(64, 158, 255, 0.3);
 }
 
 .el-menu .el-sub-menu__title {

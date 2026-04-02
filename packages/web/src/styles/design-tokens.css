@@ -10,10 +10,10 @@
   /* ── Sidebar ──────────────────────────────────────────────────────────── */
   --n-sidebar-bg: #1a1d23;
   --n-sidebar-bg-hover: rgba(255, 255, 255, 0.04);
-  --n-sidebar-bg-active: rgba(210, 160, 100, 0.1);
+  --n-sidebar-bg-active: rgba(64, 158, 255, 0.1);
   --n-sidebar-text: rgba(255, 255, 255, 0.45);
   --n-sidebar-text-hover: rgba(255, 255, 255, 0.75);
-  --n-sidebar-text-active: #d4a574;
+  --n-sidebar-text-active: #409eff;
   --n-sidebar-border: rgba(255, 255, 255, 0.05);
   --n-sidebar-width: 236px;
   --n-sidebar-collapsed-width: 64px;
@@ -24,20 +24,20 @@
   --n-header-height: 54px;
 
   /* ── Page Canvas ──────────────────────────────────────────────────────── */
-  --n-page-bg: #f7f5f2;
+  --n-page-bg: #f5f7fa;
   --n-card-bg: #ffffff;
-  --n-card-border: #eae6e1;
+  --n-card-border: #e4e7ed;
   --n-card-radius: 10px;
   --n-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.03), 0 0 0 1px rgba(0, 0, 0, 0.02);
   --n-card-shadow-hover: 0 6px 16px rgba(0, 0, 0, 0.05), 0 0 0 1px rgba(0, 0, 0, 0.03);
 
-  /* ── Brand: Warm Copper ───────────────────────────────────────────────── */
-  --n-primary: #b8864e;
-  --n-primary-light: #d4a574;
-  --n-primary-lighter: #f5ece2;
-  --n-primary-dark: #96693a;
-  --n-primary-bg: rgba(184, 134, 78, 0.06);
-  --n-primary-ring: rgba(184, 134, 78, 0.2);
+  /* ── Brand: Blue ──────────────────────────────────────────────────────── */
+  --n-primary: #409eff;
+  --n-primary-light: #66b1ff;
+  --n-primary-lighter: #ecf5ff;
+  --n-primary-dark: #3a8ee6;
+  --n-primary-bg: rgba(64, 158, 255, 0.06);
+  --n-primary-ring: rgba(64, 158, 255, 0.2);
 
   /* ── Semantic ─────────────────────────────────────────────────────────── */
   --n-success: #2d8a56;
