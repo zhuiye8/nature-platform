@@ -228,6 +228,12 @@ onUnmounted(() => {
         </el-menu>
       </el-scrollbar>
 
+      <!-- 个人中心 -->
+      <el-menu-item index="/profile" @click="navigateTo('/profile')" style="margin-top: auto">
+        <el-icon><UserFilled /></el-icon>
+        <template #title>个人中心</template>
+      </el-menu-item>
+
       <!-- Collapse Toggle -->
       <div class="n-sidebar__footer" @click="toggleSidebar">
         <el-icon :size="16">
@@ -309,6 +315,10 @@ onUnmounted(() => {
             <span class="n-header__username">
               {{ authStore.user?.displayName ?? authStore.user?.username ?? '' }}
             </span>
+          </div>
+
+          <div class="n-header__action" @click="navigateTo('/profile')" title="个人中心" style="cursor: pointer">
+            <el-icon :size="16"><Setting /></el-icon>
           </div>
 
           <div class="n-header__divider" />

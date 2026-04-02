@@ -217,6 +217,80 @@ export class UserService {
   }
 
   // -----------------------------------------------------------------------
+  // -----------------------------------------------------------------------
+  // Profile — 个人中心（任何登录用户）
+  // -----------------------------------------------------------------------
+  async getProfile(userId: number) {
+    const rows = await this.db
+      .select({
+        id: userAccount.id,
+        username: userAccount.username,
+        displayName: userAccount.displayName,
+        mobile: userAccount.mobile,
+        email: userAccount.email,
+        createdAt: userAccount.createdAt,
+      })
+      .from(userAccount)
+      .where(eq(userAccount.id, userId))
+      .limit(1);
+
+    if (!rows[0]) throw new NotFoundException('User not found');
+
+    const roles = await this.db
+      .select({ roleCode: userRole.roleCode })
+      .from(userRole)
+      .where(eq(userRole.userId, userId));
+
+    return { ...rows[0], roles: roles.map((r) => r.roleCode) };
+  }
+
+  async updateProfile(
+    userId: number,
+    data: { displayName?: string; mobile?: string; email?: string },
+  ) {
+    const updateData: any = { updatedAt: new Date() };
+    if (data.displayName !== undefined) updateData.displayName = data.displayName;
+    if (data.mobile !== undefined) updateData.mobile = data.mobile || null;
+    if (data.email !== undefined) updateData.email = data.email || null;
+
+    await this.db
+      .update(userAccount)
+      .set(updateData)
+      .where(eq(userAccount.id, userId));
+
+    return this.getProfile(userId);
+  }
+
+  async changePassword(userId: number, oldPassword: string, newPassword: string) {
+    if (!oldPassword || !newPassword) {
+      throw new BadRequestException('请填写旧密码和新密码');
+    }
+    if (newPassword.length < 6) {
+      throw new BadRequestException('新密码长度不能少于6位');
+    }
+
+    const rows = await this.db
+      .select({ passwordHash: userAccount.passwordHash })
+      .from(userAccount)
+      .where(eq(userAccount.id, userId))
+      .limit(1);
+
+    if (!rows[0]) throw new NotFoundException('User not found');
+
+    const valid = await bcrypt.compare(oldPassword, rows[0].passwordHash);
+    if (!valid) {
+      throw new BadRequestException('旧密码不正确');
+    }
+
+    const newHash = await bcrypt.hash(newPassword, 10);
+    await this.db
+      .update(userAccount)
+      .set({ passwordHash: newHash, updatedAt: new Date() })
+      .where(eq(userAccount.id, userId));
+
+    return { success: true, message: '密码修改成功' };
+  }
+
   // Find users by role code (for dropdown in workflow assignment)
   // -----------------------------------------------------------------------
   async findByRoleCode(roleCode: string) {

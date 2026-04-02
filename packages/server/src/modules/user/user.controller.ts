@@ -40,6 +40,29 @@ export class UserController {
     return this.userService.findSimpleList();
   }
 
+  // ── 个人中心（无需权限，仅需登录） ──
+
+  @Get('profile')
+  async getProfile(@CurrentUser() user: { id: number }) {
+    return this.userService.getProfile(user.id);
+  }
+
+  @Put('profile')
+  async updateProfile(
+    @Body() body: { displayName?: string; mobile?: string; email?: string },
+    @CurrentUser() user: { id: number },
+  ) {
+    return this.userService.updateProfile(user.id, body);
+  }
+
+  @Put('change-password')
+  async changePassword(
+    @Body() body: { oldPassword: string; newPassword: string },
+    @CurrentUser() user: { id: number },
+  ) {
+    return this.userService.changePassword(user.id, body.oldPassword, body.newPassword);
+  }
+
   @Get('by-role/:roleCode')
   async findByRoleCode(@Param('roleCode') roleCode: string) {
     return this.userService.findByRoleCode(roleCode);

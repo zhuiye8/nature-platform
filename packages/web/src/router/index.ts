@@ -21,6 +21,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '仪表盘' },
       },
       {
+        path: 'profile',
+        name: 'Profile',
+        component: () => import('@/pages/ProfilePage.vue'),
+        meta: { title: '个人中心' },
+      },
+      {
         path: 'customer',
         name: 'CustomerList',
         component: () => import('@/pages/customer/CustomerList.vue'),
