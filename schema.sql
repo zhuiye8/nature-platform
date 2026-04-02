@@ -972,7 +972,7 @@ $$;
 -- ---------------------------------------------------------------------------
 -- 4.1 Roles (14 business roles)
 -- ---------------------------------------------------------------------------
-INSERT INTO iam_role (role_code, role_name, description, enabled, built_in) VALUES
+INSERT INTO iam_role (role_code, role_name, description, enabled, system_flag) VALUES
     ('super_admin',              '超级管理员',           '系统全局管理角色，拥有所有权限',              TRUE, TRUE),
     ('sales',                    '销售',                '负责客户管理和合同创建',                     TRUE, TRUE),
     ('commercial',               '商务',                '负责合同归档',                               TRUE, TRUE),
