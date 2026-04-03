@@ -124,13 +124,7 @@ onUnmounted(() => {
     >
       <!-- Logo -->
       <div class="n-sidebar__logo">
-        <div class="n-sidebar__logo-icon">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-            <path d="M12 2L2 7l10 5 10-5-10-5z" fill="currentColor" opacity="0.9"/>
-            <path d="M2 17l10 5 10-5" stroke="currentColor" stroke-width="2" fill="none" opacity="0.5"/>
-            <path d="M2 12l10 5 10-5" stroke="currentColor" stroke-width="2" fill="none" opacity="0.7"/>
-          </svg>
-        </div>
+        <img src="/images/logo-white.png" alt="Nature" class="n-sidebar__logo-img" :style="{ width: isCollapsed ? '28px' : '32px', height: 'auto' }" />
         <transition name="n-fade">
           <span v-if="!isCollapsed" class="n-sidebar__logo-text">Nature</span>
         </transition>

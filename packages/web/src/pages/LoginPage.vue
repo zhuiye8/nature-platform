@@ -111,9 +111,12 @@ onUnmounted(() => {
         <div class="lp-logo">
           <div class="lp-logo__ring" />
           <div class="lp-logo__ring lp-logo__ring--2" />
-          <div class="lp-logo__core">N</div>
+          <img src="/images/logo-color.png" alt="Nature" class="lp-logo__img" />
         </div>
-        <h1 class="lp-brand__title"><span class="lp-gradient">Nature</span> Platform</h1>
+        <div class="lp-brand__name">
+          <p class="lp-brand__company">扬州大自然网络信息有限公司</p>
+          <p class="lp-brand__company-en">YANGZHOU NATURE NETWORK INFORMATION CO., LTD.</p>
+        </div>
         <p class="lp-brand__tagline">等保测评 · 项目流程管理系统</p>
         <div class="lp-brand__lines">
           <span v-for="i in 3" :key="i" class="lp-brand__line" />
@@ -223,31 +226,28 @@ onUnmounted(() => {
 .lp-brand { text-align: center; animation: slide-left 0.8s ease-out; }
 @keyframes slide-left { from { opacity: 0; transform: translateX(-30px); } }
 
-.lp-logo { position: relative; width: 110px; height: 110px; margin: 0 auto 28px; }
+.lp-logo { position: relative; width: 140px; height: 140px; margin: 0 auto 28px; }
 .lp-logo__ring {
   position: absolute; inset: -10px;
   border: 2px solid transparent; border-top-color: #409eff;
   border-radius: 50%; animation: ring-spin 3s linear infinite;
 }
 .lp-logo__ring--2 { inset: -18px; border-top-color: #5dade2; animation-direction: reverse; animation-duration: 4.5s; }
-.lp-logo__core {
-  width: 100%; height: 100%; border-radius: 28px;
-  background: linear-gradient(140deg, rgba(40,120,200,0.9), rgba(30,90,170,0.9));
-  display: grid; place-items: center;
-  font-size: 46px; font-weight: 700; color: #e0f0ff;
-  box-shadow: 0 0 28px rgba(64,158,255,0.25);
-  font-family: 'Plus Jakarta Sans', serif;
+.lp-logo__img {
+  width: 72%; height: 72%; object-fit: contain;
+  position: absolute; top: 14%; left: 14%;
+  filter: drop-shadow(0 0 24px rgba(64,158,255,0.35));
 }
 @keyframes ring-spin { to { transform: rotate(360deg); } }
 
-.lp-brand__title {
-  font-size: 38px; font-weight: 700; color: #e8f0fa;
-  margin: 0 0 10px; letter-spacing: 1.5px;
-  font-family: 'Plus Jakarta Sans', serif;
+.lp-brand__name { text-align: center; margin-bottom: 20px; }
+.lp-brand__company {
+  font-size: 22px; font-weight: 700; color: rgba(220,235,255,0.92);
+  letter-spacing: 5px; margin: 0 0 10px;
 }
-.lp-gradient {
-  background: linear-gradient(135deg, #409eff 0%, #66b1ff 100%);
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+.lp-brand__company-en {
+  font-size: 12px; font-weight: 500; color: rgba(160,200,240,0.55);
+  letter-spacing: 2px; margin: 0;
 }
 .lp-brand__tagline { font-size: 13px; color: rgba(190,220,250,0.7); letter-spacing: 4px; margin-bottom: 30px; }
 .lp-brand__lines { display: flex; justify-content: center; gap: 7px; }
