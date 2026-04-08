@@ -5,10 +5,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { eq, and, ilike, count, desc, SQL } from 'drizzle-orm';
+import { eq, and, or, ilike, count, desc, SQL } from 'drizzle-orm';
 import { DRIZZLE, DrizzleDB } from '../../database/database.module';
 import {
   contract,
+  contractGroup,
   contractSystemItem,
   customer,
 } from '../../database/schema/business';
@@ -21,6 +22,9 @@ import {
   UpdateContractDto,
   QueryContractDto,
   ArchiveContractDto,
+  CreateGroupDto,
+  UpdateGroupDto,
+  QueryGroupDto,
 } from './dto/contract.dto';
 import { WorkflowService } from '../workflow/workflow.service';
 
@@ -61,6 +65,17 @@ export class ContractService {
       conditions.push(eq(contract.reviewStatus, 'APPROVED'));
     }
 
+    // Sales role: forced isolation — only see contracts where createdBy or salesPersonId matches
+    const isSalesRole = roleCodes.includes('sales') && !isSuperAdmin && !roleCodes.includes('dept_manager') && !roleCodes.includes('commercial');
+    if (isSalesRole) {
+      conditions.push(
+        or(
+          eq(contract.createdBy, currentUserId),
+          eq(contract.salesPersonId, currentUserId),
+        )!,
+      );
+    }
+
     if (query.keyword) {
       const pattern = `%${query.keyword}%`;
       conditions.push(
@@ -76,7 +91,14 @@ export class ContractService {
       conditions.push(eq(contract.archiveStatus, query.archiveStatus));
     }
 
-    if (query.createdByUserId) {
+    if (query.paymentStatus) {
+      conditions.push(eq(contract.paymentStatus, query.paymentStatus));
+    }
+
+    // Filter by salesPersonId (跟单销售)
+    if (query.salesPersonId) {
+      conditions.push(eq(contract.salesPersonId, query.salesPersonId));
+    } else if (query.createdByUserId) {
       conditions.push(eq(contract.createdBy, query.createdByUserId));
     } else if (query.onlyMine === 'true') {
       conditions.push(eq(contract.createdBy, currentUserId));
@@ -92,6 +114,8 @@ export class ContractService {
       this.db
         .select({
           id: contract.id,
+          groupId: contract.groupId,
+          contractCategory: contract.contractCategory,
           customerId: contract.customerId,
           contractNo: contract.contractNo,
           contractName: contract.contractName,
@@ -103,10 +127,15 @@ export class ContractService {
           salesPersonId: contract.salesPersonId,
           performanceCity: contract.performanceCity,
           dealStatus: contract.dealStatus,
+          serviceContent: contract.serviceContent,
           contractType: contract.contractType,
           serviceYears: contract.serviceYears,
           serviceYearDetail: contract.serviceYearDetail,
+          paymentInfo: contract.paymentInfo,
+          invoiceType: contract.invoiceType,
+          taxRate: contract.taxRate,
           paymentStatus: contract.paymentStatus,
+          financialHandlerId: contract.financialHandlerId,
           signedAt: contract.signedAt,
           archiveStatus: contract.archiveStatus,
           fileCount: contract.fileCount,
@@ -165,7 +194,16 @@ export class ContractService {
             ),
           )
           .orderBy(contractSystemItem.sortOrder);
-        return { ...row, salesPersonName, archiverName, systemItemsSummary: items };
+        let financialHandlerName: string | null = null;
+        if (row.financialHandlerId) {
+          const handlers = await this.db
+            .select({ displayName: userAccount.displayName })
+            .from(userAccount)
+            .where(eq(userAccount.id, row.financialHandlerId))
+            .limit(1);
+          financialHandlerName = handlers[0]?.displayName ?? null;
+        }
+        return { ...row, salesPersonName, archiverName, financialHandlerName, systemItemsSummary: items };
       }),
     );
 
@@ -184,25 +222,30 @@ export class ContractService {
     const rows = await this.db
       .select({
         id: contract.id,
+        groupId: contract.groupId,
+        contractCategory: contract.contractCategory,
         customerId: contract.customerId,
         contractNo: contract.contractNo,
         contractName: contract.contractName,
         contactName: contract.contactName,
         contactPhone: contract.contactPhone,
         paymentCompany: contract.paymentCompany,
-        payerType: contract.payerType,
-        payerId: contract.payerId,
         paymentAmount: contract.paymentAmount,
         paymentMethod: contract.paymentMethod,
+        paymentInfo: contract.paymentInfo,
+        invoiceType: contract.invoiceType,
+        taxRate: contract.taxRate,
         partnerId: contract.partnerId,
         partnerName: partner.name,
         salesPersonId: contract.salesPersonId,
         performanceCity: contract.performanceCity,
         dealStatus: contract.dealStatus,
+        serviceContent: contract.serviceContent,
         contractType: contract.contractType,
         serviceYears: contract.serviceYears,
         paymentStatus: contract.paymentStatus,
         paymentRemark: contract.paymentRemark,
+        financialHandlerId: contract.financialHandlerId,
         signedAt: contract.signedAt,
         archiveStatus: contract.archiveStatus,
         fileCount: contract.fileCount,
@@ -216,6 +259,7 @@ export class ContractService {
         updatedBy: contract.updatedBy,
         updatedAt: contract.updatedAt,
         customerName: customer.fullName,
+        customerUscc: customer.uscc,
       })
       .from(contract)
       .leftJoin(customer, eq(contract.customerId, customer.id))
@@ -224,7 +268,7 @@ export class ContractService {
       .limit(1);
 
     if (!rows[0]) {
-      throw new NotFoundException(`Contract #${id} not found`);
+      throw new NotFoundException(`合同不存在`);
     }
 
     // Load system items
@@ -272,27 +316,50 @@ export class ContractService {
       archivedByName = users[0]?.displayName ?? null;
     }
 
-    const isSalesOnly = roleCodes.includes('sales') && !isSuperAdmin && !isCommercial;
-    if (isSalesOnly && !isCreator) {
-      return {
-        ...record,
-        salesPersonName,
-        archivedByName,
-        paymentAmount: null,
-        paymentMethod: null,
-        paymentCompany: null,
-        paymentStatus: null,
-        partnerName: null,
-        dealStatus: null,
-        systemItems: items,
-        _restricted: true,
-      };
+    let financialHandlerName: string | null = null;
+    if (record.financialHandlerId) {
+      const users = await this.db
+        .select({ displayName: userAccount.displayName })
+        .from(userAccount)
+        .where(eq(userAccount.id, record.financialHandlerId))
+        .limit(1);
+      financialHandlerName = users[0]?.displayName ?? null;
+    }
+
+    // Group name
+    let groupName: string | null = null;
+    if (record.groupId) {
+      const groups = await this.db
+        .select({ groupName: contractGroup.groupName })
+        .from(contractGroup)
+        .where(eq(contractGroup.id, record.groupId))
+        .limit(1);
+      groupName = groups[0]?.groupName ?? null;
+    }
+
+    // Sibling contracts in the same group
+    let groupContracts: any[] = [];
+    if (record.groupId) {
+      groupContracts = await this.db
+        .select({
+          id: contract.id,
+          contractNo: contract.contractNo,
+          contractName: contract.contractName,
+          contractCategory: contract.contractCategory,
+          reviewStatus: contract.reviewStatus,
+        })
+        .from(contract)
+        .where(and(eq(contract.groupId, record.groupId), eq(contract.deleted, false)))
+        .orderBy(contract.createdAt);
     }
 
     return {
       ...record,
+      groupName,
+      groupContracts,
       salesPersonName,
       archivedByName,
+      financialHandlerName,
       systemItems: items,
     };
   }
@@ -304,17 +371,23 @@ export class ContractService {
     const result = await this.db
       .insert(contract)
       .values({
+        groupId: dto.groupId,
+        contractCategory: dto.contractCategory ?? null,
         customerId: dto.customerId,
         contactName: dto.contactName ?? null,
         contactPhone: dto.contactPhone ?? null,
         paymentCompany: dto.paymentCompany ?? null,
         paymentAmount: dto.paymentAmount != null ? String(dto.paymentAmount) : null,
         paymentMethod: dto.paymentMethod ?? null,
+        paymentInfo: dto.paymentInfo ?? null,
+        invoiceType: dto.invoiceType ?? null,
+        taxRate: dto.taxRate ?? null,
         partnerName: dto.partnerName ?? null,
         partnerId: dto.partnerId ?? null,
         salesPersonId: dto.salesPersonId ?? null,
         performanceCity: dto.performanceCity ?? null,
         dealStatus: dto.dealStatus ?? null,
+        serviceContent: dto.serviceContent ?? null,
         contractType: dto.contractType ?? null,
         serviceYears: dto.serviceYears,
         remark: dto.remark ?? null,
@@ -370,15 +443,16 @@ export class ContractService {
       );
     }
 
-    // Ownership check: only creator can edit (super_admin and archived contracts exempt)
-    if (existing.createdBy !== userId && existing.archiveStatus !== 'ARCHIVED') {
+    // Ownership check: creator or salesPerson can edit (super_admin and archived contracts exempt)
+    const isOwner = existing.createdBy === userId || existing.salesPersonId === userId;
+    if (!isOwner && existing.archiveStatus !== 'ARCHIVED') {
       const adminCheck = await this.db
         .select()
         .from(userRole)
         .where(and(eq(userRole.userId, userId), eq(userRole.roleCode, 'super_admin')))
         .limit(1);
       if (adminCheck.length === 0) {
-        throw new ForbiddenException('只有合同创建人可以编辑此合同');
+        throw new ForbiddenException('只有合同创建人或跟单销售可以编辑此合同');
       }
     }
 
@@ -398,11 +472,15 @@ export class ContractService {
           paymentAmount: contractFields.paymentAmount != null ? String(contractFields.paymentAmount) : null,
         }),
         ...(contractFields.paymentMethod !== undefined && { paymentMethod: contractFields.paymentMethod }),
+        ...(contractFields.paymentInfo !== undefined && { paymentInfo: contractFields.paymentInfo }),
+        ...(contractFields.invoiceType !== undefined && { invoiceType: contractFields.invoiceType }),
+        ...(contractFields.taxRate !== undefined && { taxRate: contractFields.taxRate }),
         ...(contractFields.partnerName !== undefined && { partnerName: contractFields.partnerName }),
         ...(contractFields.partnerId !== undefined && { partnerId: contractFields.partnerId }),
         ...(contractFields.salesPersonId !== undefined && { salesPersonId: contractFields.salesPersonId }),
         ...(contractFields.performanceCity !== undefined && { performanceCity: contractFields.performanceCity }),
         ...(contractFields.dealStatus !== undefined && { dealStatus: contractFields.dealStatus }),
+        ...(contractFields.serviceContent !== undefined && { serviceContent: contractFields.serviceContent }),
         ...(contractFields.contractType !== undefined && { contractType: contractFields.contractType }),
         ...(contractFields.serviceYears !== undefined && { serviceYears: contractFields.serviceYears }),
         ...(contractFields.serviceYearDetail !== undefined && { serviceYearDetail: contractFields.serviceYearDetail }),
@@ -492,12 +570,12 @@ export class ContractService {
   async remove(id: number, userId: number) {
     const existing = await this.findById(id, userId);
 
-    if (existing.createdBy !== userId) {
-      throw new ForbiddenException('Only the creator can delete this contract');
+    if (existing.createdBy !== userId && existing.salesPersonId !== userId) {
+      throw new ForbiddenException('只有合同创建人或跟单销售可以删除此合同');
     }
 
     if (existing.reviewStatus !== 'DRAFT') {
-      throw new BadRequestException('Only DRAFT contracts can be deleted');
+      throw new BadRequestException('只有草稿状态的合同可以删除');
     }
 
     await this.db
@@ -521,14 +599,14 @@ export class ContractService {
   async submit(id: number, userId: number) {
     const existing = await this.findById(id, userId);
 
-    if (existing.createdBy !== userId) {
-      throw new ForbiddenException('Only the creator can submit this contract');
+    if (existing.createdBy !== userId && existing.salesPersonId !== userId) {
+      throw new ForbiddenException('只有合同创建人或跟单销售可以提交此合同');
     }
 
     const submittableStatuses = ['DRAFT', 'REJECTED'];
     if (!submittableStatuses.includes(existing.reviewStatus)) {
       throw new BadRequestException(
-        'Contract can only be submitted from DRAFT or REJECTED status',
+        '只有草稿或驳回状态的合同可以提交',
       );
     }
 
@@ -616,17 +694,19 @@ export class ContractService {
       .where(and(eq(contract.id, id), eq(contract.deleted, false)))
       .limit(1);
 
-    if (!rows[0]) throw new NotFoundException(`Contract #${id} not found`);
+    if (!rows[0]) throw new NotFoundException(`合同不存在`);
 
     const updateData: any = { updatedBy: userId, updatedAt: new Date() };
     if (dto.paymentAmount !== undefined) updateData.paymentAmount = dto.paymentAmount;
     if (dto.paymentMethod !== undefined) updateData.paymentMethod = dto.paymentMethod;
     if (dto.paymentCompany !== undefined) updateData.paymentCompany = dto.paymentCompany;
-    if (dto.payerType !== undefined) updateData.payerType = dto.payerType;
-    if (dto.payerId !== undefined) updateData.payerId = dto.payerId;
+    if (dto.paymentInfo !== undefined) updateData.paymentInfo = dto.paymentInfo;
+    if (dto.invoiceType !== undefined) updateData.invoiceType = dto.invoiceType;
+    if (dto.taxRate !== undefined) updateData.taxRate = dto.taxRate;
     if (dto.performanceCity !== undefined) updateData.performanceCity = dto.performanceCity;
     if (dto.paymentStatus !== undefined) updateData.paymentStatus = dto.paymentStatus;
     if (dto.paymentRemark !== undefined) updateData.paymentRemark = dto.paymentRemark;
+    updateData.financialHandlerId = userId;
 
     await this.db.update(contract).set(updateData).where(eq(contract.id, id));
 
@@ -827,5 +907,223 @@ export class ContractService {
     }
 
     return sorted.join('、');
+  }
+
+  // =====================================================================
+  // Contract Group CRUD
+  // =====================================================================
+
+  async createGroup(dto: CreateGroupDto, userId: number) {
+    const result = await this.db
+      .insert(contractGroup)
+      .values({
+        groupName: dto.groupName,
+        remark: dto.remark ?? null,
+        createdBy: userId,
+      })
+      .returning();
+    return result[0];
+  }
+
+  async findGroupPage(query: QueryGroupDto, currentUserId: number) {
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 20;
+
+    // Get user roles for data isolation
+    const roles = await this.db
+      .select({ roleCode: userRole.roleCode })
+      .from(userRole)
+      .where(eq(userRole.userId, currentUserId));
+    const roleCodes = roles.map((r) => r.roleCode);
+    const isSuperAdmin = roleCodes.includes('super_admin');
+    const isSalesRole = roleCodes.includes('sales') && !isSuperAdmin
+      && !roleCodes.includes('dept_manager') && !roleCodes.includes('commercial');
+
+    // Step 1: Find matching group IDs from both group-level and contract-level filters
+    // Contract-level conditions (always applied to narrow down groups)
+    const contractConds: SQL[] = [eq(contract.deleted, false)];
+    if (isSalesRole) {
+      contractConds.push(
+        or(eq(contract.createdBy, currentUserId), eq(contract.salesPersonId, currentUserId))!,
+      );
+    }
+    if (query.reviewStatus) contractConds.push(eq(contract.reviewStatus, query.reviewStatus));
+    if (query.archiveStatus) contractConds.push(eq(contract.archiveStatus, query.archiveStatus));
+    if (query.paymentStatus) contractConds.push(eq(contract.paymentStatus, query.paymentStatus));
+    if (query.salesPersonId) contractConds.push(eq(contract.salesPersonId, query.salesPersonId));
+
+    // Keyword: match group name OR contract name OR contract no
+    let groupIdsFromKeyword: Set<number> | null = null;
+    if (query.keyword) {
+      const pattern = `%${query.keyword}%`;
+      // Groups matching by name
+      const gByName = await this.db
+        .select({ id: contractGroup.id })
+        .from(contractGroup)
+        .where(and(eq(contractGroup.deleted, false), ilike(contractGroup.groupName, pattern)));
+      // Groups matching by contract name/no
+      const gByContract = await this.db
+        .select({ groupId: contract.groupId })
+        .from(contract)
+        .where(and(
+          ...contractConds,
+          or(ilike(contract.contractName, pattern), ilike(contract.contractNo, pattern))!,
+        ));
+      groupIdsFromKeyword = new Set([
+        ...gByName.map(r => r.id),
+        ...gByContract.map(r => r.groupId),
+      ]);
+    }
+
+    // Groups that have at least one matching contract (for contract-level filters)
+    const hasContractFilter = !!query.reviewStatus || !!query.archiveStatus || !!query.salesPersonId || isSalesRole;
+    let groupIdsFromContracts: Set<number> | null = null;
+    if (hasContractFilter) {
+      const matchingContracts = await this.db
+        .select({ groupId: contract.groupId })
+        .from(contract)
+        .where(and(...contractConds));
+      groupIdsFromContracts = new Set(matchingContracts.map(r => r.groupId));
+    }
+
+    // Intersect group ID sets
+    let validGroupIds: number[] | null = null;
+    if (groupIdsFromKeyword !== null && groupIdsFromContracts !== null) {
+      validGroupIds = [...groupIdsFromKeyword].filter(id => groupIdsFromContracts!.has(id));
+    } else if (groupIdsFromKeyword !== null) {
+      validGroupIds = [...groupIdsFromKeyword];
+    } else if (groupIdsFromContracts !== null) {
+      validGroupIds = [...groupIdsFromContracts];
+    }
+
+    // Step 2: Query groups with pagination
+    const groupConditions: SQL[] = [eq(contractGroup.deleted, false)];
+    if (validGroupIds !== null) {
+      if (validGroupIds.length === 0) {
+        return { list: [], total: 0, page, pageSize };
+      }
+      groupConditions.push(
+        or(...validGroupIds.map(id => eq(contractGroup.id, id)))!,
+      );
+    }
+
+    const [totalResult, groups] = await Promise.all([
+      this.db.select({ total: count() }).from(contractGroup).where(and(...groupConditions)),
+      this.db.select().from(contractGroup)
+        .where(and(...groupConditions))
+        .orderBy(desc(contractGroup.createdAt))
+        .limit(pageSize)
+        .offset((page - 1) * pageSize),
+    ]);
+
+    // Step 3: Load contracts per group (with sales isolation only, show all that match)
+    const enriched = await Promise.all(
+      groups.map(async (g) => {
+        const conds: SQL[] = [eq(contract.groupId, g.id), eq(contract.deleted, false)];
+        if (isSalesRole) {
+          conds.push(or(eq(contract.createdBy, currentUserId), eq(contract.salesPersonId, currentUserId))!);
+        }
+        // Apply contract-level filters to child contracts too
+        if (query.reviewStatus) conds.push(eq(contract.reviewStatus, query.reviewStatus));
+        if (query.archiveStatus) conds.push(eq(contract.archiveStatus, query.archiveStatus));
+        if (query.paymentStatus) conds.push(eq(contract.paymentStatus, query.paymentStatus));
+        if (query.salesPersonId) conds.push(eq(contract.salesPersonId, query.salesPersonId));
+
+        const contracts = await this.db
+          .select({
+            id: contract.id,
+            contractNo: contract.contractNo,
+            contractName: contract.contractName,
+            contractCategory: contract.contractCategory,
+            reviewStatus: contract.reviewStatus,
+            archiveStatus: contract.archiveStatus,
+            paymentAmount: contract.paymentAmount,
+            paymentMethod: contract.paymentMethod,
+            paymentStatus: contract.paymentStatus,
+            financialHandlerId: contract.financialHandlerId,
+            salesPersonId: contract.salesPersonId,
+            createdBy: contract.createdBy,
+            createdAt: contract.createdAt,
+          })
+          .from(contract)
+          .where(and(...conds))
+          .orderBy(contract.createdAt);
+
+        const contractsWithNames = await Promise.all(
+          contracts.map(async (c) => {
+            let salesPersonName: string | null = null;
+            if (c.salesPersonId) {
+              const users = await this.db
+                .select({ displayName: userAccount.displayName })
+                .from(userAccount)
+                .where(eq(userAccount.id, c.salesPersonId))
+                .limit(1);
+              salesPersonName = users[0]?.displayName ?? null;
+            }
+            let financialHandlerName: string | null = null;
+            if (c.financialHandlerId) {
+              const handlers = await this.db
+                .select({ displayName: userAccount.displayName })
+                .from(userAccount)
+                .where(eq(userAccount.id, c.financialHandlerId))
+                .limit(1);
+              financialHandlerName = handlers[0]?.displayName ?? null;
+            }
+            return { ...c, salesPersonName, financialHandlerName };
+          }),
+        );
+
+        return { ...g, contracts: contractsWithNames };
+      }),
+    );
+
+    return {
+      list: enriched,
+      total: totalResult[0]?.total ?? 0,
+      page,
+      pageSize,
+    };
+  }
+
+  async updateGroup(id: number, dto: UpdateGroupDto, userId: number) {
+    const rows = await this.db
+      .select()
+      .from(contractGroup)
+      .where(and(eq(contractGroup.id, id), eq(contractGroup.deleted, false)))
+      .limit(1);
+    if (!rows[0]) throw new NotFoundException(`合同组不存在`);
+
+    await this.db
+      .update(contractGroup)
+      .set({ ...dto, updatedBy: userId, updatedAt: new Date() })
+      .where(eq(contractGroup.id, id));
+
+    return this.db.select().from(contractGroup).where(eq(contractGroup.id, id)).limit(1).then(r => r[0]);
+  }
+
+  async deleteGroup(id: number, userId: number) {
+    const rows = await this.db
+      .select()
+      .from(contractGroup)
+      .where(and(eq(contractGroup.id, id), eq(contractGroup.deleted, false)))
+      .limit(1);
+    if (!rows[0]) throw new NotFoundException(`合同组不存在`);
+    if (rows[0].createdBy !== userId) {
+      throw new ForbiddenException('只有创建人可以删除合同组');
+    }
+
+    // Check no contracts in group
+    const contractCount = await this.db
+      .select({ total: count() })
+      .from(contract)
+      .where(and(eq(contract.groupId, id), eq(contract.deleted, false)));
+    if ((contractCount[0]?.total ?? 0) > 0) {
+      throw new BadRequestException('合同组内还有合同，无法删除');
+    }
+
+    await this.db
+      .update(contractGroup)
+      .set({ deleted: true, deletedAt: new Date() })
+      .where(eq(contractGroup.id, id));
   }
 }

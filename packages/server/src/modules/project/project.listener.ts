@@ -34,6 +34,19 @@ export class ProjectListener {
           .set({ status: 'APPROVED', updatedAt: new Date() })
           .where(eq(projectRegister.id, payload.bizId));
 
+        // Insert PM from extraData
+        const pmUserId: number | undefined = payload.extraData?.pmUserId;
+        if (pmUserId) {
+          this.logger.log(`Assigning PM #${pmUserId} to project #${payload.bizId}`);
+          await this.db.insert(projectMember).values({
+            projectId: payload.bizId,
+            userId: pmUserId,
+            roleType: 'PM',
+            assignedBy: payload.operatorId,
+            assignedAt: new Date(),
+          });
+        }
+
         // Insert assessors from extraData
         const assessorUserIds: number[] =
           payload.extraData?.assessorUserIds ?? [];

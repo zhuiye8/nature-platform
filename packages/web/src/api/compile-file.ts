@@ -30,8 +30,9 @@ export function uploadCompileFile(
   )
 }
 
-export function getCompileFileDownloadUrl(fileId: number) {
-  return request.get<{ url: string; fileName: string }>(`/compile-file/download/${fileId}`)
+export function getCompileFileDownloadPath(fileId: number) {
+  const token = localStorage.getItem('token')
+  return `/api/compile-file/download/${fileId}?token=${token}`
 }
 
 export function deleteCompileFile(fileId: number) {

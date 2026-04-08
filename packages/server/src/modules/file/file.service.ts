@@ -13,7 +13,6 @@ import {
   CreateBucketCommand,
   HeadBucketCommand,
 } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { ConfigService } from '@nestjs/config';
 import { eq, and, desc } from 'drizzle-orm';
 import { DRIZZLE, DrizzleDB } from '../../database/database.module';
@@ -160,9 +159,9 @@ export class FileService implements OnModuleInit {
   }
 
   // -----------------------------------------------------------------------
-  // Download (presigned URL)
+  // Stream file from S3 (proxy download)
   // -----------------------------------------------------------------------
-  async getPresignedUrl(id: number, mode: 'download' | 'preview' = 'download') {
+  async streamFile(id: number) {
     const rows = await this.db
       .select()
       .from(fileAttachment)
@@ -170,27 +169,22 @@ export class FileService implements OnModuleInit {
       .limit(1);
 
     if (rows.length === 0) {
-      throw new NotFoundException('File not found');
+      throw new NotFoundException('文件不存在');
     }
 
     const file = rows[0];
-    const commandOptions: any = {
+    const command = new GetObjectCommand({
       Bucket: BUCKET_NAME,
       Key: file.storagePath,
+    });
+
+    const response = await this.s3.send(command);
+    return {
+      stream: response.Body as import('stream').Readable,
+      fileName: file.fileName,
+      contentType: file.contentType,
+      fileSize: file.fileSize,
     };
-
-    if (mode === 'preview') {
-      // inline: browser will try to display the file
-      commandOptions.ResponseContentDisposition = `inline; filename="${encodeURIComponent(file.fileName)}"`;
-      commandOptions.ResponseContentType = file.contentType;
-    } else {
-      // attachment: browser will download
-      commandOptions.ResponseContentDisposition = `attachment; filename="${encodeURIComponent(file.fileName)}"`;
-    }
-
-    const command = new GetObjectCommand(commandOptions);
-    const url = await getSignedUrl(this.s3, command, { expiresIn: 1800 }); // 30 min
-    return { url, fileName: file.fileName, contentType: file.contentType };
   }
 
   // -----------------------------------------------------------------------
@@ -204,12 +198,12 @@ export class FileService implements OnModuleInit {
       .limit(1);
 
     if (rows.length === 0) {
-      throw new NotFoundException('File not found');
+      throw new NotFoundException('文件不存在');
     }
 
     const file = rows[0];
     if (file.uploaderId !== userId && !isSuperAdmin) {
-      throw new ForbiddenException('Only the uploader or admin can delete this file');
+      throw new ForbiddenException('只有上传者或管理员可以删除此文件');
     }
 
     await this.db

@@ -6,10 +6,9 @@ import { ArrowLeft, Download } from '@element-plus/icons-vue'
 import { getTaskDetail, signalTask, resubmitTask, getUsersByRole } from '@/api/workflow'
 import { getContractDetail } from '@/api/contract'
 import { getProjectDetail, getSystemItems } from '@/api/project'
-import { getFileList, getDownloadUrl, getPreviewUrl, type FileItem } from '@/api/file'
+import { getFileList, getFileDownloadPath, type FileItem } from '@/api/file'
 import { getStatusLabel, getStatusTagType } from '@/utils/status-map'
 import { formatTime } from '@/utils/format'
-import SystemItemDetailDialog from '@/components/SystemItemDetailDialog.vue'
 import { useAuthStore } from '@/stores/auth'
 import ReviewOpinionDialog from '@/components/ReviewOpinionDialog.vue'
 import ReviewOpinionHistory from '@/components/ReviewOpinionHistory.vue'
@@ -26,23 +25,15 @@ const bizData = ref<any>(null)
 const remark = ref('')
 const contractData = ref<any>(null)
 
-// System item detail dialog
-const siDialogVisible = ref(false)
-const siDialogItem = ref<any>(null)
-const systemItemsWithFiles = ref<any[]>([])
+// System items with files (for PROJECT_REGISTER)
+const systemItemsEnriched = ref<any[]>([])
 
 async function loadSystemItemsWithFiles(projectId: number) {
   try {
-    systemItemsWithFiles.value = (await getSystemItems(projectId)) as any[]
+    systemItemsEnriched.value = (await getSystemItems(projectId)) as any[]
   } catch {
-    systemItemsWithFiles.value = []
+    systemItemsEnriched.value = []
   }
-}
-
-function showSiDetail(row: any) {
-  const enriched = systemItemsWithFiles.value.find((i: any) => i.id === row.id) || row
-  siDialogItem.value = enriched
-  siDialogVisible.value = true
 }
 
 const taskId = computed(() => Number(route.params.taskId))
@@ -78,48 +69,30 @@ function onOpinionCompleted() {
   router.push('/dashboard')
 }
 
-// Assessor selection for PROJECT_REVIEW approval
+// Assessor + PM selection for PROJECT_REVIEW approval
 const assessorOptions = ref<{ id: number; displayName: string }[]>([])
 const selectedAssessorIds = ref<number[]>([])
+const pmOptions = ref<{ id: number; displayName: string }[]>([])
+const selectedPmId = ref<number | undefined>(undefined)
 
 // (File pools now handled by FilePoolPanel component)
 
-// Contract file for CONTRACT_REVIEW
-const contractFileForReview = ref<FileItem | null>(null)
-const contractFilePreviewUrl = ref('')
-const previewableImageTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+// Contract files for CONTRACT_REVIEW (multi-file + desc)
+const contractFilesForReview = ref<FileItem[]>([])
+const contractDescFileForReview = ref<FileItem | null>(null)
 
 async function fetchContractFile(bizId: number) {
   try {
-    const files = (await getFileList('CONTRACT', bizId)) as any as FileItem[]
-    contractFileForReview.value = files && files.length > 0 ? files[0] : null
-    if (contractFileForReview.value && (previewableImageTypes.includes(contractFileForReview.value.contentType) || contractFileForReview.value.contentType === 'application/pdf')) {
-      const result = (await getPreviewUrl(contractFileForReview.value.id)) as any
-      contractFilePreviewUrl.value = result.url || result
-    } else {
-      contractFilePreviewUrl.value = ''
-    }
-  } catch { contractFileForReview.value = null; contractFilePreviewUrl.value = '' }
+    contractFilesForReview.value = (await getFileList('CONTRACT', bizId)) as any as FileItem[]
+  } catch { contractFilesForReview.value = [] }
+  try {
+    const descFiles = (await getFileList('CONTRACT_DESC', bizId)) as any as FileItem[]
+    contractDescFileForReview.value = descFiles && descFiles.length > 0 ? descFiles[0] : null
+  } catch { contractDescFileForReview.value = null }
 }
 
-async function downloadContractFile() {
-  if (!contractFileForReview.value) return
-  try {
-    const result = (await getDownloadUrl(contractFileForReview.value.id)) as any
-    const a = document.createElement('a')
-    a.href = result.url || result
-    a.download = contractFileForReview.value.fileName
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-  } catch { /* ignore */ }
-}
-
-async function handleFileDownload(fileId: number) {
-  try {
-    const result = (await getDownloadUrl(fileId)) as any
-    window.open(result.url, '_blank')
-  } catch { ElMessage.error('下载失败') }
+function handleFileDownload(fileId: number) {
+  window.open(getFileDownloadPath(fileId), '_blank')
 }
 
 function formatFileSize(bytes: number) {
@@ -160,11 +133,14 @@ async function fetchData() {
       }
     }
 
-    // Load assessor candidates if this is a project review task
+    // Load assessor + PM candidates if this is a project review task
     if (task?.nodeKey === 'PROJECT_REVIEW') {
       try {
         assessorOptions.value = (await getUsersByRole('assessor')) as any
       } catch { assessorOptions.value = [] }
+      try {
+        pmOptions.value = (await getUsersByRole('project_manager')) as any
+      } catch { pmOptions.value = [] }
     }
 
     // Load report writer candidates if this is a report assign task
@@ -241,16 +217,23 @@ async function handleAction(action: 'APPROVE' | 'REJECT') {
     return
   }
 
-  // Project review: must select at least 1 assessor when approving
-  if (isProjectReview.value && action === 'APPROVE' && selectedAssessorIds.value.length === 0) {
-    ElMessage.warning('请至少选择一名测评师')
-    return
+  // Project review: must select PM + at least 1 assessor when approving
+  if (isProjectReview.value && action === 'APPROVE') {
+    if (!selectedPmId.value) {
+      ElMessage.warning('请选择项目经理')
+      return
+    }
+    if (selectedAssessorIds.value.length === 0) {
+      ElMessage.warning('请至少选择一名测评师')
+      return
+    }
   }
 
   submitting.value = true
   try {
     const extraData: Record<string, any> = {}
     if (isProjectReview.value && action === 'APPROVE') {
+      extraData.pmUserId = selectedPmId.value
       extraData.assessorUserIds = selectedAssessorIds.value
     }
 
@@ -302,31 +285,42 @@ onMounted(() => {
 
       <!-- 基本信息 -->
       <el-descriptions :column="2" border size="small">
+        <el-descriptions-item label="合同组">{{ bizData.groupName || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="合同分类">{{ bizData.contractCategory || '--' }}</el-descriptions-item>
         <el-descriptions-item label="合同编号">{{ bizData.contractNo || '--' }}</el-descriptions-item>
         <el-descriptions-item label="合同名称" :span="2">{{ bizData.contractName || '--' }}</el-descriptions-item>
         <el-descriptions-item label="客户名称">{{ bizData.customerName || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="统一信用代码">{{ bizData.customerUscc || '--' }}</el-descriptions-item>
         <el-descriptions-item label="联系人">{{ bizData.contactName || '--' }}</el-descriptions-item>
         <el-descriptions-item label="联系电话">{{ bizData.contactPhone || '--' }}</el-descriptions-item>
-        <el-descriptions-item label="合同类型">{{ getStatusLabel(bizData.contractType) || bizData.contractType || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="服务内容">{{ bizData.serviceContent || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="合同类型">{{ bizData.contractType || '--' }}</el-descriptions-item>
         <el-descriptions-item label="成交情况">{{ getStatusLabel(bizData.dealStatus) || bizData.dealStatus || '--' }}</el-descriptions-item>
         <el-descriptions-item label="签单销售">{{ bizData.salesPersonName || '--' }}</el-descriptions-item>
         <el-descriptions-item label="合作方">{{ bizData.partnerName || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="业绩归属城市">{{ bizData.performanceCity || '--' }}</el-descriptions-item>
       </el-descriptions>
 
       <!-- 财务信息 -->
       <h4 style="margin: 16px 0 8px; font-size: 14px; color: #606266">财务信息</h4>
       <el-descriptions :column="2" border size="small">
-        <el-descriptions-item label="合同金额（元）">{{ bizData.paymentAmount ?? '--' }}</el-descriptions-item>
-        <el-descriptions-item label="付款方式">{{ bizData.paymentMethod || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="付款金额">{{ bizData.paymentAmount ?? '--' }}</el-descriptions-item>
         <el-descriptions-item label="付款单位">{{ bizData.paymentCompany || '--' }}</el-descriptions-item>
-        <el-descriptions-item label="合作方">{{ bizData.partnerName || '--' }}</el-descriptions-item>
-        <el-descriptions-item label="业绩归属城市">{{ bizData.performanceCity || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="发票类型">{{ bizData.invoiceType || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="税率">{{ bizData.taxRate ? bizData.taxRate + '%' : '--' }}</el-descriptions-item>
+        <el-descriptions-item label="付款方式">{{ bizData.paymentMethod || '--' }}</el-descriptions-item>
         <el-descriptions-item label="回款状态">
           <el-tag v-if="bizData.paymentStatus" :type="getStatusTagType(bizData.paymentStatus)" size="small">
             {{ getStatusLabel(bizData.paymentStatus) }}
           </el-tag>
           <span v-else>--</span>
         </el-descriptions-item>
+      </el-descriptions>
+      <el-descriptions :column="1" border size="small" style="margin-top: 8px">
+        <el-descriptions-item label="付款信息">
+          <div style="white-space: pre-wrap">{{ bizData.paymentInfo || '--' }}</div>
+        </el-descriptions-item>
+        <el-descriptions-item label="回款备注">{{ bizData.paymentRemark || '--' }}</el-descriptions-item>
       </el-descriptions>
 
       <!-- 服务信息 -->
@@ -351,40 +345,63 @@ onMounted(() => {
           </el-table-column>
           <el-table-column prop="assessedUnitName" label="被测单位" min-width="120" show-overflow-tooltip />
           <el-table-column prop="assessedUnitContact" label="联系人" width="90" />
+        </el-table>
+      </div>
+
+      <!-- 合同文件 -->
+      <div v-if="contractFilesForReview.length > 0" style="margin-top: 16px">
+        <h4 style="margin: 0 0 8px; font-size: 14px; color: #606266">合同文件</h4>
+        <el-table :data="contractFilesForReview" border size="small" style="width: 100%">
+          <el-table-column prop="fileName" label="文件名" min-width="200" show-overflow-tooltip />
+          <el-table-column label="大小" width="100">
+            <template #default="{ row }">{{ formatFileSize(row.fileSize) }}</template>
+          </el-table-column>
+          <el-table-column label="上传时间" width="170">
+            <template #default="{ row }">{{ formatTime(row.uploadedAt) }}</template>
+          </el-table-column>
           <el-table-column label="操作" width="80" align="center">
             <template #default="{ row }">
-              <el-button type="primary" link size="small" @click="showSiDetail(row)">详情</el-button>
+              <el-button type="primary" link size="small" :icon="Download" @click="handleFileDownload(row.id)">下载</el-button>
             </template>
           </el-table-column>
         </el-table>
       </div>
 
-      <!-- 合同文件 -->
-      <div v-if="contractFileForReview" style="margin-top: 16px">
-        <h4 style="margin: 0 0 8px; font-size: 14px; color: #606266">合同文件</h4>
-        <div style="border: 1px solid var(--el-border-color-lighter); border-radius: 8px; padding: 16px; background: var(--el-fill-color-lighter)">
-          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px">
-            <div>
-              <div style="font-weight: 500; margin-bottom: 4px">{{ contractFileForReview.fileName }}</div>
-              <div style="font-size: 12px; color: var(--el-text-color-secondary)">
-                {{ formatTime(contractFileForReview.uploadedAt) }}
-              </div>
-            </div>
-            <el-button size="small" :icon="Download" @click="downloadContractFile">下载</el-button>
+      <!-- 合同文件说明 -->
+      <div v-if="contractDescFileForReview" style="margin-top: 16px">
+        <h4 style="margin: 0 0 8px; font-size: 14px; color: #606266">合同文件说明</h4>
+        <div style="display: flex; align-items: center; justify-content: space-between; border: 1px solid var(--el-border-color-lighter); border-radius: 6px; padding: 10px 14px; background: var(--el-fill-color-lighter)">
+          <div>
+            <span>{{ contractDescFileForReview.fileName }}</span>
+            <span style="font-size: 12px; color: var(--el-text-color-secondary); margin-left: 12px">{{ formatFileSize(contractDescFileForReview.fileSize) }}</span>
           </div>
-          <!-- 图片预览 -->
-          <div v-if="contractFilePreviewUrl && ['image/jpeg','image/png','image/gif','image/webp'].includes(contractFileForReview.contentType)" style="text-align: center; border-top: 1px solid var(--el-border-color-lighter); padding-top: 12px">
-            <el-image :src="contractFilePreviewUrl" :preview-src-list="[contractFilePreviewUrl]" fit="contain" style="max-width: 100%; max-height: 400px; border-radius: 6px" />
-          </div>
-          <!-- PDF预览 -->
-          <div v-else-if="contractFilePreviewUrl && contractFileForReview.contentType === 'application/pdf'" style="border-top: 1px solid var(--el-border-color-lighter); padding-top: 12px">
-            <iframe :src="contractFilePreviewUrl" style="width: 100%; height: 400px; border: none; border-radius: 6px" />
-          </div>
-          <!-- 不支持预览 -->
-          <div v-else style="text-align: center; padding: 16px 0; color: var(--el-text-color-placeholder); border-top: 1px solid var(--el-border-color-lighter); padding-top: 12px; font-size: 13px">
-            该格式不支持在线预览，请下载查看
-          </div>
+          <el-button size="small" :icon="Download" @click="handleFileDownload(contractDescFileForReview.id)">下载</el-button>
         </div>
+      </div>
+
+      <!-- 合同组关联合同 -->
+      <div v-if="bizData.groupContracts && bizData.groupContracts.length > 1" style="margin-top: 16px">
+        <h4 style="margin: 0 0 8px; font-size: 14px; color: #606266">合同组关联合同</h4>
+        <el-table :data="bizData.groupContracts" border size="small">
+          <el-table-column prop="contractNo" label="合同编号" min-width="180" show-overflow-tooltip />
+          <el-table-column prop="contractName" label="合同名称" min-width="200" show-overflow-tooltip />
+          <el-table-column prop="contractCategory" label="分类" width="100" align="center">
+            <template #default="{ row }">
+              <el-tag v-if="row.contractCategory" size="small">{{ row.contractCategory }}</el-tag>
+              <span v-else>--</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="审核状态" width="100" align="center">
+            <template #default="{ row }">
+              <el-tag :type="getStatusTagType(row.reviewStatus)" size="small">{{ getStatusLabel(row.reviewStatus) || row.reviewStatus }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="" width="60" align="center">
+            <template #default="{ row }">
+              <el-tag v-if="row.id === bizData.id" type="primary" size="small" effect="dark">当前</el-tag>
+            </template>
+          </el-table-column>
+        </el-table>
       </div>
 
       <!-- 其他 -->
@@ -405,9 +422,20 @@ onMounted(() => {
         <el-descriptions-item label="合同编号">{{ contractData.contractNo || '--' }}</el-descriptions-item>
         <el-descriptions-item label="合同名称">{{ contractData.contractName || '--' }}</el-descriptions-item>
         <el-descriptions-item label="客户名称">{{ contractData.customerName || '--' }}</el-descriptions-item>
-        <el-descriptions-item label="合同金额">{{ contractData.paymentAmount ?? '--' }}</el-descriptions-item>
+        <el-descriptions-item label="统一信用代码">{{ contractData.customerUscc || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="联系人">{{ contractData.contactName || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="联系电话">{{ contractData.contactPhone || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="服务内容">{{ contractData.serviceContent || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="合同类型">{{ contractData.contractType || '--' }}</el-descriptions-item>
         <el-descriptions-item label="签单销售">{{ contractData.salesPersonName || '--' }}</el-descriptions-item>
-        <el-descriptions-item label="合同类型">{{ getStatusLabel(contractData.contractType) || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="合作方">{{ contractData.partnerName || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="合同金额">{{ contractData.paymentAmount ?? '--' }}</el-descriptions-item>
+        <el-descriptions-item label="服务年份">
+          <template v-if="Array.isArray(contractData.serviceYears) && contractData.serviceYears.length">
+            <el-tag v-for="y in contractData.serviceYears" :key="y" size="small" style="margin-right: 4px">{{ y }}年</el-tag>
+          </template>
+          <span v-else>--</span>
+        </el-descriptions-item>
       </el-descriptions>
     </el-card>
 
@@ -430,23 +458,57 @@ onMounted(() => {
         <el-descriptions-item label="备注" :span="2">{{ bizData.remark || '--' }}</el-descriptions-item>
       </el-descriptions>
 
-      <!-- 系统明细子表 -->
-      <div v-if="bizData.systemItems?.length" style="margin-top: 16px">
-        <h4 style="margin: 0 0 8px; font-size: 14px; color: #606266">系统明细（{{ bizData.systemItems.length }} 个）</h4>
-        <el-table :data="bizData.systemItems" border size="small" stripe>
-          <el-table-column type="index" label="#" width="50" align="center" />
-          <el-table-column prop="systemName" label="系统名称" min-width="150" show-overflow-tooltip />
-          <el-table-column label="安全等级" width="90" align="center">
-            <template #default="{ row }">{{ getStatusLabel(row.securityLevel) || '--' }}</template>
-          </el-table-column>
-          <el-table-column prop="assessedUnitName" label="被测单位" min-width="120" show-overflow-tooltip />
-          <el-table-column prop="assessedUnitContact" label="联系人" width="90" />
-          <el-table-column label="操作" width="80" align="center">
-            <template #default="{ row }">
-              <el-button type="primary" link size="small" @click="showSiDetail(row)">详情</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
+      <!-- 系统明细（card 布局） -->
+      <div v-if="systemItemsEnriched.length > 0" style="margin-top: 16px">
+        <h4 style="margin: 0 0 8px; font-size: 14px; color: #606266">系统明细（{{ systemItemsEnriched.length }} 个）</h4>
+        <el-card
+          v-for="(si, idx) in systemItemsEnriched"
+          :key="si.id || idx"
+          shadow="never"
+          style="margin-bottom: 10px; border: 1px solid var(--el-border-color-lighter)"
+        >
+          <template #header>
+            <span style="font-weight: 600; font-size: 13px">{{ si.systemName }}{{ si.securityLevel ? '（' + si.securityLevel + '）' : '' }}</span>
+          </template>
+          <el-descriptions :column="2" border size="small">
+            <el-descriptions-item label="备案机关">{{ si.filingAgency || '--' }}</el-descriptions-item>
+            <el-descriptions-item label="安全等级">{{ si.securityLevel || '--' }}</el-descriptions-item>
+            <el-descriptions-item label="是否复评">{{ si.isReassessment ? '是' : '否' }}</el-descriptions-item>
+            <el-descriptions-item label="要求录入日期">{{ si.requiredEntryDate || '--' }}</el-descriptions-item>
+            <el-descriptions-item label="要求出报告日期">{{ si.requiredReportDeliveryDate || '--' }}</el-descriptions-item>
+          </el-descriptions>
+          <el-descriptions :column="2" border size="small" style="margin-top: 8px">
+            <el-descriptions-item label="被测单位">{{ si.assessedUnitName || '--' }}</el-descriptions-item>
+            <el-descriptions-item label="所属行业">{{ si.assessedUnitIndustry || '--' }}</el-descriptions-item>
+            <el-descriptions-item label="联系人">{{ si.assessedUnitContact || '--' }}</el-descriptions-item>
+            <el-descriptions-item label="联系电话">{{ si.assessedUnitMobile || '--' }}</el-descriptions-item>
+            <el-descriptions-item label="地址" :span="2">{{ si.assessedUnitAddress || '--' }}</el-descriptions-item>
+          </el-descriptions>
+          <el-descriptions :column="2" border size="small" style="margin-top: 8px">
+            <el-descriptions-item label="备案证明">
+              <template v-if="si.filingCertificateFile">
+                <el-link type="primary" underline="never" @click="handleFileDownload(si.filingCertificateFile.id)">{{ si.filingCertificateFile.fileName }}</el-link>
+              </template>
+              <span v-else style="color: #999">未上传</span>
+            </el-descriptions-item>
+            <el-descriptions-item label="证明编号">{{ si.filingCertificateNo || '--' }}</el-descriptions-item>
+            <el-descriptions-item label="出具时间">{{ si.filingCertificateIssuedAt || '--' }}</el-descriptions-item>
+            <el-descriptions-item label="备案表">
+              <template v-if="si.hasFilingForm && si.filingFormFile">
+                <el-link type="primary" underline="never" @click="handleFileDownload(si.filingFormFile.id)">{{ si.filingFormFile.fileName }}</el-link>
+              </template>
+              <span v-else-if="si.hasFilingForm" style="color: #e6a23c">有（未上传）</span>
+              <span v-else style="color: #999">无</span>
+            </el-descriptions-item>
+            <el-descriptions-item label="定级报告">
+              <template v-if="si.hasClassificationReport && si.classificationReportFile">
+                <el-link type="primary" underline="never" @click="handleFileDownload(si.classificationReportFile.id)">{{ si.classificationReportFile.fileName }}</el-link>
+              </template>
+              <span v-else-if="si.hasClassificationReport" style="color: #e6a23c">有（未上传）</span>
+              <span v-else style="color: #999">无</span>
+            </el-descriptions-item>
+          </el-descriptions>
+        </el-card>
       </div>
 
       <!-- 项目成员 -->
@@ -556,8 +618,25 @@ onMounted(() => {
         <span style="font-weight: 600">审核操作</span>
       </template>
 
-      <!-- PROJECT_REVIEW: assessor selection -->
+      <!-- PROJECT_REVIEW: PM + assessor selection -->
       <div v-if="isProjectReview" style="margin-bottom: 16px">
+        <div style="margin-bottom: 8px; font-weight: 600; font-size: 14px">
+          分配项目经理 <span style="color: #f56c6c">*</span>
+        </div>
+        <el-select
+          v-model="selectedPmId"
+          filterable
+          placeholder="请选择项目经理"
+          style="width: 100%; margin-bottom: 16px"
+        >
+          <el-option
+            v-for="user in pmOptions"
+            :key="user.id"
+            :label="user.displayName"
+            :value="user.id"
+          />
+        </el-select>
+
         <div style="margin-bottom: 8px; font-weight: 600; font-size: 14px">
           分配测评师 <span style="color: #f56c6c">*</span>
           <span style="color: #909399; font-weight: normal; font-size: 12px; margin-left: 8px">
@@ -661,9 +740,5 @@ onMounted(() => {
       @completed="onOpinionCompleted"
     />
 
-    <SystemItemDetailDialog
-      v-model:visible="siDialogVisible"
-      :item="siDialogItem"
-    />
   </div>
 </template>

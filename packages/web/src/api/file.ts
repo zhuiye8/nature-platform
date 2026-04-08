@@ -14,17 +14,20 @@ export function getFileList(bizType: string, bizId: number) {
   return request.get<any, FileItem[]>('/file/list', { params: { bizType, bizId } })
 }
 
-export function getDownloadUrl(fileId: number) {
-  return request.get<any, { url: string; fileName: string }>(`/file/download/${fileId}`)
+/** Get preview path — appends token as query param for direct browser access */
+export function getFilePreviewPath(fileId: number) {
+  const token = localStorage.getItem('token')
+  return `/api/file/download/${fileId}?mode=preview&token=${token}`
 }
 
-export function getPreviewUrl(fileId: number) {
-  return request.get<any, { url: string; fileName: string }>(`/file/download/${fileId}`, { params: { mode: 'preview' } })
+/** Get download path — appends token as query param for direct browser access */
+export function getFileDownloadPath(fileId: number) {
+  const token = localStorage.getItem('token')
+  return `/api/file/download/${fileId}?token=${token}`
 }
 
 export function deleteFile(fileId: number, bizType?: string, nodeKey?: string) {
   if (bizType && nodeKey) {
-    // Delete by bizType + bizId + nodeKey
     return request.delete(`/file/by-biz`, { params: { bizType, bizId: fileId, nodeKey } })
   }
   return request.delete(`/file/${fileId}`)

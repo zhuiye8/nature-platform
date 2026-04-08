@@ -92,17 +92,14 @@ export class PoliceService {
           id: policeRegister.id,
           projectRegisterId: policeRegister.projectRegisterId,
           registerNo: policeRegister.registerNo,
-          projectManagerId: policeRegister.projectManagerId,
           scanFileUrl: policeRegister.scanFileUrl,
           remark: policeRegister.remark,
           status: policeRegister.status,
           createdBy: policeRegister.createdBy,
           createdAt: policeRegister.createdAt,
-          projectManagerName: userAccount.displayName,
           applicationName: projectRegister.applicationName,
         })
         .from(policeRegister)
-        .leftJoin(userAccount, eq(policeRegister.projectManagerId, userAccount.id))
         .leftJoin(projectRegister, eq(policeRegister.projectRegisterId, projectRegister.id))
         .where(whereClause)
         .orderBy(desc(policeRegister.createdAt))
@@ -135,7 +132,18 @@ export class PoliceService {
           )
           .limit(1);
         const hasFile = files.length > 0;
-        return { ...row, registrantName, hasFile };
+        // Get PM from project_member
+        let projectManagerName: string | null = null;
+        if (row.projectRegisterId) {
+          const pmRows = await this.db
+            .select({ displayName: userAccount.displayName })
+            .from(projectMember)
+            .leftJoin(userAccount, eq(projectMember.userId, userAccount.id))
+            .where(and(eq(projectMember.projectId, row.projectRegisterId), eq(projectMember.roleType, 'PM'), eq(projectMember.status, 'ACTIVE')))
+            .limit(1);
+          projectManagerName = pmRows[0]?.displayName ?? null;
+        }
+        return { ...row, registrantName, hasFile, projectManagerName };
       }),
     );
 
@@ -308,18 +316,7 @@ export class PoliceService {
       .set({ status: 'COMPLETED', updatedBy: userId, updatedAt: new Date() })
       .where(eq(policeRegister.id, id));
 
-    // 2. Insert project manager into project_member
-    if (record.projectManagerId) {
-      await this.db.insert(projectMember).values({
-        projectId: record.projectRegisterId,
-        userId: record.projectManagerId,
-        roleType: 'PM',
-        assignedBy: userId,
-        assignedAt: new Date(),
-      });
-    }
-
-    // 3. Signal workflow: complete POLICE_REGISTER node
+    // 2. Signal workflow: complete POLICE_REGISTER node
     try {
       // Directly query wf_task for the POLICE_REGISTER node
       const { wfTask, wfInstance } = await import('../../database/schema/workflow');

@@ -1,6 +1,18 @@
 import request from './request'
 import type { PageQuery, PageResult } from '@nature/shared'
 
+export interface CustomerContact {
+  id: number
+  customerId: number
+  contactName: string
+  contactPhone: string | null
+  position: string | null
+  remark: string | null
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+}
+
 export interface CustomerItem {
   id: number
   fullName: string
@@ -8,13 +20,19 @@ export interface CustomerItem {
   region: string | null
   addressDetail: string | null
   uscc: string | null
-  contactName: string | null
-  mobilePhone: string | null
   isGovernment: boolean
   remark: string | null
+  contacts: CustomerContact[]
   createdBy: number
   createdAt: string
   updatedAt: string
+}
+
+export interface ContactFormItem {
+  contactName: string
+  contactPhone?: string
+  position?: string
+  remark?: string
 }
 
 export interface CustomerForm {
@@ -23,10 +41,9 @@ export interface CustomerForm {
   region?: string
   addressDetail?: string
   uscc?: string
-  contactName?: string
-  mobilePhone?: string
   isGovernment?: boolean
   remark?: string
+  contacts?: ContactFormItem[]
 }
 
 export function getCustomerPage(params: PageQuery & { keyword?: string }) {
@@ -35,6 +52,10 @@ export function getCustomerPage(params: PageQuery & { keyword?: string }) {
 
 export function getCustomerDetail(id: number) {
   return request.get<CustomerItem>(`/customer/${id}`)
+}
+
+export function getCustomerContacts(customerId: number) {
+  return request.get<CustomerContact[]>(`/customer/${customerId}/contacts`)
 }
 
 export function createCustomer(data: CustomerForm) {

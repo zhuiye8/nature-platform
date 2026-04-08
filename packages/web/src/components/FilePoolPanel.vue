@@ -5,14 +5,14 @@ import { Download, Delete, Upload } from '@element-plus/icons-vue'
 import {
   getAssessmentFiles,
   uploadAssessmentFile,
-  getAssessmentFileDownloadUrl,
+  getAssessmentFileDownloadPath,
   deleteAssessmentFile,
   type AssessmentFileItem,
 } from '@/api/assessment-file'
 import {
   getCompileFiles,
   uploadCompileFile,
-  getCompileFileDownloadUrl,
+  getCompileFileDownloadPath,
   deleteCompileFile,
   type CompileFileItem,
 } from '@/api/compile-file'
@@ -112,18 +112,11 @@ async function handleUploadConfirm() {
   }
 }
 
-async function handleDownload(fileId: number) {
-  try {
-    let result: any
-    if (props.apiType === 'assessment') {
-      result = await getAssessmentFileDownloadUrl(fileId)
-    } else {
-      result = await getCompileFileDownloadUrl(fileId)
-    }
-    window.open((result as any).url, '_blank')
-  } catch {
-    ElMessage.error('下载失败')
-  }
+function handleDownload(fileId: number) {
+  const path = props.apiType === 'assessment'
+    ? getAssessmentFileDownloadPath(fileId)
+    : getCompileFileDownloadPath(fileId)
+  window.open(path, '_blank')
 }
 
 async function handleDelete(fileId: number) {

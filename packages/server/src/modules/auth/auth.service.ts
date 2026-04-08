@@ -21,16 +21,16 @@ export class AuthService {
 
     const user = rows[0];
     if (!user) {
-      throw new UnauthorizedException('Invalid username or password');
+      throw new UnauthorizedException('用户名或密码错误');
     }
 
     if (!user.enabled) {
-      throw new UnauthorizedException('Account is disabled');
+      throw new UnauthorizedException('账号已被禁用');
     }
 
     const passwordValid = await bcrypt.compare(password, user.passwordHash);
     if (!passwordValid) {
-      throw new UnauthorizedException('Invalid username or password');
+      throw new UnauthorizedException('用户名或密码错误');
     }
 
     const { roles, permissions } = await this.loadUserPermissions(user.id);
@@ -63,7 +63,7 @@ export class AuthService {
 
     const user = rows[0];
     if (!user || !user.enabled) {
-      throw new UnauthorizedException('User not found or disabled');
+      throw new UnauthorizedException('用户不存在或已被禁用');
     }
 
     const { roles, permissions } = await this.loadUserPermissions(user.id);

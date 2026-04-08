@@ -5,8 +5,31 @@ import {
   IsNotEmpty,
   IsInt,
   Min,
+  IsArray,
+  ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+
+// ---------------------------------------------------------------------------
+// ContactDto — single contact entry
+// ---------------------------------------------------------------------------
+export class ContactDto {
+  @IsString()
+  @IsNotEmpty()
+  contactName!: string;
+
+  @IsString()
+  @IsOptional()
+  contactPhone?: string;
+
+  @IsString()
+  @IsOptional()
+  position?: string;
+
+  @IsString()
+  @IsOptional()
+  remark?: string;
+}
 
 // ---------------------------------------------------------------------------
 // CreateCustomerDto
@@ -32,14 +55,6 @@ export class CreateCustomerDto {
   @IsOptional()
   uscc?: string;
 
-  @IsString()
-  @IsOptional()
-  contactName?: string;
-
-  @IsString()
-  @IsOptional()
-  mobilePhone?: string;
-
   @IsBoolean()
   @IsOptional()
   isGovernment?: boolean;
@@ -47,6 +62,12 @@ export class CreateCustomerDto {
   @IsString()
   @IsOptional()
   remark?: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ContactDto)
+  @IsOptional()
+  contacts?: ContactDto[];
 }
 
 // ---------------------------------------------------------------------------
@@ -73,14 +94,6 @@ export class UpdateCustomerDto {
   @IsOptional()
   uscc?: string;
 
-  @IsString()
-  @IsOptional()
-  contactName?: string;
-
-  @IsString()
-  @IsOptional()
-  mobilePhone?: string;
-
   @IsBoolean()
   @IsOptional()
   isGovernment?: boolean;
@@ -88,6 +101,12 @@ export class UpdateCustomerDto {
   @IsString()
   @IsOptional()
   remark?: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ContactDto)
+  @IsOptional()
+  contacts?: ContactDto[];
 }
 
 // ---------------------------------------------------------------------------

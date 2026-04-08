@@ -60,7 +60,7 @@ onMounted(() => fetchData())
       <el-table v-if="tableData.length > 0" v-loading="loading" :data="tableData" stripe border style="width: 100%">
         <el-table-column label="项目名称" min-width="300" show-overflow-tooltip>
           <template #default="{ row }">
-            <el-link type="primary" :underline="false" @click="router.push(`/project/${row.id}`)">{{ row.applicationName }}</el-link>
+            <el-link type="primary" underline="never" @click="router.push(`/project/${row.id}`)">{{ row.applicationName }}</el-link>
           </template>
         </el-table-column>
         <el-table-column prop="contractYear" label="服务年份" min-width="100" align="center" />

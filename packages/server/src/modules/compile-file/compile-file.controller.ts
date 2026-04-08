@@ -5,6 +5,7 @@ import {
   Delete,
   Param,
   Query,
+  Res,
   UseGuards,
   UseInterceptors,
   UploadedFile,
@@ -15,6 +16,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CompileFileService } from './compile-file.service';
+import type { Response } from 'express';
 
 @Controller('compile-file')
 @UseGuards(JwtAuthGuard)
@@ -22,8 +24,17 @@ export class CompileFileController {
   constructor(private readonly service: CompileFileService) {}
 
   @Get('download/:fileId')
-  async download(@Param('fileId', ParseIntPipe) fileId: number) {
-    return this.service.getDownloadUrl(fileId);
+  async download(
+    @Param('fileId', ParseIntPipe) fileId: number,
+    @Res() res: Response,
+  ) {
+    const { stream, fileName, contentType } = await this.service.streamFile(fileId);
+    const encodedName = encodeURIComponent(fileName);
+    res.set({
+      'Content-Type': contentType,
+      'Content-Disposition': `attachment; filename="${encodedName}"; filename*=UTF-8''${encodedName}`,
+    });
+    stream.pipe(res);
   }
 
   @Delete('remove/:fileId')

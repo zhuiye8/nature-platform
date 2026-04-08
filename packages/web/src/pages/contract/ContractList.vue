@@ -2,39 +2,27 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Refresh, Plus, Upload, Download, Paperclip } from '@element-plus/icons-vue'
-import { getStatusLabel } from '@/utils/status-map'
+import { Search, Refresh, Plus, Upload, Download, Paperclip, Delete } from '@element-plus/icons-vue'
+import { getStatusLabel, getStatusTagType } from '@/utils/status-map'
 import { formatTime } from '@/utils/format'
-import { getContractPage, deleteContract, submitContract } from '@/api/contract'
+import {
+  getContractGroupPage, createContractGroup, deleteContractGroup,
+  deleteContract, submitContract,
+} from '@/api/contract'
+import type { ContractGroupItem, ContractItem } from '@/api/contract'
 import { getUsersByRole } from '@/api/workflow'
-import type { ContractItem } from '@/api/contract'
-import { getFileList, getUploadUrl, getDownloadUrl, getPreviewUrl, deleteFile, type FileItem } from '@/api/file'
+import { getFileList, getUploadUrl, getFileDownloadPath, deleteFile, type FileItem } from '@/api/file'
 import { useAuthStore } from '@/stores/auth'
 
 const authStore = useAuthStore()
 const router = useRouter()
-const tableData = ref<ContractItem[]>([])
+const tableData = ref<ContractGroupItem[]>([])
 const loading = ref(false)
 const keyword = ref('')
 const reviewStatus = ref('')
 const archiveStatusFilter = ref('')
-// 销售筛选：销售角色默认选自己，其他角色默认不筛选
-const salesFilter = ref<number | ''>(_defaultSalesFilter())
+const salesFilter = ref<number | ''>('')
 const salesOptions = ref<{ id: number; displayName: string }[]>([])
-
-function _defaultSalesFilter(): number | '' {
-  const roles = authStore.user?.roles || []
-  if (roles.includes('sales') && !roles.includes('super_admin')) {
-    return authStore.user?.id ?? ''
-  }
-  return ''
-}
-
-async function loadSalesUsers() {
-  try {
-    salesOptions.value = (await getUsersByRole('sales')) as any
-  } catch { salesOptions.value = [] }
-}
 const currentPage = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
@@ -47,39 +35,36 @@ const reviewStatusOptions = [
   { label: '已驳回', value: 'REJECTED' },
 ]
 
-const reviewStatusTagType: Record<string, 'info' | 'warning' | 'success' | 'danger'> = {
-  DRAFT: 'info',
-  SUBMITTED: 'warning',
-  APPROVED: 'success',
-  REJECTED: 'danger',
+const archiveStatusOptions = [
+  { label: '全部', value: '' },
+  { label: '待归档', value: 'PENDING_ARCHIVE' },
+  { label: '已归档', value: 'ARCHIVED' },
+]
+
+async function loadSalesUsers() {
+  try { salesOptions.value = (await getUsersByRole('sales')) as any } catch { salesOptions.value = [] }
 }
 
 const reviewStatusLabel: Record<string, string> = {
-  DRAFT: '草稿',
-  SUBMITTED: '已提交',
-  APPROVED: '已通过',
-  REJECTED: '已驳回',
+  DRAFT: '草稿', SUBMITTED: '已提交', APPROVED: '已通过', REJECTED: '已驳回',
 }
-
-const paymentStatusTagType: Record<string, 'info' | 'warning' | 'success' | 'danger'> = {
-  UNPAID: 'danger',
-  PARTIAL: 'warning',
-  PAID: 'success',
+const reviewStatusTagType: Record<string, 'info' | 'warning' | 'success' | 'danger'> = {
+  DRAFT: 'info', SUBMITTED: 'warning', APPROVED: 'success', REJECTED: 'danger',
 }
-
 async function fetchData() {
   loading.value = true
   try {
-    const data = (await getContractPage({
+    const data = (await getContractGroupPage({
       page: currentPage.value,
       pageSize: pageSize.value,
       keyword: keyword.value || undefined,
       reviewStatus: reviewStatus.value || undefined,
       archiveStatus: archiveStatusFilter.value || undefined,
-      createdByUserId: salesFilter.value || undefined,
-    })) as unknown as import('@nature/shared').PageResult<ContractItem>
+      salesPersonId: salesFilter.value || undefined,
+    } as any)) as any
     tableData.value = data.list
     total.value = data.total
+    // Load file status for all contracts
     checkFileStatus()
   } finally {
     loading.value = false
@@ -95,108 +80,128 @@ function handleReset() {
   keyword.value = ''
   reviewStatus.value = ''
   archiveStatusFilter.value = ''
-  salesFilter.value = _defaultSalesFilter()
+  salesFilter.value = ''
   currentPage.value = 1
   fetchData()
 }
 
-// ── 合同文件管理 ──
-const fileMap = ref<Record<number, FileItem | null>>({})
-const uploadHeaders = computed(() => ({ Authorization: `Bearer ${localStorage.getItem('token')}` }))
-const imageTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
-const pdfType = 'application/pdf'
+// ── 合同组操作 ──
+const groupDialogVisible = ref(false)
+const groupForm = ref({ groupName: '', remark: '' })
+const groupSaving = ref(false)
 
-// 文件弹窗状态
+function openCreateGroupDialog() {
+  groupForm.value = { groupName: '', remark: '' }
+  groupDialogVisible.value = true
+}
+
+async function handleCreateGroup() {
+  if (!groupForm.value.groupName.trim()) {
+    ElMessage.warning('请输入合同组名称')
+    return
+  }
+  groupSaving.value = true
+  try {
+    await createContractGroup(groupForm.value)
+    ElMessage.success('合同组创建成功')
+    groupDialogVisible.value = false
+    fetchData()
+  } finally {
+    groupSaving.value = false
+  }
+}
+
+async function handleDeleteGroup(groupId: number) {
+  try {
+    await ElMessageBox.confirm('确定删除该合同组？（组内无合同时才可删除）', '确认', { type: 'warning' })
+    await deleteContractGroup(groupId)
+    ElMessage.success('已删除')
+    fetchData()
+  } catch { /* cancelled */ }
+}
+
+function handleAddContract(groupId: number) {
+  router.push(`/contract/create?groupId=${groupId}`)
+}
+
+// ── 合同操作 ──
+function isMyContract(row: any) {
+  const uid = Number(authStore.user?.id)
+  return Number(row.createdBy) === uid || Number(row.salesPersonId) === uid
+}
+
+function isDraftOrRejected(row: any) {
+  return row.reviewStatus === 'DRAFT' || row.reviewStatus === 'REJECTED'
+}
+
+// ── 文件管理 ──
+const fileMap = ref<Record<number, boolean>>({})
+const descFileMap = ref<Record<number, boolean>>({})
+const uploadHeaders = computed(() => ({ Authorization: `Bearer ${localStorage.getItem('token')}` }))
+
 const fileDialogVisible = ref(false)
 const fileDialogContractId = ref(0)
-const fileDialogFile = ref<FileItem | null>(null)
+const fileDialogFiles = ref<FileItem[]>([])
+const fileDialogDescFile = ref<FileItem | null>(null)
 const fileDialogIsOwner = ref(false)
-const filePreviewUrl = ref('')
-const filePreviewLoading = ref(false)
 
 async function checkFileStatus() {
-  for (const row of tableData.value) {
-    try {
-      const files = (await getFileList('CONTRACT', row.id)) as any as FileItem[]
-      fileMap.value[row.id] = files && files.length > 0 ? files[0] : null
-    } catch {
-      fileMap.value[row.id] = null
+  for (const group of tableData.value) {
+    for (const c of group.contracts) {
+      try {
+        const files = (await getFileList('CONTRACT', c.id)) as any as FileItem[]
+        fileMap.value[c.id] = files && files.length > 0
+      } catch { fileMap.value[c.id] = false }
+      try {
+        const descFiles = (await getFileList('CONTRACT_DESC', c.id)) as any as FileItem[]
+        descFileMap.value[c.id] = descFiles && descFiles.length > 0
+      } catch { descFileMap.value[c.id] = false }
     }
   }
 }
 
-function isMyContract(row: any) {
-  return row.createdBy === authStore.user?.id
-}
-
-function isSalesOnly() {
-  const roles = authStore.user?.roles || []
-  return roles.includes('sales') && !roles.includes('super_admin') && !roles.includes('commercial') && !roles.includes('dept_manager')
-}
-
 async function openFileDialog(row: ContractItem) {
   fileDialogContractId.value = row.id
-  fileDialogFile.value = fileMap.value[row.id] || null
   fileDialogIsOwner.value = isMyContract(row)
-  filePreviewUrl.value = ''
   fileDialogVisible.value = true
-
-  // Load preview URL if file exists and is previewable
-  if (fileDialogFile.value && isPreviewable(fileDialogFile.value)) {
-    filePreviewLoading.value = true
-    try {
-      const result = (await getPreviewUrl(fileDialogFile.value.id)) as any
-      filePreviewUrl.value = result.url || result
-    } catch { /* ignore */ }
-    filePreviewLoading.value = false
-  }
+  await loadDialogFiles()
 }
 
-function isPreviewable(file: FileItem) {
-  return imageTypes.includes(file.contentType) || file.contentType === pdfType
-}
-
-function isImage(file: FileItem) {
-  return imageTypes.includes(file.contentType)
+async function loadDialogFiles() {
+  try {
+    fileDialogFiles.value = (await getFileList('CONTRACT', fileDialogContractId.value)) as any as FileItem[]
+  } catch { fileDialogFiles.value = [] }
+  try {
+    const descFiles = (await getFileList('CONTRACT_DESC', fileDialogContractId.value)) as any as FileItem[]
+    fileDialogDescFile.value = descFiles && descFiles.length > 0 ? descFiles[0] : null
+  } catch { fileDialogDescFile.value = null }
 }
 
 async function handleFileUploadSuccess() {
   ElMessage.success('上传成功')
-  fileDialogVisible.value = false
-  await fetchData()
+  await loadDialogFiles()
+  await checkFileStatus()
 }
 
-async function handleBeforeUpload() {
-  // Delete old file before uploading new one
-  if (fileDialogFile.value) {
-    try { await deleteFile(fileDialogFile.value.id) } catch { /* ignore */ }
+async function handleDialogFileDelete(fileId: number) {
+  try {
+    await ElMessageBox.confirm('确定删除？', '确认', { type: 'warning' })
+    await deleteFile(fileId)
+    ElMessage.success('已删除')
+    await loadDialogFiles()
+    await checkFileStatus()
+  } catch { /* cancelled */ }
+}
+
+async function handleDescBeforeUpload() {
+  if (fileDialogDescFile.value) {
+    try { await deleteFile(fileDialogDescFile.value.id) } catch {}
   }
   return true
 }
 
-async function handleFileDelete() {
-  if (!fileDialogFile.value) return
-  try {
-    await ElMessageBox.confirm('确定要删除合同文件吗？', '确认删除', { type: 'warning' })
-    await deleteFile(fileDialogFile.value.id)
-    ElMessage.success('已删除')
-    fileDialogVisible.value = false
-    await fetchData()
-  } catch { /* cancelled */ }
-}
-
-async function handleFileDownload() {
-  if (!fileDialogFile.value) return
-  try {
-    const result = (await getDownloadUrl(fileDialogFile.value.id)) as any
-    const url = result.url || result
-    const a = document.createElement('a')
-    a.href = url
-    a.download = fileDialogFile.value.fileName
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-  } catch { ElMessage.error('下载失败') }
+function openDownload(fileId: number) {
+  window.open(getFileDownloadPath(fileId), '_blank')
 }
 
 function formatFileSize(size: number) {
@@ -206,42 +211,22 @@ function formatFileSize(size: number) {
   return (size / 1024 / 1024).toFixed(1) + ' MB'
 }
 
-
-function handleCreate() {
-  router.push('/contract/create')
-}
-
-function handleView(row: ContractItem) {
-  router.push(`/contract/${row.id}`)
-}
-
-function handleEdit(row: ContractItem) {
-  router.push(`/contract/${row.id}/edit`)
-}
-
 async function handleSubmit(row: ContractItem) {
   try {
-    // 检查是否已上传合同文件
     const files = (await getFileList('CONTRACT', row.id)) as any as FileItem[]
-    if (!files || files.length === 0) {
-      await ElMessageBox.confirm(
-        '未上传合同文件，是否直接提交？',
-        '提交确认',
-        { confirmButtonText: '是', cancelButtonText: '否', type: 'warning' },
-      )
-    } else {
-      await ElMessageBox.confirm('确定要提交该合同进行审核吗？', '提交确认', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning',
-      })
+    const descFiles = (await getFileList('CONTRACT_DESC', row.id)) as any as FileItem[]
+    const missingItems: string[] = []
+    if (!files || files.length === 0) missingItems.push('合同文件')
+    if (!descFiles || descFiles.length === 0) missingItems.push('合同文件说明')
+    if (missingItems.length > 0) {
+      ElMessage.warning(`请先上传${missingItems.join('和')}`)
+      return
     }
+    await ElMessageBox.confirm('确定要提交该合同进行审核吗？', '提交确认', { type: 'warning' })
     await submitContract(row.id)
     ElMessage.success('提交成功')
     fetchData()
-  } catch {
-    // cancelled or error handled by request interceptor
-  }
+  } catch { /* cancelled */ }
 }
 
 async function handleDelete(row: ContractItem) {
@@ -249,47 +234,18 @@ async function handleDelete(row: ContractItem) {
     await deleteContract(row.id)
     ElMessage.success('删除成功')
     fetchData()
-  } catch {
-    // error handled by request interceptor
-  }
+  } catch {}
 }
 
-function handleSizeChange(val: number) {
-  pageSize.value = val
-  currentPage.value = 1
-  fetchData()
-}
-
-function handleCurrentChange(val: number) {
-  currentPage.value = val
-  fetchData()
-}
-
-function isDraftOrRejected(row: ContractItem) {
-  return row.reviewStatus === 'DRAFT' || row.reviewStatus === 'REJECTED'
-}
-
-function isDraft(row: ContractItem) {
-  return row.reviewStatus === 'DRAFT'
-}
-
-function formatAmount(amount: number | null) {
-  if (amount == null) return '--'
-  return amount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
-
-// Debounced keyword watch
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 watch(keyword, () => {
   if (debounceTimer) clearTimeout(debounceTimer)
-  debounceTimer = setTimeout(() => {
-    handleSearch()
-  }, 300)
+  debounceTimer = setTimeout(() => handleSearch(), 300)
 })
 
 onMounted(() => {
-  loadSalesUsers()
   fetchData()
+  loadSalesUsers()
 })
 </script>
 
@@ -303,220 +259,156 @@ onMounted(() => {
             v-permission="'contract:create'"
             type="primary"
             :icon="Plus"
-            @click="handleCreate"
+            @click="openCreateGroupDialog"
           >
-            新建合同
+            新建合同组
           </el-button>
         </div>
       </template>
 
-      <!-- Search bar -->
-      <div style="margin-bottom: 16px; display: flex; gap: 12px">
+      <!-- 搜索 -->
+      <div style="margin-bottom: 16px; display: flex; gap: 12px; flex-wrap: wrap">
         <el-input
           v-model="keyword"
-          placeholder="搜索合同编号 / 合同名称"
+          placeholder="搜索合同组 / 合同名称 / 合同编号"
           clearable
-          style="width: 280px"
+          style="width: 320px"
           :prefix-icon="Search"
           @keyup.enter="handleSearch"
         />
-        <el-select
-          v-model="reviewStatus"
-          placeholder="审核状态"
-          clearable
-          style="width: 140px"
-          @change="handleSearch"
-        >
-          <el-option
-            v-for="opt in reviewStatusOptions"
-            :key="opt.value"
-            :label="opt.label"
-            :value="opt.value"
-          />
+        <el-select v-model="reviewStatus" placeholder="审核状态" clearable style="width: 130px" @change="handleSearch">
+          <el-option v-for="opt in reviewStatusOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
         </el-select>
-        <el-select
-          v-model="archiveStatusFilter"
-          placeholder="归档状态"
-          clearable
-          style="width: 140px"
-          @change="handleSearch"
-        >
-          <el-option label="待归档" value="PENDING_ARCHIVE" />
-          <el-option label="未完成归档" value="PARTIAL_ARCHIVE" />
-          <el-option label="已归档" value="ARCHIVED" />
+        <el-select v-model="archiveStatusFilter" placeholder="归档状态" clearable style="width: 130px" @change="handleSearch">
+          <el-option v-for="opt in archiveStatusOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
         </el-select>
-        <el-select
-          v-model="salesFilter"
-          placeholder="签单销售"
-          clearable
-          filterable
-          style="width: 160px"
-          @change="handleSearch"
-        >
-          <el-option
-            v-for="u in salesOptions"
-            :key="u.id"
-            :label="u.displayName"
-            :value="u.id"
-          />
+        <el-select v-model="salesFilter" placeholder="签单销售" filterable clearable style="width: 140px" @change="handleSearch">
+          <el-option v-for="u in salesOptions" :key="u.id" :label="u.displayName" :value="u.id" />
         </el-select>
         <el-button :icon="Search" type="primary" @click="handleSearch">搜索</el-button>
         <el-button :icon="Refresh" @click="handleReset">重置</el-button>
       </div>
 
-      <!-- Table -->
-      <div style="text-align: right; color: #909399; font-size: 12px; margin-bottom: 6px">&larr; 可左右滑动查看更多信息 &rarr;</div>
+      <!-- 合同组列表 -->
       <el-table
         v-loading="loading"
         :data="tableData"
         stripe
         border
         style="width: 100%"
+        row-key="id"
       >
-        <el-table-column label="合同编号" min-width="150" show-overflow-tooltip>
-          <template #default="{ row }">
-            {{ row.contractNo || '--' }}
-          </template>
-        </el-table-column>
-        <el-table-column label="合同名称" min-width="220">
-          <template #default="{ row }">
-            <el-link type="primary" :underline="false" style="white-space: normal; word-break: break-all; line-height: 1.5" @click="router.push(`/contract/${row.id}`)">{{ row.contractName }}</el-link>
-          </template>
-        </el-table-column>
-        <el-table-column prop="partnerName" label="合作方" width="120">
-          <template #default="{ row }">{{ row.partnerName || '-' }}</template>
-        </el-table-column>
-        <el-table-column label="系统名称（等级）" min-width="200" show-overflow-tooltip>
-          <template #default="{ row }">
-            <div v-if="row.systemItemsSummary?.length">
-              <div v-for="(item, idx) in row.systemItemsSummary" :key="idx" style="line-height: 1.6">
-                {{ item.systemName }}（{{ item.systemLevel }}级）
-              </div>
+        <el-table-column type="expand">
+          <template #default="{ row: group }">
+            <div style="padding: 12px 24px">
+              <el-table v-if="group.contracts.length > 0" :data="group.contracts" border size="small" style="width: 100%">
+                <el-table-column label="合同名称" min-width="200" show-overflow-tooltip>
+                  <template #default="{ row }">
+                    <el-link type="primary" underline="never" style="white-space: normal; word-break: break-all; line-height: 1.5" @click="router.push(`/contract/${row.id}`)">{{ row.contractName || '--' }}</el-link>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="contractNo" label="合同编号" min-width="180" show-overflow-tooltip />
+                <el-table-column label="合同分类" min-width="100" align="center">
+                  <template #default="{ row }">
+                    <el-tag v-if="row.contractCategory" size="small">{{ row.contractCategory }}</el-tag>
+                    <span v-else>--</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="合同金额" min-width="120" align="right">
+                  <template #default="{ row }">
+                    {{ row.paymentAmount ? `¥${Number(row.paymentAmount).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}` : '--' }}
+                  </template>
+                </el-table-column>
+                <el-table-column label="签单销售" min-width="100">
+                  <template #default="{ row }">{{ row.salesPersonName || '--' }}</template>
+                </el-table-column>
+                <el-table-column label="审核状态" min-width="100" align="center">
+                  <template #default="{ row }">
+                    <el-tag :type="reviewStatusTagType[row.reviewStatus] || 'info'" size="small">
+                      {{ reviewStatusLabel[row.reviewStatus] || row.reviewStatus }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column label="合同文件" min-width="80" align="center">
+                  <template #default="{ row }">
+                    <el-button
+                      :type="fileMap[row.id] ? 'success' : 'info'"
+                      link size="small"
+                      @click="openFileDialog(row)"
+                    >
+                      {{ fileMap[row.id] ? '已上传' : '上传' }}
+                    </el-button>
+                  </template>
+                </el-table-column>
+                <el-table-column label="文件说明" min-width="80" align="center">
+                  <template #default="{ row }">
+                    <el-button
+                      :type="descFileMap[row.id] ? 'success' : 'info'"
+                      link size="small"
+                      @click="openFileDialog(row)"
+                    >
+                      {{ descFileMap[row.id] ? '已上传' : '上传' }}
+                    </el-button>
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="220" fixed="right">
+                  <template #default="{ row }">
+                    <el-button type="primary" link size="small" @click="router.push(`/contract/${row.id}`)">查看</el-button>
+                    <el-button
+                      v-if="isDraftOrRejected(row) && isMyContract(row)"
+                      type="primary" link size="small"
+                      @click="router.push(`/contract/${row.id}/edit`)"
+                    >编辑</el-button>
+                    <el-button
+                      v-if="isDraftOrRejected(row) && isMyContract(row)"
+                      type="warning" link size="small"
+                      @click="handleSubmit(row)"
+                    >提交审核</el-button>
+                    <el-popconfirm
+                      v-if="row.reviewStatus === 'DRAFT' && isMyContract(row)"
+                      title="确定删除？"
+                      @confirm="handleDelete(row)"
+                    >
+                      <template #reference>
+                        <el-button type="danger" link size="small">删除</el-button>
+                      </template>
+                    </el-popconfirm>
+                  </template>
+                </el-table-column>
+              </el-table>
+              <div v-else style="color: #909399; text-align: center; padding: 16px 0">暂无合同</div>
             </div>
-            <span v-else>-</span>
           </template>
         </el-table-column>
-        <el-table-column label="客户名称" min-width="180" show-overflow-tooltip>
+        <el-table-column label="合同组名称" min-width="250" show-overflow-tooltip>
           <template #default="{ row }">
-            <el-link v-if="row.customerId" type="primary" :underline="false" @click="router.push(`/customer/${row.customerId}`)">{{ row.customerName || '--' }}</el-link>
-            <span v-else>{{ row.customerName || '--' }}</span>
+            <span style="font-weight: 500">{{ row.groupName }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="salesPersonName" label="签单销售" min-width="100" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.salesPersonName || '--' }}</template>
+        <el-table-column label="合同数" width="80" align="center">
+          <template #default="{ row }">{{ row.contracts?.length ?? 0 }}</template>
         </el-table-column>
-        <el-table-column label="合同金额" min-width="130" align="right">
+        <el-table-column prop="remark" label="备注" min-width="200" show-overflow-tooltip />
+        <el-table-column label="创建时间" width="170">
+          <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="180" fixed="right">
           <template #default="{ row }">
-            {{ formatAmount(row.paymentAmount) }}
-          </template>
-        </el-table-column>
-        <el-table-column label="审核状态" min-width="100" align="center">
-          <template #default="{ row }">
-            <el-tag :type="reviewStatusTagType[row.reviewStatus] || 'info'" size="small">
-              {{ reviewStatusLabel[row.reviewStatus] || row.reviewStatus }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="归档状态" min-width="120" align="center">
-          <template #default="{ row }">
-            <el-tag
-              :type="row.archiveStatus === 'ARCHIVED' ? 'success' : row.archiveStatus === 'PARTIAL_ARCHIVE' ? 'warning' : 'info'"
-              size="small"
-              effect="plain"
-            >
-              {{ getStatusLabel(row.archiveStatus) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="归档人" min-width="100" align="center">
-          <template #default="{ row }">{{ row.archiverName || '-' }}</template>
-        </el-table-column>
-        <el-table-column label="回款状态" min-width="100" align="center">
-          <template #default="{ row }">
-            <el-tag v-if="row.paymentStatus" :type="paymentStatusTagType[row.paymentStatus] || 'info'" size="small">
-              {{ getStatusLabel(row.paymentStatus) || row.paymentStatus }}
-            </el-tag>
-            <span v-else style="color: var(--el-text-color-placeholder)">--</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="合同文件" min-width="100" align="center">
-          <template #default="{ row }">
-            <template v-if="isSalesOnly() && !isMyContract(row)">
-              <el-tag type="info" size="small">-</el-tag>
-            </template>
-            <template v-else>
-              <el-button
-                :type="fileMap[row.id] ? 'success' : 'info'"
-                link
-                size="small"
-                @click="openFileDialog(row)"
-                style="text-decoration: underline; text-underline-offset: 3px"
-              >
-                <el-icon v-if="fileMap[row.id]" style="margin-right: 2px"><Paperclip /></el-icon>
-                {{ fileMap[row.id] ? '已上传' : '上传' }}
-              </el-button>
-            </template>
-          </template>
-        </el-table-column>
-        <el-table-column prop="createdAt" label="创建时间" min-width="170" />
-        <el-table-column label="操作" width="240" fixed="right">
-          <template #default="{ row }">
-            <el-button type="primary" link size="small" @click="handleView(row)">
-              查看
-            </el-button>
             <el-button
-              v-if="isDraftOrRejected(row) && isMyContract(row)"
-              v-permission="'contract:update'"
-              type="primary"
-              link
-              size="small"
-              @click="handleEdit(row)"
-            >
-              编辑
-            </el-button>
-            <el-button
-              v-if="isDraftOrRejected(row) && isMyContract(row)"
               v-permission="'contract:create'"
-              type="warning"
-              link
-              size="small"
-              @click="handleSubmit(row)"
-            >
-              提交审核
-            </el-button>
+              type="primary" link size="small"
+              @click="handleAddContract(row.id)"
+            >新增合同</el-button>
             <el-button
-              v-if="row.reviewStatus === 'APPROVED'"
-              v-permission="'contract:archive'"
-              type="success"
-              link
-              size="small"
-              @click="router.push(`/contract/${row.id}?action=archive`)"
-            >
-              归档
-            </el-button>
-            <el-popconfirm
-              v-if="isDraft(row) && isMyContract(row)"
-              title="确定要删除该合同吗？"
-              confirm-button-text="确定"
-              cancel-button-text="取消"
-              @confirm="handleDelete(row)"
-            >
-              <template #reference>
-                <el-button
-                  v-permission="'contract:delete'"
-                  type="danger"
-                  link
-                  size="small"
-                >
-                  删除
-                </el-button>
-              </template>
-            </el-popconfirm>
+              v-permission="'contract:delete'"
+              type="danger" link size="small"
+              @click="handleDeleteGroup(row.id)"
+            >删除</el-button>
           </template>
         </el-table-column>
       </el-table>
 
-      <!-- Pagination -->
+      <!-- 分页 -->
       <div style="display: flex; justify-content: flex-end; margin-top: 16px">
         <el-pagination
           v-model:current-page="currentPage"
@@ -524,93 +416,104 @@ onMounted(() => {
           :page-sizes="[10, 20, 50, 100]"
           :total="total"
           layout="total, sizes, prev, pager, next, jumper"
-          @size-change="handleSizeChange"
-          @current-change="handleCurrentChange"
+          @size-change="() => { currentPage = 1; fetchData() }"
+          @current-change="fetchData"
         />
       </div>
     </el-card>
 
-    <!-- ── 合同文件弹窗 ── -->
-    <el-dialog
-      v-model="fileDialogVisible"
-      title="合同文件"
-      width="600px"
-      destroy-on-close
-    >
-      <!-- 已上传 -->
-      <template v-if="fileDialogFile">
-        <el-descriptions :column="2" border size="small" style="margin-bottom: 16px">
-          <el-descriptions-item label="文件名" :span="2">{{ fileDialogFile.fileName }}</el-descriptions-item>
-          <el-descriptions-item label="大小">{{ formatFileSize(fileDialogFile.fileSize) }}</el-descriptions-item>
-          <el-descriptions-item label="上传时间">{{ formatTime(fileDialogFile.uploadedAt) }}</el-descriptions-item>
-        </el-descriptions>
-
-        <!-- 图片预览 -->
-        <div v-if="isImage(fileDialogFile)" style="text-align: center; margin: 16px 0">
-          <el-image
-            v-if="filePreviewUrl"
-            :src="filePreviewUrl"
-            :preview-src-list="[filePreviewUrl]"
-            fit="contain"
-            style="max-width: 100%; max-height: 400px; border-radius: 8px"
-          />
-          <div v-else-if="filePreviewLoading" v-loading="true" style="height: 200px" />
-        </div>
-
-        <!-- PDF 预览 -->
-        <div v-else-if="fileDialogFile.contentType === 'application/pdf'" style="margin: 16px 0">
-          <iframe
-            v-if="filePreviewUrl"
-            :src="filePreviewUrl"
-            style="width: 100%; height: 400px; border: 1px solid var(--el-border-color); border-radius: 8px"
-          />
-          <div v-else-if="filePreviewLoading" v-loading="true" style="height: 200px" />
-        </div>
-
-        <!-- 非预览文件提示 -->
-        <div v-else style="text-align: center; padding: 30px 0; color: var(--el-text-color-secondary)">
-          该文件格式不支持在线预览，请下载查看
-        </div>
-
-        <!-- 操作按钮 -->
-        <div style="display: flex; gap: 8px; justify-content: center; margin-top: 16px">
-          <el-button type="primary" :icon="Download" @click="handleFileDownload">下载</el-button>
-          <template v-if="fileDialogIsOwner">
-            <el-upload
-              :action="getUploadUrl('CONTRACT', fileDialogContractId)"
-              :headers="uploadHeaders"
-              :show-file-list="false"
-              :before-upload="handleBeforeUpload"
-              :on-success="handleFileUploadSuccess"
-              accept=".pdf,.zip,.rar,.doc,.docx,.jpg,.jpeg,.png"
-            >
-              <el-button type="warning" :icon="Upload">更换</el-button>
-            </el-upload>
-            <el-button type="danger" plain @click="handleFileDelete">删除</el-button>
-          </template>
-        </div>
+    <!-- 新建合同组弹窗 -->
+    <el-dialog v-model="groupDialogVisible" title="新建合同组" width="480px" :close-on-click-modal="false">
+      <el-form label-width="100px">
+        <el-form-item label="合同组名称" required>
+          <el-input v-model="groupForm.groupName" placeholder="请输入合同组名称" @keyup.enter="handleCreateGroup" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="groupForm.remark" type="textarea" :rows="2" placeholder="备注" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="groupDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="groupSaving" @click="handleCreateGroup">创建</el-button>
       </template>
+    </el-dialog>
 
-      <!-- 未上传 -->
-      <template v-else>
-        <div style="text-align: center; padding: 40px 0">
-          <template v-if="fileDialogIsOwner">
-            <p style="color: var(--el-text-color-secondary); margin-bottom: 16px">暂未上传合同文件</p>
+    <!-- 合同文件管理弹窗 -->
+    <el-dialog v-model="fileDialogVisible" title="合同文件管理" width="680px" destroy-on-close>
+      <div style="margin-bottom: 20px">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px">
+          <span style="font-weight: 600; font-size: 14px">合同文件</span>
+          <el-upload
+            v-if="fileDialogIsOwner"
+            :action="getUploadUrl('CONTRACT', fileDialogContractId)"
+            :headers="uploadHeaders"
+            :show-file-list="false"
+            :on-success="handleFileUploadSuccess"
+            accept=".pdf,.zip,.rar,.doc,.docx,.jpg,.jpeg,.png"
+          >
+            <el-button type="primary" :icon="Upload" size="small">上传</el-button>
+          </el-upload>
+        </div>
+        <el-table v-if="fileDialogFiles.length > 0" :data="fileDialogFiles" border size="small">
+          <el-table-column prop="fileName" label="文件名" min-width="200" show-overflow-tooltip />
+          <el-table-column label="大小" width="90">
+            <template #default="{ row }">{{ formatFileSize(row.fileSize) }}</template>
+          </el-table-column>
+          <el-table-column label="上传时间" width="160">
+            <template #default="{ row }">{{ formatTime(row.uploadedAt) }}</template>
+          </el-table-column>
+          <el-table-column label="操作" width="120" align="center">
+            <template #default="{ row }">
+              <el-button type="primary" link size="small" :icon="Download" @click="openDownload(row.id)">下载</el-button>
+              <el-button v-if="fileDialogIsOwner" type="danger" link size="small" :icon="Delete" @click="handleDialogFileDelete(row.id)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <div v-else style="color: var(--el-text-color-placeholder); text-align: center; padding: 16px 0; font-size: 13px">暂无合同文件</div>
+      </div>
+
+      <div>
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px">
+          <span style="font-weight: 600; font-size: 14px">合同文件说明</span>
+          <template v-if="fileDialogIsOwner && !fileDialogDescFile">
             <el-upload
-              :action="getUploadUrl('CONTRACT', fileDialogContractId)"
+              :action="getUploadUrl('CONTRACT_DESC', fileDialogContractId)"
               :headers="uploadHeaders"
               :show-file-list="false"
               :on-success="handleFileUploadSuccess"
               accept=".pdf,.zip,.rar,.doc,.docx,.jpg,.jpeg,.png"
             >
-              <el-button type="primary" :icon="Upload">上传合同文件</el-button>
+              <el-button type="primary" :icon="Upload" size="small">上传</el-button>
             </el-upload>
           </template>
-          <template v-else>
-            <el-empty description="暂未上传合同文件" :image-size="80" />
-          </template>
         </div>
-      </template>
+        <template v-if="fileDialogDescFile">
+          <div style="display: flex; align-items: center; justify-content: space-between; border: 1px solid var(--el-border-color-lighter); border-radius: 6px; padding: 10px 14px; background: var(--el-fill-color-lighter)">
+            <div>
+              <el-icon style="vertical-align: -2px; margin-right: 4px"><Paperclip /></el-icon>
+              <span>{{ fileDialogDescFile.fileName }}</span>
+              <span style="font-size: 12px; color: var(--el-text-color-secondary); margin-left: 12px">{{ formatFileSize(fileDialogDescFile.fileSize) }}</span>
+            </div>
+            <div style="display: flex; gap: 6px">
+              <el-button size="small" link type="primary" :icon="Download" @click="openDownload(fileDialogDescFile.id)">下载</el-button>
+              <template v-if="fileDialogIsOwner">
+                <el-upload
+                  :action="getUploadUrl('CONTRACT_DESC', fileDialogContractId)"
+                  :headers="uploadHeaders"
+                  :show-file-list="false"
+                  :before-upload="handleDescBeforeUpload"
+                  :on-success="handleFileUploadSuccess"
+                  accept=".pdf,.zip,.rar,.doc,.docx,.jpg,.jpeg,.png"
+                >
+                  <el-button size="small" link type="warning">替换</el-button>
+                </el-upload>
+                <el-button size="small" link type="danger" @click="handleDialogFileDelete(fileDialogDescFile.id)">删除</el-button>
+              </template>
+            </div>
+          </div>
+        </template>
+        <div v-else style="color: var(--el-text-color-placeholder); text-align: center; padding: 16px 0; font-size: 13px">暂无文件说明</div>
+      </div>
     </el-dialog>
   </div>
 </template>

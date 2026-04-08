@@ -3,7 +3,6 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { getCustomerDetail } from '@/api/customer'
-import { getStatusLabel } from '@/utils/status-map'
 import { formatTime } from '@/utils/format'
 
 const route = useRoute()
@@ -21,7 +20,6 @@ async function fetchDetail() {
     loading.value = false
   }
 }
-
 
 onMounted(fetchDetail)
 </script>
@@ -55,12 +53,21 @@ onMounted(fetchDetail)
 
       <el-card shadow="never" style="margin-bottom: 16px">
         <template #header>
-          <span style="font-weight: 600">联系信息</span>
+          <span style="font-weight: 600">联系人</span>
         </template>
-        <el-descriptions :column="2" border size="small">
-          <el-descriptions-item label="联系人">{{ customer.contactName || '--' }}</el-descriptions-item>
-          <el-descriptions-item label="手机号">{{ customer.mobilePhone || '--' }}</el-descriptions-item>
-        </el-descriptions>
+        <el-table
+          v-if="customer.contacts && customer.contacts.length > 0"
+          :data="customer.contacts"
+          border
+          size="small"
+          style="width: 100%"
+        >
+          <el-table-column prop="contactName" label="姓名" min-width="100" />
+          <el-table-column prop="contactPhone" label="电话" min-width="130" />
+          <el-table-column prop="position" label="职务" min-width="100" />
+          <el-table-column prop="remark" label="备注" min-width="200" show-overflow-tooltip />
+        </el-table>
+        <div v-else style="color: #909399; text-align: center; padding: 20px 0">暂无联系人</div>
       </el-card>
 
       <el-card shadow="never">

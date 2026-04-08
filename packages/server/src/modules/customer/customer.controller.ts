@@ -35,6 +35,12 @@ export class CustomerController {
     return this.customerService.findPage(query, user.id);
   }
 
+  @Get(':id/contacts')
+  @RequirePermission('customer:list')
+  async findContacts(@Param('id', ParseIntPipe) id: number) {
+    return this.customerService.findContacts(id);
+  }
+
   @Get(':id')
   @RequirePermission('customer:list')
   async findById(@Param('id', ParseIntPipe) id: number) {

@@ -364,7 +364,7 @@ export class AssessmentService {
       .limit(1);
 
     if (!pm[0]) {
-      throw new ForbiddenException('Only the project manager can initiate quality review');
+      throw new ForbiddenException('只有项目经理可以发起质量审核');
     }
 
     // Check if assessment result files have been uploaded
@@ -462,7 +462,7 @@ export class AssessmentService {
       .limit(1);
 
     if (!pm[0]) {
-      throw new ForbiddenException('Only the project manager can resubmit');
+      throw new ForbiddenException('只有项目经理可以重新提交');
     }
 
     // Find running workflow instance

@@ -561,7 +561,7 @@ COMMENT ON TABLE wf_action_log IS 'Immutable audit trail for all workflow operat
 -- ============================================================================
 
 -- ---------------------------------------------------------------------------
--- 3.1 customer  (simplified from codex: contact merged in, no separate table)
+-- 3.1 customer
 -- ---------------------------------------------------------------------------
 CREATE TABLE customer (
     id              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -571,8 +571,6 @@ CREATE TABLE customer (
     address_detail  VARCHAR(255)  NULL,
     uscc            VARCHAR(64)   NULL,
         -- Unified Social Credit Code (统一社会信用代码)
-    contact_name    VARCHAR(64)   NULL,
-    mobile_phone    VARCHAR(32)   NULL,
     is_government   BOOLEAN       NOT NULL DEFAULT FALSE,
     remark          TEXT          NULL,
 
@@ -589,7 +587,26 @@ CREATE INDEX idx_customer_deleted ON customer (deleted) WHERE deleted = FALSE;
 CREATE INDEX idx_customer_creator ON customer (created_by);
 CREATE INDEX idx_customer_name    ON customer (full_name);
 
-COMMENT ON TABLE customer IS 'Customer records. Contact info merged directly (no separate contact table). Visible to all users.';
+COMMENT ON TABLE customer IS 'Customer records. Contacts stored in customer_contact (one-to-many).';
+
+-- ---------------------------------------------------------------------------
+-- 3.1b customer_contact (one-to-many: customer has many contacts)
+-- ---------------------------------------------------------------------------
+CREATE TABLE customer_contact (
+    id              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    customer_id     BIGINT        NOT NULL REFERENCES customer(id),
+    contact_name    VARCHAR(128)  NOT NULL,
+    contact_phone   VARCHAR(32)   NULL,
+    position        VARCHAR(64)   NULL,
+    remark          VARCHAR(500)  NULL,
+    sort_order      INTEGER       NOT NULL DEFAULT 0,
+    created_at      TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_customer_contact_customer ON customer_contact (customer_id);
+
+COMMENT ON TABLE customer_contact IS 'Customer contacts (one-to-many). First by sort_order is the primary contact.';
 
 -- ---------------------------------------------------------------------------
 -- 3.2 partner (维护合作方信息)
@@ -608,10 +625,34 @@ CREATE TABLE partner (
 COMMENT ON TABLE partner IS 'Partner/collaborator companies. Maintained independently, referenced by contract.partner_id.';
 
 -- ---------------------------------------------------------------------------
--- 3.3 contract
+-- 3.3a contract_group
+-- ---------------------------------------------------------------------------
+CREATE TABLE contract_group (
+    id              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    group_name      VARCHAR(255)  NOT NULL,
+    remark          TEXT          NULL,
+
+    created_by      BIGINT        NOT NULL,
+    created_at      TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    updated_by      BIGINT        NULL,
+    updated_at      TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    deleted         BOOLEAN       NOT NULL DEFAULT FALSE,
+    deleted_at      TIMESTAMPTZ   NULL
+);
+
+CREATE INDEX idx_contract_group_deleted ON contract_group (deleted) WHERE deleted = FALSE;
+CREATE INDEX idx_contract_group_creator ON contract_group (created_by);
+
+COMMENT ON TABLE contract_group IS 'Contract groups — groups related contracts (委托书/收款合同/付款合同) for the same bid project.';
+
+-- ---------------------------------------------------------------------------
+-- 3.3b contract
 -- ---------------------------------------------------------------------------
 CREATE TABLE contract (
     id              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    group_id        BIGINT        NOT NULL REFERENCES contract_group(id),
+    contract_category VARCHAR(32) NULL,
+        -- 委托书 | 收款合同 | 付款合同
     customer_id     BIGINT        NOT NULL,
 
     -- Contract identification (generated on review approval)
@@ -626,16 +667,22 @@ CREATE TABLE contract (
 
     -- Business fields
     payment_company VARCHAR(255)  NULL,
-    payer_type      VARCHAR(16)   NULL,
-    payer_id        BIGINT        NULL,
     payment_amount  DECIMAL(18,2) NULL,
     payment_method  VARCHAR(128)  NULL,
+    payment_info    TEXT          NULL,
+    invoice_type    VARCHAR(16)   NULL,
+        -- 专票 | 普票
+    tax_rate        VARCHAR(8)    NULL,
+        -- 0 | 1 | 3 | 6 | 9 | 13
     partner_name    VARCHAR(255)  NULL,
     partner_id      BIGINT        NULL,
     sales_person_id BIGINT        NULL,
     performance_city VARCHAR(64)  NULL,
     deal_status     VARCHAR(64)   NULL,
-    contract_type   VARCHAR(64)   NULL,
+    service_content VARCHAR(64)   NULL,
+        -- 等级保护测评 | 安全咨询 | 渗透测试 | 风险评估 | 其他
+    contract_type   VARCHAR(32)   NULL,
+        -- 自主 | 直接合作 | 间接合作
     service_years   JSONB         NOT NULL DEFAULT '[]',
         -- Array of years: [2026, 2027, 2028]
     service_year_detail TEXT      NULL,
@@ -643,6 +690,8 @@ CREATE TABLE contract (
     -- Financial
     payment_status  VARCHAR(32)   NOT NULL DEFAULT 'UNPAID',
     payment_remark  TEXT          NULL,
+    financial_handler_id BIGINT   NULL,
+        -- Last finance user who edited payment status
     signed_at       TIMESTAMPTZ   NULL,
 
     -- Archive fields (filled by commercial role at archive step)
@@ -697,12 +746,14 @@ CREATE INDEX idx_contract_sys_contract ON contract_system_item (contract_id) WHE
 -- 3.4 contract_serial  (yearly sequence counter for contract numbers)
 -- ---------------------------------------------------------------------------
 CREATE TABLE contract_serial (
-    serial_year     INT           PRIMARY KEY,
-    next_seq        INT           NOT NULL DEFAULT 1,
-    updated_at      TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+    serial_year         INT           NOT NULL,
+    service_content_code VARCHAR(8)   NOT NULL,
+    next_seq            INT           NOT NULL DEFAULT 1,
+    updated_at          TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (serial_year, service_content_code)
 );
 
-COMMENT ON TABLE contract_serial IS 'Yearly auto-increment counter for contract numbers. Format: YZN-{year}-{seq:04d}. Uses SELECT FOR UPDATE for concurrency.';
+COMMENT ON TABLE contract_serial IS 'Per service-content yearly sequence for contract numbers. Format: YZDZR-{code}-{yy}-{seq:04d}.';
 
 -- ---------------------------------------------------------------------------
 -- 3.5 project_register  (project registration applications)
@@ -748,18 +799,18 @@ CREATE TABLE project_system_item (
     id              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     project_register_id BIGINT    NOT NULL,
     system_name     VARCHAR(255)  NOT NULL,
-    filing_agency   VARCHAR(255)  NOT NULL,
-    security_level  VARCHAR(64)   NOT NULL,
+    filing_agency   VARCHAR(255)  NULL,
+    security_level  VARCHAR(64)   NULL,
     is_reassessment BOOLEAN       NOT NULL DEFAULT FALSE,
-    required_entry_date DATE      NOT NULL,
-    required_report_delivery_date DATE NOT NULL,
+    required_entry_date DATE      NULL,
+    required_report_delivery_date DATE NULL,
 
     -- Assessed unit info
-    assessed_unit_name    VARCHAR(255) NOT NULL,
-    assessed_unit_industry VARCHAR(128) NOT NULL,
-    assessed_unit_contact VARCHAR(64)  NOT NULL,
-    assessed_unit_mobile  VARCHAR(32)  NOT NULL,
-    assessed_unit_address VARCHAR(255) NOT NULL,
+    assessed_unit_name    VARCHAR(255) NULL,
+    assessed_unit_industry VARCHAR(128) NULL,
+    assessed_unit_contact VARCHAR(64)  NULL,
+    assessed_unit_mobile  VARCHAR(32)  NULL,
+    assessed_unit_address VARCHAR(255) NULL,
 
     -- Filing certificate
     has_filing_certificate BOOLEAN NOT NULL DEFAULT FALSE,
@@ -769,6 +820,8 @@ CREATE TABLE project_system_item (
     -- Document flags
     has_filing_form          BOOLEAN NOT NULL DEFAULT FALSE,
     has_classification_report BOOLEAN NOT NULL DEFAULT FALSE,
+
+    sort_order      INT           NOT NULL DEFAULT 0,
 
     -- Audit
     created_at      TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
@@ -986,7 +1039,9 @@ INSERT INTO iam_role (role_code, role_name, description, enabled, system_flag) V
     ('content_reviewer_network', '内容审核员（网络）',   '负责网络向内容审核',                        TRUE, TRUE),
     ('report_writer',            '报告编制员',          '负责报告编制和提交',                         TRUE, TRUE),
     ('report_assigner',          '报告分配人',          '负责审核测评成果并分配编制任务给编制人',       TRUE, TRUE),
-    ('archiver',                 '归档员',              '负责材料归档',                               TRUE, TRUE);
+    ('archiver',                 '归档员',              '负责材料归档',                               TRUE, TRUE),
+    ('project_director',         '项目主管',            '负责项目登记审核、分配项目经理和测评师',       TRUE, TRUE),
+    ('finance',                  '财务',                '负责合同回款管理',                           TRUE, TRUE);
 
 -- ---------------------------------------------------------------------------
 -- 4.2 Default admin user (password: admin123 — must be bcrypt hashed in app)
@@ -1117,7 +1172,7 @@ INSERT INTO iam_role_permission (role_code, permission_code) VALUES
     -- commercial
     ('commercial', 'customer:list'),
     ('commercial', 'contract:list'), ('commercial', 'contract:archive'), ('commercial', 'contract:view_all'),
-    ('commercial', 'contract:update'), ('commercial', 'contract:update_financial'),
+    ('commercial', 'contract:update'),
     ('commercial', 'project:list'),
     ('commercial', 'wf_task:view'), ('commercial', 'wf_task:operate'),
 
@@ -1186,7 +1241,16 @@ INSERT INTO iam_role_permission (role_code, permission_code) VALUES
     -- archiver
     ('archiver', 'customer:list'), ('archiver', 'contract:list'), ('archiver', 'contract:view_all'), ('archiver', 'project:list'),
     ('archiver', 'archive:list'), ('archiver', 'archive:submit'),
-    ('archiver', 'wf_task:view'), ('archiver', 'wf_task:operate');
+    ('archiver', 'wf_task:view'), ('archiver', 'wf_task:operate'),
+
+    -- project_director
+    ('project_director', 'customer:list'), ('project_director', 'contract:list'),
+    ('project_director', 'project:list'), ('project_director', 'project:review'), ('project_director', 'project:assign_team'),
+    ('project_director', 'wf_task:view'), ('project_director', 'wf_task:operate'),
+
+    -- finance
+    ('finance', 'contract:list'), ('finance', 'contract:update_financial'),
+    ('finance', 'wf_task:view');
 
 -- ---------------------------------------------------------------------------
 -- 4.4 Resources (frontend navigation tree)
@@ -1196,6 +1260,7 @@ INSERT INTO iam_resource (resource_key, resource_name, resource_type, parent_key
     ('group.overview',  '总览',       'GROUP', NULL, NULL,                     'DataBoard',       10, TRUE, TRUE, '总览分组'),
     ('group.business',  '业务流程',    'GROUP', NULL, NULL,                     'OfficeBuilding',  20, TRUE, TRUE, '业务流程分组'),
     ('group.report',    '报告与归档',  'GROUP', NULL, NULL,                     'Tickets',         30, TRUE, TRUE, '报告与归档分组'),
+    ('group.finance',   '财务管理',    'GROUP', NULL, NULL,                     'Money',           35, TRUE, TRUE, '财务管理分组'),
     ('group.system',    '系统管理',    'GROUP', NULL, NULL,                     'Setting',         40, TRUE, TRUE, '系统管理分组'),
 
     -- Overview pages
@@ -1215,6 +1280,9 @@ INSERT INTO iam_resource (resource_key, resource_name, resource_type, parent_key
     ('page.report-compile',      '报告编制',    'PAGE', 'group.report', '/report-compile',         'EditPen',      310, TRUE, TRUE, '报告编制与提交'),
     ('page.report-reviews',      '报告审核',    'PAGE', 'group.report', '/report-reviews',         'CircleCheck',  320, TRUE, TRUE, '报告终审'),
     ('page.material-archives',   '材料归档',    'PAGE', 'group.report', '/material-archives',      'FolderChecked',330, TRUE, TRUE, '材料归档'),
+
+    -- Finance pages
+    ('page.contract-finance',    '合同财务',    'PAGE', 'group.finance', '/finance/contract',       'Money',        350, TRUE, TRUE, '合同回款管理'),
 
     -- System admin pages
     ('page.admin-users',        '用户管理',     'PAGE', 'group.system', '/admin/users',        'User',           400, TRUE, TRUE, '后台用户管理'),
@@ -1288,7 +1356,18 @@ INSERT INTO iam_role_resource (role_code, resource_key) VALUES
     ('dept_manager', 'page.workflow'),
     ('dept_manager', 'page.contracts'), ('dept_manager', 'page.project-registers'),
     ('dept_manager', 'page.report-assignments'), ('dept_manager', 'page.report-reviews'),
-    ('dept_manager', 'page.material-archives');
+    ('dept_manager', 'page.material-archives'),
+
+    -- Project director
+    ('project_director', 'group.overview'), ('project_director', 'group.business'),
+    ('project_director', 'page.workflow'),
+    ('project_director', 'page.customers'), ('project_director', 'page.contracts'),
+    ('project_director', 'page.project-registers'),
+
+    -- Finance
+    ('finance', 'group.overview'), ('finance', 'group.finance'),
+    ('finance', 'page.workflow'),
+    ('finance', 'page.contract-finance');
 
 
 -- ---------------------------------------------------------------------------
@@ -1312,7 +1391,7 @@ SELECT id, 'CONTRACT_AUTO_NUMBER', '自动编号', 'AUTO', 25, '{"handler":"gene
 FROM wf_definition WHERE def_key = 'CONTRACT_FLOW' AND version = 1;
 
 INSERT INTO wf_node (definition_id, node_key, node_name, node_type, node_order, config)
-SELECT id, 'CONTRACT_ARCHIVE', '合同归档', 'SIMPLE', 30, NULL
+SELECT id, 'CONTRACT_ARCHIVE', '合同归档', 'SIMPLE', 30, '{"assignMode": "pool"}'::JSONB
 FROM wf_definition WHERE def_key = 'CONTRACT_FLOW' AND version = 1;
 
 -- Contract Flow transitions
@@ -1401,7 +1480,7 @@ INSERT INTO wf_assignment_rule (node_key, slot_key, slot_label, role_code, avoid
     ('CONTRACT_ARCHIVE', 'ARCHIVER',  '合同归档人',       'commercial',              'NONE',         10),
     ('CONTRACT_ARCHIVE', 'ARCHIVER',  '合同归档人',       'super_admin',             'NONE',         99),
     -- Project
-    ('PROJECT_REVIEW',   'REVIEWER',  '项目审核人',       'dept_manager',            'NONE',         10),
+    ('PROJECT_REVIEW',   'REVIEWER',  '项目审核人',       'project_director',        'NONE',         10),
     ('PROJECT_REVIEW',   'REVIEWER',  '项目审核人',       'super_admin',             'NONE',         99),
     ('POLICE_REGISTER',  'OPERATOR',  '公安登记人',       'police_register',         'NONE',         10),
     ('POLICE_REGISTER',  'OPERATOR',  '公安登记人',       'super_admin',             'NONE',         99),
@@ -1526,5 +1605,4 @@ INSERT INTO review_opinion_template (node_key, slot_key, action_type, template_t
 -- 2. wf_task.form_data JSONB stores assessment results portably
 -- 3. project_member tracks who has what data for selective export
 -- ============================================================================
-
 

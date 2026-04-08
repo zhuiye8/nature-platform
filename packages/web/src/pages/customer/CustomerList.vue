@@ -115,7 +115,7 @@ onMounted(() => {
       <div style="margin-bottom: 16px; display: flex; gap: 12px">
         <el-input
           v-model="keyword"
-          placeholder="搜索客户名称 / 联系人 / 手机号"
+          placeholder="搜索客户名称"
           clearable
           style="width: 320px"
           :prefix-icon="Search"
@@ -133,15 +133,35 @@ onMounted(() => {
         stripe
         border
         style="width: 100%"
+        row-key="id"
       >
+        <el-table-column type="expand">
+          <template #default="{ row }">
+            <div style="padding: 8px 48px">
+              <el-table
+                v-if="row.contacts && row.contacts.length > 0"
+                :data="row.contacts"
+                border
+                size="small"
+                style="width: 100%"
+              >
+                <el-table-column prop="contactName" label="联系人" min-width="100" />
+                <el-table-column prop="contactPhone" label="电话" min-width="130" />
+                <el-table-column prop="position" label="职务" min-width="100" />
+                <el-table-column prop="remark" label="备注" min-width="150" show-overflow-tooltip />
+              </el-table>
+              <div v-else style="color: #909399; font-size: 13px">暂无联系人</div>
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column label="客户名称" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">
-            <el-link type="primary" :underline="false" @click="router.push(`/customer/${row.id}`)">{{ row.fullName }}</el-link>
+            <el-link type="primary" underline="never" @click="router.push(`/customer/${row.id}`)">{{ row.fullName }}</el-link>
           </template>
         </el-table-column>
         <el-table-column prop="industry" label="行业" min-width="120" show-overflow-tooltip />
-        <el-table-column prop="contactName" label="联系人" min-width="100" />
-        <el-table-column prop="mobilePhone" label="手机号" min-width="130" />
+        <el-table-column prop="uscc" label="信用代码" min-width="200" show-overflow-tooltip />
+        <el-table-column prop="region" label="地区" min-width="160" show-overflow-tooltip />
         <el-table-column label="是否政府单位" min-width="110" align="center">
           <template #default="{ row }">
             <el-tag :type="row.isGovernment ? 'success' : 'info'" size="small">

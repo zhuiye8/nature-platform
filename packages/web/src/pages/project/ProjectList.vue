@@ -3,7 +3,7 @@ import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Plus } from '@element-plus/icons-vue'
-import { getProjectPage, deleteProject, submitProject } from '@/api/project'
+import { getProjectPage, getProjectDetail, deleteProject, submitProject } from '@/api/project'
 import type { ProjectItem } from '@/api/project'
 
 const router = useRouter()
@@ -105,6 +105,33 @@ function handleEdit(row: ProjectItem) {
 
 async function handleSubmit(row: ProjectItem) {
   try {
+    // 验证系统明细是否完整
+    const detail = (await getProjectDetail(row.id)) as any
+    const items = detail?.systemItems || []
+    if (items.length === 0) {
+      ElMessage.warning('请先添加系统明细后再提交审核')
+      return
+    }
+    for (let i = 0; i < items.length; i++) {
+      const si = items[i]
+      const missing: string[] = []
+      if (!si.systemName) missing.push('系统名称')
+      if (!si.filingAgency) missing.push('备案机关')
+      if (!si.securityLevel) missing.push('安全等级')
+      if (!si.requiredEntryDate) missing.push('要求录入日期')
+      if (!si.requiredReportDeliveryDate) missing.push('要求出报告日期')
+      if (!si.assessedUnitName) missing.push('被测单位名称')
+      if (!si.assessedUnitContact) missing.push('联系人')
+      if (!si.assessedUnitMobile) missing.push('联系电话')
+      if (!si.assessedUnitAddress) missing.push('地址')
+      if (!si.filingCertificateNo) missing.push('备案证明编号')
+      if (!si.filingCertificateIssuedAt) missing.push('备案证明出具时间')
+      if (missing.length > 0) {
+        ElMessage.warning(`系统「${si.systemName || '未命名'}」缺少：${missing.join('、')}，请编辑完善后再提交`)
+        return
+      }
+    }
+
     await ElMessageBox.confirm('确定要提交该项目进行审核吗？', '提交确认', {
       confirmButtonText: '确定',
       cancelButtonText: '取消',
@@ -217,13 +244,13 @@ onMounted(() => {
       >
         <el-table-column label="申请单名称" min-width="240">
           <template #default="{ row }">
-            <el-link type="primary" :underline="false" style="white-space: normal; word-break: break-all; line-height: 1.5" @click="router.push(`/project/${row.id}`)">{{ row.applicationName }}</el-link>
+            <el-link type="primary" underline="never" style="white-space: normal; word-break: break-all; line-height: 1.5" @click="router.push(`/project/${row.id}`)">{{ row.applicationName }}</el-link>
           </template>
         </el-table-column>
         <el-table-column prop="applicationNo" label="申请单编号" width="140" show-overflow-tooltip />
         <el-table-column label="合同名称" min-width="200">
           <template #default="{ row }">
-            <el-link v-if="row.contractId" type="primary" :underline="false" style="white-space: normal; word-break: break-all; line-height: 1.5" @click="router.push(`/contract/${row.contractId}`)">{{ row.contractName || '--' }}</el-link>
+            <el-link v-if="row.contractId" type="primary" underline="never" style="white-space: normal; word-break: break-all; line-height: 1.5" @click="router.push(`/contract/${row.contractId}`)">{{ row.contractName || '--' }}</el-link>
             <span v-else style="white-space: normal; word-break: break-all">{{ row.contractName || '--' }}</span>
           </template>
         </el-table-column>
@@ -232,8 +259,11 @@ onMounted(() => {
             {{ row.contractYear }}年
           </template>
         </el-table-column>
-        <el-table-column prop="creatorName" label="签单销售" min-width="100" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.creatorName || '--' }}</template>
+        <el-table-column label="系统数量" min-width="90" align="center">
+          <template #default="{ row }">{{ row.systemItemCount ?? 0 }}</template>
+        </el-table-column>
+        <el-table-column prop="salesPersonName" label="签单销售" min-width="100" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.salesPersonName || '--' }}</template>
         </el-table-column>
         <el-table-column label="状态" min-width="120" align="center">
           <template #default="{ row }">
@@ -248,7 +278,6 @@ onMounted(() => {
           </template>
         </el-table-column>
         <el-table-column prop="createdAt" label="创建时间" min-width="170" />
-        <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip />
         <el-table-column label="操作" width="300" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link size="small" @click="handleView(row)">

@@ -138,6 +138,13 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/pages/archive/ArchiveDetail.vue'),
         meta: { title: '材料归档详情', permission: 'archive:list' },
       },
+      // --- 财务管理 ---
+      {
+        path: 'finance/contract',
+        name: 'ContractFinanceList',
+        component: () => import('@/pages/finance/ContractFinanceList.vue'),
+        meta: { title: '合同财务', permission: 'contract:update_financial' },
+      },
       // --- 系统管理 ---
       {
         path: 'system/users',

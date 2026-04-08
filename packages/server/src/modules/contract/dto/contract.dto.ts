@@ -12,6 +12,70 @@ import {
 import { Type } from 'class-transformer';
 
 // ---------------------------------------------------------------------------
+// CreateGroupDto
+// ---------------------------------------------------------------------------
+export class CreateGroupDto {
+  @IsString()
+  @IsNotEmpty()
+  groupName!: string;
+
+  @IsString()
+  @IsOptional()
+  remark?: string;
+}
+
+// ---------------------------------------------------------------------------
+// UpdateGroupDto
+// ---------------------------------------------------------------------------
+export class UpdateGroupDto {
+  @IsString()
+  @IsOptional()
+  groupName?: string;
+
+  @IsString()
+  @IsOptional()
+  remark?: string;
+}
+
+// ---------------------------------------------------------------------------
+// QueryGroupDto
+// ---------------------------------------------------------------------------
+export class QueryGroupDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @IsOptional()
+  page?: number = 1;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @IsOptional()
+  pageSize?: number = 20;
+
+  @IsString()
+  @IsOptional()
+  keyword?: string;
+
+  @IsString()
+  @IsOptional()
+  reviewStatus?: string;
+
+  @IsString()
+  @IsOptional()
+  archiveStatus?: string;
+
+  @IsString()
+  @IsOptional()
+  paymentStatus?: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @IsOptional()
+  salesPersonId?: number;
+}
+
+// ---------------------------------------------------------------------------
 // CreateSystemItemDto
 // ---------------------------------------------------------------------------
 export class CreateSystemItemDto {
@@ -37,6 +101,14 @@ export class CreateSystemItemDto {
 export class CreateContractDto {
   @Type(() => Number)
   @IsNumber()
+  groupId!: number;
+
+  @IsString()
+  @IsNotEmpty()
+  contractCategory!: string;
+
+  @Type(() => Number)
+  @IsNumber()
   customerId!: number;
 
   @IsString()
@@ -46,15 +118,6 @@ export class CreateContractDto {
   @IsString()
   @IsOptional()
   contactPhone?: string;
-
-  @IsString()
-  @IsOptional()
-  payerType?: string;
-
-  @Type(() => Number)
-  @IsNumber()
-  @IsOptional()
-  payerId?: number;
 
   @IsString()
   @IsOptional()
@@ -68,6 +131,18 @@ export class CreateContractDto {
   @IsString()
   @IsOptional()
   paymentMethod?: string;
+
+  @IsString()
+  @IsOptional()
+  paymentInfo?: string;
+
+  @IsString()
+  @IsOptional()
+  invoiceType?: string;
+
+  @IsString()
+  @IsOptional()
+  taxRate?: string;
 
   @IsString()
   @IsOptional()
@@ -90,6 +165,10 @@ export class CreateContractDto {
   @IsString()
   @IsOptional()
   dealStatus?: string;
+
+  @IsString()
+  @IsOptional()
+  serviceContent?: string;
 
   @IsString()
   @IsOptional()
@@ -117,6 +196,10 @@ export class CreateContractDto {
 // UpdateContractDto — all fields optional
 // ---------------------------------------------------------------------------
 export class UpdateContractDto {
+  @IsString()
+  @IsOptional()
+  contractCategory?: string;
+
   @Type(() => Number)
   @IsNumber()
   @IsOptional()
@@ -132,15 +215,6 @@ export class UpdateContractDto {
 
   @IsString()
   @IsOptional()
-  payerType?: string;
-
-  @Type(() => Number)
-  @IsNumber()
-  @IsOptional()
-  payerId?: number;
-
-  @IsString()
-  @IsOptional()
   paymentCompany?: string;
 
   @Type(() => Number)
@@ -151,6 +225,18 @@ export class UpdateContractDto {
   @IsString()
   @IsOptional()
   paymentMethod?: string;
+
+  @IsString()
+  @IsOptional()
+  paymentInfo?: string;
+
+  @IsString()
+  @IsOptional()
+  invoiceType?: string;
+
+  @IsString()
+  @IsOptional()
+  taxRate?: string;
 
   @IsString()
   @IsOptional()
@@ -172,6 +258,10 @@ export class UpdateContractDto {
   @IsString()
   @IsOptional()
   dealStatus?: string;
+
+  @IsString()
+  @IsOptional()
+  serviceContent?: string;
 
   @IsString()
   @IsOptional()
@@ -227,12 +317,21 @@ export class QueryContractDto {
 
   @IsString()
   @IsOptional()
+  paymentStatus?: string;
+
+  @IsString()
+  @IsOptional()
   onlyMine?: string;
 
   @Type(() => Number)
   @IsInt()
   @IsOptional()
   createdByUserId?: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @IsOptional()
+  salesPersonId?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -254,12 +353,15 @@ export class UpdateFinancialDto {
 
   @IsString()
   @IsOptional()
-  payerType?: string;
+  paymentInfo?: string;
 
-  @Type(() => Number)
-  @IsNumber()
+  @IsString()
   @IsOptional()
-  payerId?: number;
+  invoiceType?: string;
+
+  @IsString()
+  @IsOptional()
+  taxRate?: string;
 
   @IsString()
   @IsOptional()
@@ -296,5 +398,5 @@ export class ArchiveContractDto {
   archiveRemark?: string;
 
   @IsOptional()
-  isComplete?: boolean; // true=已完成归档(ARCHIVED), false=未完成归档(PARTIAL_ARCHIVE)
+  isComplete?: boolean;
 }

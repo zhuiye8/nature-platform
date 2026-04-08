@@ -29,6 +29,8 @@ DELETE FROM project_register;
 DELETE FROM contract_system_item;
 DELETE FROM contract_serial;
 DELETE FROM contract;
+DELETE FROM contract_group;
+DELETE FROM customer_contact;
 DELETE FROM file_attachment;
 -- 清理用户
 DELETE FROM user_role WHERE user_id IN (SELECT id FROM user_account WHERE username NOT IN ('admin'));
@@ -59,7 +61,7 @@ INSERT INTO user_account (username, display_name, password_hash) VALUES
 ('zhaojianhua',    '赵建华',   '$2b$10$bfA8DdYeQOzg2nYBokw8quvtAW.7h6IMWPAbCp4uxIvogloEzuuyK'),
 -- 商务 (1人)
 ('zhangyusong',    '张渝松',   '$2b$10$bfA8DdYeQOzg2nYBokw8quvtAW.7h6IMWPAbCp4uxIvogloEzuuyK'),
--- 项目经理+测评师 (19人，不含上面已列的多角色用户)
+-- 项目经理+测评师 (19人)
 ('chenxindong',    '陈新东',   '$2b$10$bfA8DdYeQOzg2nYBokw8quvtAW.7h6IMWPAbCp4uxIvogloEzuuyK'),
 ('chenyanwen',     '陈彦文',   '$2b$10$bfA8DdYeQOzg2nYBokw8quvtAW.7h6IMWPAbCp4uxIvogloEzuuyK'),
 ('yangquansen',    '杨泉森',   '$2b$10$bfA8DdYeQOzg2nYBokw8quvtAW.7h6IMWPAbCp4uxIvogloEzuuyK'),
@@ -87,7 +89,9 @@ INSERT INTO user_account (username, display_name, password_hash) VALUES
 -- 内容审核(技术)
 ('wangyinsen',     '王寅森',   '$2b$10$bfA8DdYeQOzg2nYBokw8quvtAW.7h6IMWPAbCp4uxIvogloEzuuyK'),
 -- 归档
-('tangting',       '汤婷',     '$2b$10$bfA8DdYeQOzg2nYBokw8quvtAW.7h6IMWPAbCp4uxIvogloEzuuyK')
+('tangting',       '汤婷',     '$2b$10$bfA8DdYeQOzg2nYBokw8quvtAW.7h6IMWPAbCp4uxIvogloEzuuyK'),
+-- 财务 (1人)
+('liqing',         '李青',     '$2b$10$bfA8DdYeQOzg2nYBokw8quvtAW.7h6IMWPAbCp4uxIvogloEzuuyK')
 ON CONFLICT (username) DO NOTHING;
 
 -- ============================================================================
@@ -131,6 +135,11 @@ SELECT id, 'assessor' FROM user_account WHERE username IN (
 -- 部门经理
 INSERT INTO user_role (user_id, role_code)
 SELECT id, 'dept_manager' FROM user_account WHERE username = 'xiebaojian'
+ON CONFLICT DO NOTHING;
+
+-- 项目主管
+INSERT INTO user_role (user_id, role_code)
+SELECT id, 'project_director' FROM user_account WHERE username = 'chenyanwen'
 ON CONFLICT DO NOTHING;
 
 -- 公安登记专员
@@ -178,6 +187,11 @@ INSERT INTO user_role (user_id, role_code)
 SELECT id, 'archiver' FROM user_account WHERE username IN (
   'tangting','zhangyusong'
 ) ON CONFLICT DO NOTHING;
+
+-- 财务
+INSERT INTO user_role (user_id, role_code)
+SELECT id, 'finance' FROM user_account WHERE username = 'liqing'
+ON CONFLICT DO NOTHING;
 
 -- ============================================================================
 -- 4. 验证

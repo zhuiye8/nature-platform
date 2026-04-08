@@ -2,7 +2,7 @@
 import { ref, watch, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getStatusLabel } from '@/utils/status-map'
-import { getDownloadUrl, getPreviewUrl } from '@/api/file'
+import { getFileDownloadPath, getFilePreviewPath } from '@/api/file'
 
 interface FileInfo {
   id: number
@@ -63,37 +63,17 @@ function isPreviewable(fileName: string) {
   return ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'pdf'].includes(ext)
 }
 
-async function handlePreview(fileId: number, fileName: string) {
-  try {
-    if (isPreviewable(fileName)) {
-      const res = (await getPreviewUrl(fileId)) as any
-      const url = res.url || res
-      window.open(url, '_blank')
-    } else {
-      ElMessage.info('该文件格式不支持预览，已开始下载')
-      const res = (await getDownloadUrl(fileId)) as any
-      const url = res.url || res
-      const a = document.createElement('a')
-      a.href = url
-      a.download = fileName
-      a.click()
-    }
-  } catch {
-    ElMessage.error('获取文件链接失败')
+function handlePreview(fileId: number, fileName: string) {
+  if (isPreviewable(fileName)) {
+    window.open(getFilePreviewPath(fileId), '_blank')
+  } else {
+    ElMessage.info('该文件格式不支持预览，已开始下载')
+    window.open(getFileDownloadPath(fileId), '_blank')
   }
 }
 
-async function handleDownload(fileId: number, fileName: string) {
-  try {
-    const res = (await getDownloadUrl(fileId)) as any
-    const url = res.url || res
-    const a = document.createElement('a')
-    a.href = url
-    a.download = fileName
-    a.click()
-  } catch {
-    ElMessage.error('下载失败')
-  }
+function handleDownload(fileId: number, _fileName: string) {
+  window.open(getFileDownloadPath(fileId), '_blank')
 }
 
 function renderFileStatus(hasFlag: boolean, file: FileInfo | null | undefined) {
@@ -145,7 +125,7 @@ function renderFileStatus(hasFlag: boolean, file: FileInfo | null | undefined) {
             <div v-if="item.filingCertificateFile" style="margin-top: 6px">
               <el-link
                 type="primary"
-                :underline="false"
+                underline="never"
                 @click="handlePreview(item.filingCertificateFile!.id, item.filingCertificateFile!.fileName)"
               >
                 {{ item.filingCertificateFile.fileName }}
@@ -174,7 +154,7 @@ function renderFileStatus(hasFlag: boolean, file: FileInfo | null | undefined) {
             <div v-if="item.filingFormFile" style="margin-top: 6px">
               <el-link
                 type="primary"
-                :underline="false"
+                underline="never"
                 @click="handlePreview(item.filingFormFile!.id, item.filingFormFile!.fileName)"
               >
                 {{ item.filingFormFile.fileName }}
@@ -203,7 +183,7 @@ function renderFileStatus(hasFlag: boolean, file: FileInfo | null | undefined) {
             <div v-if="item.classificationReportFile" style="margin-top: 6px">
               <el-link
                 type="primary"
-                :underline="false"
+                underline="never"
                 @click="handlePreview(item.classificationReportFile!.id, item.classificationReportFile!.fileName)"
               >
                 {{ item.classificationReportFile.fileName }}

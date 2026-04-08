@@ -138,14 +138,14 @@ onUnmounted(() => {
         <form class="lp-form" @submit.prevent="handleLogin">
           <div class="lp-field">
             <label>用户名</label>
-            <el-input v-model="form.username" placeholder="请输入用户名" size="large" @keyup.enter="handleLogin">
+            <el-input v-model="form.username" placeholder="请输入用户名" size="large">
               <template #prefix><el-icon><User /></el-icon></template>
             </el-input>
           </div>
 
           <div class="lp-field">
             <label>密码</label>
-            <el-input v-model="form.password" type="password" show-password placeholder="请输入密码" size="large" @keyup.enter="handleLogin">
+            <el-input v-model="form.password" type="password" show-password placeholder="请输入密码" size="large">
               <template #prefix><el-icon><Lock /></el-icon></template>
             </el-input>
           </div>

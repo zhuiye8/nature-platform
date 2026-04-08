@@ -7,10 +7,9 @@ import {
   getPoliceRegisterDetail,
   updatePoliceRegister,
   completePoliceRegister,
-  getProjectManagers,
 } from '@/api/police'
-import type { SimpleUser } from '@/api/police'
-import { getFileList, getDownloadUrl, getPreviewUrl, deleteFile, getUploadUrl, type FileItem } from '@/api/file'
+import { regionData } from '@/utils/region-data'
+import { getFileList, getFileDownloadPath, getFilePreviewPath, deleteFile, getUploadUrl, type FileItem } from '@/api/file'
 import { getSystemItems } from '@/api/project'
 import { getStatusLabel, getStatusTagType } from '@/utils/status-map'
 import { formatTime } from '@/utils/format'
@@ -48,11 +47,35 @@ const editForm = ref({
   filingAgency: '',
   contactName: '',
   contactPhone: '',
-  projectManagerId: undefined as number | undefined,
   remark: '',
 })
 const editSaving = ref(false)
-const projectManagers = ref<SimpleUser[]>([])
+const filingRegionValue = ref<string[]>([])
+
+const directMunicipalities = ['北京市', '上海市', '天津市', '重庆市']
+
+function generateFilingAgency(regionPath: string[]): string {
+  if (!regionPath || regionPath.length === 0) return ''
+  const province = regionPath[0]
+  const city = regionPath[1]
+  const district = regionPath[2]
+  if (directMunicipalities.includes(province)) {
+    if (district) return `${province}公安局${district}分局`
+    return `${province}公安局网安总队`
+  }
+  if (district) {
+    if (district.endsWith('县') || district.endsWith('市')) return `${district}公安局`
+    return `${city}公安局${district}分局`
+  }
+  if (city) return `${city}公安局网安支队`
+  if (province.includes('自治区')) return `${province}公安厅网安总队`
+  return `${province.replace('省', '')}省公安厅网安总队`
+}
+
+function onFilingRegionChange(val: string[]) {
+  filingRegionValue.value = val
+  editForm.value.filingAgency = generateFilingAgency(val)
+}
 
 function openEditDialog() {
   editForm.value = {
@@ -60,18 +83,24 @@ function openEditDialog() {
     filingAgency: detail.value?.filingAgency ?? '',
     contactName: detail.value?.contactName ?? '',
     contactPhone: detail.value?.contactPhone ?? '',
-    projectManagerId: detail.value?.projectManagerId ?? undefined,
     remark: detail.value?.remark ?? '',
   }
-  loadProjectManagers()
+  filingRegionValue.value = []
   editDialogVisible.value = true
 }
 
-async function loadProjectManagers() {
-  try { projectManagers.value = await getProjectManagers() } catch { projectManagers.value = [] }
-}
-
 async function saveEdit() {
+  // 验证必填
+  const missing: string[] = []
+  if (!editForm.value.registerNo) missing.push('登记编号')
+  if (!editForm.value.filingAgency) missing.push('备案机关')
+  if (!editForm.value.contactName) missing.push('联系人')
+  if (!editForm.value.contactPhone) missing.push('联系电话')
+  if (missing.length > 0) {
+    ElMessage.warning(`请填写：${missing.join('、')}`)
+    return
+  }
+
   editSaving.value = true
   try {
     await updatePoliceRegister(policeId.value, editForm.value)
@@ -96,8 +125,7 @@ async function fetchScanFile() {
     const files = (await getFileList('POLICE', policeId.value)) as any as FileItem[]
     scanFile.value = files && files.length > 0 ? files[0] : null
     if (scanFile.value && (imageTypes.includes(scanFile.value.contentType) || scanFile.value.contentType === 'application/pdf')) {
-      const result = (await getPreviewUrl(scanFile.value.id)) as any
-      filePreviewUrl.value = result.url || result
+      filePreviewUrl.value = getFilePreviewPath(scanFile.value.id)
     } else {
       filePreviewUrl.value = ''
     }
@@ -107,10 +135,9 @@ async function fetchScanFile() {
   }
 }
 
-async function handleFileDownload() {
+function handleFileDownload() {
   if (!scanFile.value) return
-  const result = (await getDownloadUrl(scanFile.value.id)) as any
-  window.open(result.url, '_blank')
+  window.open(getFileDownloadPath(scanFile.value.id), '_blank')
 }
 
 async function handleBeforeUpload() {
@@ -143,8 +170,8 @@ function formatFileSize(bytes: number) {
 // ── 完成登记 ──
 const completing = ref(false)
 async function handleComplete() {
-  if (!detail.value?.projectManagerId) {
-    ElMessage.warning('请先编辑登记信息并选择项目经理')
+  if (!detail.value?.registerNo) {
+    ElMessage.warning('请先编辑登记信息')
     return
   }
   try {
@@ -343,21 +370,28 @@ onMounted(fetchDetail)
     <!-- ── 登记信息编辑弹窗 ── -->
     <el-dialog v-model="editDialogVisible" title="编辑登记信息" width="520px" :close-on-click-modal="false">
       <el-form label-width="100px">
-        <el-form-item label="项目经理">
-          <el-select v-model="editForm.projectManagerId" filterable clearable placeholder="请选择项目经理" style="width: 100%">
-            <el-option v-for="pm in projectManagers" :key="pm.id" :label="pm.displayName" :value="pm.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="登记编号">
+        <el-form-item label="登记编号" required>
           <el-input v-model="editForm.registerNo" placeholder="公安登记编号" />
         </el-form-item>
-        <el-form-item label="备案机关">
-          <el-input v-model="editForm.filingAgency" placeholder="备案机关" />
+        <el-form-item label="备案区域" required>
+          <el-cascader
+            v-model="filingRegionValue"
+            :options="regionData"
+            :props="{ checkStrictly: true }"
+            filterable
+            clearable
+            placeholder="请选择省市区"
+            style="width: 100%"
+            @change="onFilingRegionChange"
+          />
         </el-form-item>
-        <el-form-item label="联系人">
+        <el-form-item label="备案机关" required>
+          <el-input v-model="editForm.filingAgency" placeholder="选择区域后自动生成，可手动修改" />
+        </el-form-item>
+        <el-form-item label="联系人" required>
           <el-input v-model="editForm.contactName" placeholder="联系人" />
         </el-form-item>
-        <el-form-item label="联系电话">
+        <el-form-item label="联系电话" required>
           <el-input v-model="editForm.contactPhone" placeholder="联系电话" />
         </el-form-item>
         <el-form-item label="备注">

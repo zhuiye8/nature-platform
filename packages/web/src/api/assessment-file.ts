@@ -34,8 +34,9 @@ export function uploadAssessmentFile(
   )
 }
 
-export function getAssessmentFileDownloadUrl(fileId: number) {
-  return request.get<{ url: string; fileName: string }>(`/assessment-file/download/${fileId}`)
+export function getAssessmentFileDownloadPath(fileId: number) {
+  const token = localStorage.getItem('token')
+  return `/api/assessment-file/download/${fileId}?token=${token}`
 }
 
 export function deleteAssessmentFile(fileId: number) {

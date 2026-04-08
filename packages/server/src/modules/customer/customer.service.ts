@@ -4,9 +4,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { eq, and, or, ilike, count, desc, SQL } from 'drizzle-orm';
+import { eq, and, or, ilike, count, desc, SQL, asc } from 'drizzle-orm';
 import { DRIZZLE, DrizzleDB } from '../../database/database.module';
-import { customer } from '../../database/schema/business';
+import { customer, customerContact } from '../../database/schema/business';
 import { fieldChangeLog } from '../../database/schema/common';
 import {
   CreateCustomerDto,
@@ -30,10 +30,7 @@ export class CustomerService {
       const pattern = `%${query.keyword}%`;
       whereClause = and(
         eq(customer.deleted, false),
-        or(
-          ilike(customer.fullName, pattern),
-          ilike(customer.contactName, pattern),
-        ),
+        ilike(customer.fullName, pattern),
       )!;
     } else {
       whereClause = eq(customer.deleted, false);
@@ -53,8 +50,32 @@ export class CustomerService {
         .offset((page - 1) * pageSize),
     ]);
 
+    // Batch-load contacts for all customers
+    const customerIds = rows.map((r) => r.id);
+    const contacts = customerIds.length > 0
+      ? await this.db
+          .select()
+          .from(customerContact)
+          .where(
+            or(...customerIds.map((id) => eq(customerContact.customerId, id)))!,
+          )
+          .orderBy(asc(customerContact.sortOrder))
+      : [];
+
+    const contactsByCustomerId = new Map<number, typeof contacts>();
+    for (const c of contacts) {
+      const arr = contactsByCustomerId.get(c.customerId) || [];
+      arr.push(c);
+      contactsByCustomerId.set(c.customerId, arr);
+    }
+
+    const list = rows.map((r) => ({
+      ...r,
+      contacts: contactsByCustomerId.get(r.id) || [],
+    }));
+
     return {
-      list: rows,
+      list,
       total: totalResult[0]?.total ?? 0,
       page,
       pageSize,
@@ -62,7 +83,7 @@ export class CustomerService {
   }
 
   // -----------------------------------------------------------------------
-  // Single record
+  // Single record with contacts
   // -----------------------------------------------------------------------
   async findById(id: number) {
     const rows = await this.db
@@ -72,10 +93,27 @@ export class CustomerService {
       .limit(1);
 
     if (!rows[0]) {
-      throw new NotFoundException(`Customer #${id} not found`);
+      throw new NotFoundException(`客户不存在`);
     }
 
-    return rows[0];
+    const contacts = await this.db
+      .select()
+      .from(customerContact)
+      .where(eq(customerContact.customerId, id))
+      .orderBy(asc(customerContact.sortOrder));
+
+    return { ...rows[0], contacts };
+  }
+
+  // -----------------------------------------------------------------------
+  // Get contacts for a specific customer (used by contract form)
+  // -----------------------------------------------------------------------
+  async findContacts(customerId: number) {
+    return this.db
+      .select()
+      .from(customerContact)
+      .where(eq(customerContact.customerId, customerId))
+      .orderBy(asc(customerContact.sortOrder));
   }
 
   // -----------------------------------------------------------------------
@@ -90,15 +128,29 @@ export class CustomerService {
         region: dto.region ?? null,
         addressDetail: dto.addressDetail ?? null,
         uscc: dto.uscc ?? null,
-        contactName: dto.contactName ?? null,
-        mobilePhone: dto.mobilePhone ?? null,
         isGovernment: dto.isGovernment ?? false,
         remark: dto.remark ?? null,
         createdBy: userId,
       })
       .returning();
 
-    return result[0];
+    const created = result[0];
+
+    // Insert contacts
+    if (dto.contacts && dto.contacts.length > 0) {
+      await this.db.insert(customerContact).values(
+        dto.contacts.map((c, i) => ({
+          customerId: created.id,
+          contactName: c.contactName,
+          contactPhone: c.contactPhone ?? null,
+          position: c.position ?? null,
+          remark: c.remark ?? null,
+          sortOrder: i,
+        })),
+      );
+    }
+
+    return this.findById(created.id);
   }
 
   // -----------------------------------------------------------------------
@@ -107,26 +159,48 @@ export class CustomerService {
   async update(id: number, dto: UpdateCustomerDto, userId: number) {
     const oldRecord = await this.findById(id);
 
+    const { contacts, ...customerFields } = dto;
+
     const result = await this.db
       .update(customer)
       .set({
-        ...dto,
+        ...customerFields,
         updatedBy: userId,
         updatedAt: new Date(),
       })
       .where(eq(customer.id, id))
       .returning();
 
+    // Replace contacts: delete all then re-insert
+    if (contacts !== undefined) {
+      await this.db
+        .delete(customerContact)
+        .where(eq(customerContact.customerId, id));
+
+      if (contacts.length > 0) {
+        await this.db.insert(customerContact).values(
+          contacts.map((c, i) => ({
+            customerId: id,
+            contactName: c.contactName,
+            contactPhone: c.contactPhone ?? null,
+            position: c.position ?? null,
+            remark: c.remark ?? null,
+            sortOrder: i,
+          })),
+        );
+      }
+    }
+
     // Audit trail — log changed fields
     await this.logFieldChanges(
       'customer',
       id,
       oldRecord as unknown as Record<string, unknown>,
-      dto as unknown as Record<string, unknown>,
+      customerFields as unknown as Record<string, unknown>,
       userId,
     );
 
-    return result[0];
+    return this.findById(id);
   }
 
   // -----------------------------------------------------------------------
@@ -136,7 +210,7 @@ export class CustomerService {
     const record = await this.findById(id);
 
     if (record.createdBy !== userId) {
-      throw new ForbiddenException('Only the creator can delete this customer');
+      throw new ForbiddenException('只有创建人可以删除此客户');
     }
 
     await this.db

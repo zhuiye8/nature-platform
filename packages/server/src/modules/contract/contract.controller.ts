@@ -18,6 +18,9 @@ import {
   QueryContractDto,
   UpdateFinancialDto,
   ArchiveContractDto,
+  CreateGroupDto,
+  UpdateGroupDto,
+  QueryGroupDto,
 } from './dto/contract.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
@@ -28,6 +31,48 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ContractController {
   constructor(private readonly contractService: ContractService) {}
+
+  // ── Contract Group endpoints (static routes before :id) ──
+
+  @Post('group')
+  @RequirePermission('contract:create')
+  async createGroup(
+    @Body() dto: CreateGroupDto,
+    @CurrentUser() user: { id: number },
+  ) {
+    return this.contractService.createGroup(dto, user.id);
+  }
+
+  @Get('group/page')
+  @RequirePermission('contract:list')
+  async findGroupPage(
+    @Query() query: QueryGroupDto,
+    @CurrentUser() user: { id: number },
+  ) {
+    return this.contractService.findGroupPage(query, user.id);
+  }
+
+  @Put('group/:id')
+  @RequirePermission('contract:update')
+  async updateGroup(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateGroupDto,
+    @CurrentUser() user: { id: number },
+  ) {
+    return this.contractService.updateGroup(id, dto, user.id);
+  }
+
+  @Delete('group/:id')
+  @RequirePermission('contract:delete')
+  async deleteGroup(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: { id: number },
+  ) {
+    await this.contractService.deleteGroup(id, user.id);
+    return { success: true };
+  }
+
+  // ── Contract endpoints ──
 
   @Get('payer-options')
   @RequirePermission('contract:list')

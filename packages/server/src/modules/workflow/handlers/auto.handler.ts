@@ -41,25 +41,53 @@ export class AutoHandler implements NodeHandler {
   }
 
   // ---------------------------------------------------------------------------
-  // Contract number generation
+  // Service content code mapping
+  // ---------------------------------------------------------------------------
+  private static readonly SERVICE_CONTENT_CODES: Record<string, string> = {
+    '等级保护测评': 'DBCP',
+    '等保（综合）': 'DBZH',
+    '安全咨询': 'AQZX',
+    '渗透测试': 'STCS',
+    '风险评估': 'FXPG',
+    '其他': 'QT',
+  };
+
+  private getServiceContentCode(serviceContent: string | null): string {
+    if (!serviceContent) return 'QT';
+    return AutoHandler.SERVICE_CONTENT_CODES[serviceContent] ?? 'QT';
+  }
+
+  // ---------------------------------------------------------------------------
+  // Contract number generation: YZDZR-{code}-{yy}-{seq:04d}
+  // Per service content, per year, separate counters
   // ---------------------------------------------------------------------------
   private async generateContractNo(db: DrizzleDB, contractId: number) {
-    const currentYear = new Date().getFullYear();
+    // Get service content from contract
+    const rows = await db
+      .select({ serviceContent: contract.serviceContent })
+      .from(contract)
+      .where(eq(contract.id, contractId))
+      .limit(1);
 
-    // UPSERT contract_serial to get next sequence number
+    const serviceContent = rows[0]?.serviceContent ?? null;
+    const code = this.getServiceContentCode(serviceContent);
+    const currentYear = new Date().getFullYear();
+    const yearShort = String(currentYear).slice(-2);
+
+    // UPSERT contract_serial with composite key (year + code)
     const seqResult = await db.execute(sql`
-      INSERT INTO contract_serial (serial_year, next_seq)
-      VALUES (${currentYear}, 1)
-      ON CONFLICT (serial_year)
+      INSERT INTO contract_serial (serial_year, service_content_code, next_seq)
+      VALUES (${currentYear}, ${code}, 1)
+      ON CONFLICT (serial_year, service_content_code)
       DO UPDATE SET next_seq = contract_serial.next_seq + 1,
                     updated_at = NOW()
       RETURNING next_seq
     `);
 
     const seq = (seqResult as any)[0]?.next_seq as number;
-    const contractNo = `YZN-${currentYear}-${String(seq).padStart(4, '0')}`;
+    const contractNo = `YZDZR-${code}-${yearShort}-${String(seq).padStart(4, '0')}`;
 
-    // Build contract name: customerName + systemDisplay + yearDisplay
+    // Build contract name
     const contractName = await this.buildContractName(db, contractId);
 
     await db

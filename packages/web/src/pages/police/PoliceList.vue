@@ -78,8 +78,8 @@ onMounted(() => fetchData())
       <el-table v-loading="loading" :data="tableData" stripe border style="width: 100%">
         <el-table-column label="项目名称" min-width="200" show-overflow-tooltip>
           <template #default="{ row }">
-            <el-link v-if="row.projectRegisterId" type="primary" :underline="false" @click="router.push(`/project/${row.projectRegisterId}`)">{{ row.applicationName }}</el-link>
-            <span v-else>{{ row.applicationName || '--' }}</span>
+            <el-link v-if="row.projectRegisterId" type="primary" underline="never" style="white-space: normal; word-break: break-all; line-height: 1.5" @click="router.push(`/project/${row.projectRegisterId}`)">{{ row.applicationName }}</el-link>
+            <span v-else style="white-space: normal; word-break: break-all">{{ row.applicationName || '--' }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="registerNo" label="登记编号" min-width="140" show-overflow-tooltip />

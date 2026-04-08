@@ -187,45 +187,56 @@ export class NotificationListener {
     // Get node display name from instance
     const nodeName = payload.nodeKey;
 
-    // Contract archived — notify the creator (sales) so they can proceed to project registration
+    // For CONTRACT, also notify salesPerson (treated same as creator)
+    const notifyIds = [creatorId];
+    if (payload.bizType === 'CONTRACT') {
+      const salesId = await this.getContractSalesPerson(payload.bizId);
+      if (salesId && salesId !== creatorId) {
+        notifyIds.push(salesId);
+      }
+    }
+
+    // Contract archived — notify creator + salesPerson
     if (payload.bizType === 'CONTRACT' && payload.nodeKey === 'CONTRACT_ARCHIVE' && payload.event === 'SUBMIT') {
-      this.logger.log(`Contract #${payload.bizId} archived, notifying creator`);
-      await this.notificationService.createNotification(
-        creatorId,
-        '合同已归档',
-        '您的合同已完成归档，可以创建项目登记',
-        'CONTRACT_ARCHIVED',
-        payload.bizType,
-        payload.bizId,
-      );
-      return; // Don't send the generic approve/reject notification
+      this.logger.log(`Contract #${payload.bizId} archived, notifying ${notifyIds.join(',')}`);
+      for (const uid of notifyIds) {
+        await this.notificationService.createNotification(
+          uid,
+          '合同已归档',
+          '您的合同已完成归档，可以创建项目登记',
+          'CONTRACT_ARCHIVED',
+          payload.bizType,
+          payload.bizId,
+        );
+      }
+      return;
     }
 
     if (payload.event === 'APPROVE') {
-      this.logger.log(
-        `Notifying creator #${creatorId} that ${payload.bizType} #${payload.bizId} was approved`,
-      );
-      await this.notificationService.createNotification(
-        creatorId,
-        '审核已通过',
-        `您提交的${this.getBizTypeLabel(payload.bizType)}审核已通过`,
-        'WORKFLOW_APPROVED',
-        payload.bizType,
-        payload.bizId,
-      );
+      for (const uid of notifyIds) {
+        this.logger.log(`Notifying #${uid} that ${payload.bizType} #${payload.bizId} was approved`);
+        await this.notificationService.createNotification(
+          uid,
+          '审核已通过',
+          `您提交的${this.getBizTypeLabel(payload.bizType)}审核已通过`,
+          'WORKFLOW_APPROVED',
+          payload.bizType,
+          payload.bizId,
+        );
+      }
     } else if (payload.event === 'REJECT') {
       const reason = payload.remark ?? '';
-      this.logger.log(
-        `Notifying creator #${creatorId} that ${payload.bizType} #${payload.bizId} was rejected`,
-      );
-      await this.notificationService.createNotification(
-        creatorId,
-        `被驳回：${reason}`,
-        `您提交的${this.getBizTypeLabel(payload.bizType)}被驳回：${reason}`,
-        'WORKFLOW_REJECTED',
-        payload.bizType,
-        payload.bizId,
-      );
+      for (const uid of notifyIds) {
+        this.logger.log(`Notifying #${uid} that ${payload.bizType} #${payload.bizId} was rejected`);
+        await this.notificationService.createNotification(
+          uid,
+          `被驳回：${reason}`,
+          `您提交的${this.getBizTypeLabel(payload.bizType)}被驳回：${reason}`,
+          'WORKFLOW_REJECTED',
+          payload.bizType,
+          payload.bizId,
+        );
+      }
     }
   }
 
@@ -244,13 +255,22 @@ export class NotificationListener {
     return rows[0]?.userId ?? null;
   }
 
+  private async getContractSalesPerson(bizId: number): Promise<number | null> {
+    const rows = await this.db
+      .select({ salesPersonId: contract.salesPersonId })
+      .from(contract)
+      .where(eq(contract.id, bizId))
+      .limit(1);
+    return rows[0]?.salesPersonId ?? null;
+  }
+
   private async getBusinessCreator(
     bizType: string,
     bizId: number,
   ): Promise<number | null> {
     if (bizType === 'CONTRACT') {
       const rows = await this.db
-        .select({ createdBy: contract.createdBy })
+        .select({ createdBy: contract.createdBy, salesPersonId: contract.salesPersonId })
         .from(contract)
         .where(eq(contract.id, bizId))
         .limit(1);

@@ -88,6 +88,7 @@ export class ProjectService {
           updatedBy: projectRegister.updatedBy,
           updatedAt: projectRegister.updatedAt,
           contractName: contract.contractName,
+          salesPersonId: contract.salesPersonId,
           currentNode: wfInstance.currentNode,
           wfStatus: wfInstance.status,
         })
@@ -106,17 +107,17 @@ export class ProjectService {
         .offset((page - 1) * pageSize),
     ]);
 
-    // Enrich with creator name (签单销售)
+    // Enrich with sales person name (签单销售 from contract)
     const enriched = await Promise.all(
       rows.map(async (row) => {
-        let creatorName: string | null = null;
-        if (row.createdBy) {
+        let salesPersonName: string | null = null;
+        if (row.salesPersonId) {
           const users = await this.db
             .select({ displayName: userAccount.displayName })
             .from(userAccount)
-            .where(eq(userAccount.id, row.createdBy))
+            .where(eq(userAccount.id, row.salesPersonId))
             .limit(1);
-          creatorName = users[0]?.displayName ?? null;
+          salesPersonName = users[0]?.displayName ?? null;
         }
         // For rejected projects, get the last rejection remark
         let rejectRemark: string | null = null;
@@ -136,7 +137,14 @@ export class ProjectService {
             .limit(1);
           rejectRemark = logs[0]?.remark ?? null;
         }
-        return { ...row, creatorName, rejectRemark };
+        // Count system items
+        const siCount = await this.db
+          .select({ total: count() })
+          .from(projectSystemItem)
+          .where(and(eq(projectSystemItem.projectRegisterId, row.id!), eq(projectSystemItem.deleted, false)));
+        const systemItemCount = siCount[0]?.total ?? 0;
+
+        return { ...row, salesPersonName, rejectRemark, systemItemCount };
       }),
     );
 
@@ -167,15 +175,19 @@ export class ProjectService {
         updatedAt: projectRegister.updatedAt,
         contractName: contract.contractName,
         contractNo: contract.contractNo,
+        serviceContent: contract.serviceContent,
         contractType: contract.contractType,
         customerName: customer.fullName,
+        customerUscc: customer.uscc,
         customerId: contract.customerId,
-        customerContactName: customer.contactName,
-        customerContactPhone: customer.mobilePhone,
+        customerContactName: contract.contactName,
+        customerContactPhone: contract.contactPhone,
         customerAddress: customer.addressDetail,
         serviceYears: contract.serviceYears,
         paymentAmount: contract.paymentAmount,
         paymentStatus: contract.paymentStatus,
+        salesPersonId: contract.salesPersonId,
+        partnerName: contract.partnerName,
         contactName: contract.contactName,
         contactPhone: contract.contactPhone,
       })
@@ -188,7 +200,7 @@ export class ProjectService {
       .limit(1);
 
     if (!rows[0]) {
-      throw new NotFoundException(`Project #${id} not found`);
+      throw new NotFoundException(`项目不存在`);
     }
 
     // Load system items
@@ -224,8 +236,20 @@ export class ProjectService {
         ),
       );
 
+    // Resolve sales person name
+    let salesPersonName: string | null = null;
+    if (rows[0].salesPersonId) {
+      const users = await this.db
+        .select({ displayName: userAccount.displayName })
+        .from(userAccount)
+        .where(eq(userAccount.id, rows[0].salesPersonId))
+        .limit(1);
+      salesPersonName = users[0]?.displayName ?? null;
+    }
+
     return {
       ...rows[0],
+      salesPersonName,
       systemItems: items,
       members,
     };
@@ -499,7 +523,7 @@ export class ProjectService {
 
     if (existing.createdBy !== userId) {
       throw new ForbiddenException(
-        'Only the creator can delete this project',
+        '只有创建人可以删除此项目',
       );
     }
 

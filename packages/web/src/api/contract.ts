@@ -8,26 +8,49 @@ export interface ContractSystemItem {
   sortOrder: number
 }
 
+export interface ContractGroupItem {
+  id: number
+  groupName: string
+  remark: string | null
+  contracts: ContractItem[]
+  createdBy: number
+  createdAt: string
+}
+
 export interface ContractItem {
   id: number
+  groupId: number
+  contractCategory: string | null
+  groupName?: string | null
+  groupContracts?: { id: number; contractNo: string | null; contractName: string | null; contractCategory: string | null; reviewStatus: string }[]
   customerId: number
   customerName?: string
+  customerUscc?: string | null
   contractNo: string | null
   contractName: string | null
+  contactName: string | null
+  contactPhone: string | null
   paymentCompany: string | null
   paymentAmount: number | null
   paymentMethod: string | null
+  paymentInfo: string | null
+  invoiceType: string | null
+  taxRate: string | null
   partnerName: string | null
   partnerId: number | null
   salesPersonId: number | null
   salesPersonName?: string | null
   performanceCity: string | null
   dealStatus: string | null
+  serviceContent: string | null
   contractType: string | null
   serviceYears: number[]
   serviceYearDetail: string | null
   signedAt: string | null
   paymentStatus: string
+  paymentRemark: string | null
+  financialHandlerId: number | null
+  financialHandlerName?: string | null
   archiveStatus: string
   reviewStatus: string
   remark: string | null
@@ -39,15 +62,23 @@ export interface ContractItem {
 }
 
 export interface ContractForm {
+  groupId: number | undefined
+  contractCategory?: string
   customerId: number | undefined
+  contactName?: string
+  contactPhone?: string
   paymentCompany?: string
   paymentAmount?: number
   paymentMethod?: string
+  paymentInfo?: string
+  invoiceType?: string
+  taxRate?: string
   partnerId?: number
   partnerName?: string
   salesPersonId?: number
   performanceCity?: string
   dealStatus?: string
+  serviceContent?: string
   contractType?: string
   serviceYears: number[]
   serviceYearDetail?: string
@@ -91,8 +122,9 @@ export interface UpdateFinancialData {
   paymentAmount?: number
   paymentMethod?: string
   paymentCompany?: string
-  payerType?: string
-  payerId?: number
+  paymentInfo?: string
+  invoiceType?: string
+  taxRate?: string
   performanceCity?: string
   paymentStatus?: string
   paymentRemark?: string
@@ -114,4 +146,22 @@ export interface PayerOption {
 
 export function getPayerOptions(keyword?: string) {
   return request.get<any, PayerOption[]>('/contract/payer-options', { params: { keyword } })
+}
+
+// ── Contract Group API ──
+
+export function createContractGroup(data: { groupName: string; remark?: string }) {
+  return request.post<ContractGroupItem>('/contract/group', data)
+}
+
+export function getContractGroupPage(params: PageQuery & { keyword?: string }) {
+  return request.get<PageResult<ContractGroupItem>>('/contract/group/page', { params })
+}
+
+export function updateContractGroup(id: number, data: { groupName?: string; remark?: string }) {
+  return request.put<ContractGroupItem>(`/contract/group/${id}`, data)
+}
+
+export function deleteContractGroup(id: number) {
+  return request.delete(`/contract/group/${id}`)
 }

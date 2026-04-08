@@ -6,6 +6,7 @@ import {
   ParseIntPipe,
   Post,
   Query,
+  Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -15,6 +16,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { FileService } from './file.service';
+import type { Response } from 'express';
 
 @Controller('file')
 @UseGuards(JwtAuthGuard)
@@ -35,10 +37,10 @@ export class FileController {
     @CurrentUser() user: { id: number },
   ) {
     if (!file) {
-      throw new BadRequestException('No file provided');
+      throw new BadRequestException('请选择要上传的文件');
     }
     if (!bizType) {
-      throw new BadRequestException('bizType is required');
+      throw new BadRequestException('缺少文件类型参数');
     }
     return this.fileService.upload(file, bizType, bizId, user.id, nodeKey);
   }
@@ -54,9 +56,20 @@ export class FileController {
   @Get('download/:id')
   async download(
     @Param('id', ParseIntPipe) id: number,
-    @Query('mode') mode?: string,
+    @Query('mode') mode: string | undefined,
+    @Res() res: Response,
   ) {
-    return this.fileService.getPresignedUrl(id, mode === 'preview' ? 'preview' : 'download');
+    const { stream, fileName, contentType } = await this.fileService.streamFile(id);
+    const encodedName = encodeURIComponent(fileName);
+    const disposition = mode === 'preview'
+      ? `inline; filename="${encodedName}"; filename*=UTF-8''${encodedName}`
+      : `attachment; filename="${encodedName}"; filename*=UTF-8''${encodedName}`;
+
+    res.set({
+      'Content-Type': contentType,
+      'Content-Disposition': disposition,
+    });
+    stream.pipe(res);
   }
 
   @Delete('by-biz')

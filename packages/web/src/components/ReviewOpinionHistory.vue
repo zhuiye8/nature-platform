@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
 import { getOpinionHistory, type ReviewOpinionItem } from '@/api/review-opinion'
-import { getDownloadUrl } from '@/api/file'
+import { getFileDownloadPath } from '@/api/file'
 import { getStatusLabel, getStatusTagType } from '@/utils/status-map'
 import { formatTime } from '@/utils/format'
 
@@ -47,11 +47,8 @@ function getActionTag(actionType: string) {
   }
 }
 
-async function handleDownloadAttachment(fileId: number) {
-  try {
-    const result = (await getDownloadUrl(fileId)) as any
-    window.open(result.url, '_blank')
-  } catch { /* ignore */ }
+function handleDownloadAttachment(fileId: number) {
+  window.open(getFileDownloadPath(fileId), '_blank')
 }
 
 onMounted(fetchData)

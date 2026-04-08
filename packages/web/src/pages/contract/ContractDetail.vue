@@ -2,13 +2,11 @@
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Edit, Download, Delete, Paperclip, Upload } from '@element-plus/icons-vue'
-import { getContractDetail, archiveContract, updateContractFinancial } from '@/api/contract'
-import type { ContractItem, ArchiveContractData, UpdateFinancialData } from '@/api/contract'
-import { getFileList, getDownloadUrl, getPreviewUrl, deleteFile, getUploadUrl, type FileItem } from '@/api/file'
+import { getContractDetail, archiveContract } from '@/api/contract'
+import type { ContractItem, ArchiveContractData } from '@/api/contract'
+import { getFileList, getFileDownloadPath, getFilePreviewPath, deleteFile, getUploadUrl, type FileItem } from '@/api/file'
 import { ElMessage } from 'element-plus'
 import { getInstanceByBiz } from '@/api/workflow'
-import { getCustomerPage, type CustomerItem } from '@/api/customer'
-import { getPartnerList, type PartnerItem } from '@/api/partner'
 import RejectReasonPanel from '@/components/RejectReasonPanel.vue'
 import { getStatusLabel, getStatusTagType } from '@/utils/status-map'
 import { formatTime } from '@/utils/format'
@@ -23,37 +21,28 @@ const loading = ref(false)
 const contract = ref<any>(null)
 const workflowData = ref<any>(null)
 
-// Contract file
-const contractFile = ref<FileItem | null>(null)
-const filePreviewUrl = ref('')
+// Contract files (multi)
+const contractFiles = ref<FileItem[]>([])
+const contractDescFile = ref<FileItem | null>(null)
 const contractId = computed(() => Number(route.params.id))
-const isCreator = computed(() => contract.value?.createdBy === authStore.user?.id)
-const imageTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+const isOwner = computed(() => {
+  const uid = Number(authStore.user?.id)
+  return Number(contract.value?.createdBy) === uid || Number(contract.value?.salesPersonId) === uid
+})
+
 
 async function fetchFiles() {
   try {
-    const files = (await getFileList('CONTRACT', contractId.value)) as any as FileItem[]
-    contractFile.value = files && files.length > 0 ? files[0] : null
-    if (contractFile.value && (imageTypes.includes(contractFile.value.contentType) || contractFile.value.contentType === 'application/pdf')) {
-      const result = (await getPreviewUrl(contractFile.value.id)) as any
-      filePreviewUrl.value = result.url || result
-    } else {
-      filePreviewUrl.value = ''
-    }
-  } catch { contractFile.value = null }
+    contractFiles.value = (await getFileList('CONTRACT', contractId.value)) as any as FileItem[]
+  } catch { contractFiles.value = [] }
+  try {
+    const descFiles = (await getFileList('CONTRACT_DESC', contractId.value)) as any as FileItem[]
+    contractDescFile.value = descFiles && descFiles.length > 0 ? descFiles[0] : null
+  } catch { contractDescFile.value = null }
 }
 
-async function handleFileDownload() {
-  if (!contractFile.value) return
-  try {
-    const result = (await getDownloadUrl(contractFile.value.id)) as any
-    const a = document.createElement('a')
-    a.href = result.url || result
-    a.download = contractFile.value.fileName
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-  } catch { ElMessage.error('下载失败') }
+function openDownload(fileId: number) {
+  window.open(getFileDownloadPath(fileId), '_blank')
 }
 
 function formatFileSize(bytes: number) {
@@ -64,7 +53,6 @@ function formatFileSize(bytes: number) {
 }
 
 // Whether financial data is restricted
-const isRestricted = computed(() => contract.value?._restricted === true)
 
 // Archive form
 const archiveForm = ref<any>({
@@ -99,28 +87,16 @@ async function handleScanDelete(fileId: number) {
 
 const previewableContentTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf']
 
-async function handleScanPreview(file: FileItem) {
+function handleScanPreview(file: FileItem) {
   if (!previewableContentTypes.includes(file.contentType)) {
     ElMessage.info('该文件格式不支持在线预览')
     return
   }
-  try {
-    const result = (await getPreviewUrl(file.id)) as any
-    const url = result.url || result
-    window.open(url, '_blank')
-  } catch { ElMessage.error('获取预览链接失败') }
+  window.open(getFilePreviewPath(file.id), '_blank')
 }
 
-async function handleScanDownload(file: FileItem) {
-  try {
-    const result = (await getDownloadUrl(file.id)) as any
-    const a = document.createElement('a')
-    a.href = result.url || result
-    a.download = file.fileName
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-  } catch { ElMessage.error('下载失败') }
+function handleScanDownload(file: FileItem) {
+  window.open(getFileDownloadPath(file.id), '_blank')
 }
 
 const canArchive = computed(() =>
@@ -191,57 +167,6 @@ const actionLogs = computed(() => {
   return logs
 })
 
-// ── 财务信息编辑弹窗 ──
-const canEditFinancial = computed(() => hasPermission('contract:update_financial'))
-const financialDialogVisible = ref(false)
-const financialSaving = ref(false)
-const financialForm = ref<UpdateFinancialData>({})
-const paymentMethodOptions = ['结项', '分期', '月结', '预付']
-const payerCustomerOptions = ref<CustomerItem[]>([])
-const payerPartnerOptions = ref<PartnerItem[]>([])
-
-async function loadPayerOptions() {
-  try {
-    const [custRes, partRes] = await Promise.all([
-      getCustomerPage({ page: 1, pageSize: 200 }),
-      getPartnerList(),
-    ])
-    payerCustomerOptions.value = ((custRes as any)?.list ?? custRes) as CustomerItem[]
-    payerPartnerOptions.value = (partRes as any) ?? []
-  } catch { /* ignore */ }
-}
-
-function openFinancialDialog() {
-  financialForm.value = {
-    paymentAmount: contract.value?.paymentAmount ?? undefined,
-    paymentMethod: contract.value?.paymentMethod ?? '',
-    paymentCompany: contract.value?.paymentCompany ?? '',
-    performanceCity: contract.value?.performanceCity ?? '',
-    paymentStatus: contract.value?.paymentStatus ?? '',
-    paymentRemark: contract.value?.paymentRemark ?? '',
-  }
-  loadPayerOptions()
-  financialDialogVisible.value = true
-}
-
-async function saveFinancial() {
-  financialSaving.value = true
-  try {
-    await updateContractFinancial(contractId.value, financialForm.value)
-    ElMessage.success('财务信息更新成功')
-    financialDialogVisible.value = false
-    await fetchDetail()
-  } finally {
-    financialSaving.value = false
-  }
-}
-
-const paymentStatusOptions = [
-  { label: '未回款', value: 'UNPAID' },
-  { label: '部分回款', value: 'PARTIAL' },
-  { label: '已回款', value: 'PAID' },
-]
-
 const archiveRef = ref<HTMLElement>()
 
 onMounted(async () => {
@@ -295,40 +220,77 @@ onMounted(async () => {
             <span v-if="contract.contractName" style="font-weight: 500">{{ contract.contractName }}</span>
             <span v-else style="color: var(--el-text-color-placeholder)">审核通过后自动生成</span>
           </el-descriptions-item>
+          <el-descriptions-item label="合同组">{{ contract.groupName || '--' }}</el-descriptions-item>
+          <el-descriptions-item label="合同分类">{{ contract.contractCategory || '--' }}</el-descriptions-item>
           <el-descriptions-item label="客户名称">{{ contract.customerName || '--' }}</el-descriptions-item>
+          <el-descriptions-item label="统一信用代码">{{ contract.customerUscc || '--' }}</el-descriptions-item>
           <el-descriptions-item label="联系人">{{ contract.contactName || '--' }}</el-descriptions-item>
           <el-descriptions-item label="联系电话">{{ contract.contactPhone || '--' }}</el-descriptions-item>
-          <el-descriptions-item label="合同类型">{{ getStatusLabel(contract.contractType) || contract.contractType || '--' }}</el-descriptions-item>
+          <el-descriptions-item label="服务内容">{{ contract.serviceContent || '--' }}</el-descriptions-item>
+          <el-descriptions-item label="合同类型">{{ contract.contractType || '--' }}</el-descriptions-item>
           <el-descriptions-item label="成交情况">{{ getStatusLabel(contract.dealStatus) || contract.dealStatus || '--' }}</el-descriptions-item>
           <el-descriptions-item label="签单销售">{{ contract.salesPersonName || '--' }}</el-descriptions-item>
           <el-descriptions-item label="合作方">{{ contract.partnerName || '--' }}</el-descriptions-item>
+          <el-descriptions-item label="业绩归属城市">{{ contract.performanceCity || '--' }}</el-descriptions-item>
         </el-descriptions>
       </el-card>
 
-      <!-- ── 2. 财务信息（受限用户不可见） ──────────────────── -->
-      <el-card v-if="!isRestricted" shadow="never" style="margin-bottom: 16px">
+      <!-- ── 1b. 合同组关联合同 ──────────────────────────────── -->
+      <el-card v-if="contract.groupContracts && contract.groupContracts.length > 1" shadow="never" style="margin-bottom: 16px">
+        <template #header>
+          <span style="font-weight: 600; font-size: 15px">合同组关联合同</span>
+        </template>
+        <el-table :data="contract.groupContracts" border size="small">
+          <el-table-column prop="contractNo" label="合同编号" min-width="180" show-overflow-tooltip />
+          <el-table-column prop="contractName" label="合同名称" min-width="200" show-overflow-tooltip />
+          <el-table-column prop="contractCategory" label="分类" width="100" align="center">
+            <template #default="{ row }">
+              <el-tag v-if="row.contractCategory" size="small">{{ row.contractCategory }}</el-tag>
+              <span v-else>--</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="审核状态" width="100" align="center">
+            <template #default="{ row }">
+              <el-tag :type="getStatusTagType(row.reviewStatus)" size="small">{{ getStatusLabel(row.reviewStatus) || row.reviewStatus }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="" width="60" align="center">
+            <template #default="{ row }">
+              <el-tag v-if="row.id === contract.id" type="primary" size="small" effect="dark">当前</el-tag>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-card>
+
+      <!-- ── 2. 财务信息 ──────────────────────────────────────── -->
+      <el-card shadow="never" style="margin-bottom: 16px">
         <template #header>
           <div style="display: flex; align-items: center; justify-content: space-between">
             <span style="font-weight: 600; font-size: 15px">财务信息</span>
-            <el-button v-if="canEditFinancial" type="primary" size="small" :icon="Edit" @click="openFinancialDialog">编辑</el-button>
           </div>
         </template>
         <el-descriptions :column="2" border>
-          <el-descriptions-item label="合同金额">
+          <el-descriptions-item label="付款金额">
             <span v-if="contract.paymentAmount" style="font-weight: 600; color: #e6a23c">{{ formatAmount(contract.paymentAmount) }}</span>
             <span v-else>--</span>
           </el-descriptions-item>
-          <el-descriptions-item label="付款方式">{{ contract.paymentMethod || '--' }}</el-descriptions-item>
           <el-descriptions-item label="付款单位">{{ contract.paymentCompany || '--' }}</el-descriptions-item>
-          <el-descriptions-item label="合作方">{{ contract.partnerName || '--' }}</el-descriptions-item>
-          <el-descriptions-item label="业绩归属城市">{{ contract.performanceCity || '--' }}</el-descriptions-item>
+          <el-descriptions-item label="发票类型">{{ contract.invoiceType || '--' }}</el-descriptions-item>
+          <el-descriptions-item label="税率">{{ contract.taxRate ? contract.taxRate + '%' : '--' }}</el-descriptions-item>
+          <el-descriptions-item label="付款方式">{{ contract.paymentMethod || '--' }}</el-descriptions-item>
           <el-descriptions-item label="回款状态">
             <el-tag v-if="contract.paymentStatus" :type="getStatusTagType(contract.paymentStatus)" size="small">
               {{ getStatusLabel(contract.paymentStatus) }}
             </el-tag>
             <span v-else>--</span>
           </el-descriptions-item>
-          <el-descriptions-item label="回款备注" :span="2">{{ contract.paymentRemark || '--' }}</el-descriptions-item>
+        </el-descriptions>
+        <el-descriptions :column="1" border style="margin-top: 12px">
+          <el-descriptions-item label="付款信息">
+            <div style="white-space: pre-wrap">{{ contract.paymentInfo || '--' }}</div>
+          </el-descriptions-item>
+          <el-descriptions-item label="回款备注">{{ contract.paymentRemark || '--' }}</el-descriptions-item>
+          <el-descriptions-item label="财务">{{ contract.financialHandlerName || '--' }}</el-descriptions-item>
         </el-descriptions>
       </el-card>
 
@@ -361,36 +323,44 @@ onMounted(async () => {
         </el-table>
       </el-card>
 
-      <!-- ── 5. 合同文件（非创建人销售不可见） ────────────── -->
-      <el-card v-if="!isRestricted" shadow="never" style="margin-bottom: 16px">
+      <!-- ── 5. 合同文件 ────────────────────────────────────── -->
+      <el-card shadow="never" style="margin-bottom: 16px">
         <template #header>
           <span style="font-weight: 600; font-size: 15px">合同文件</span>
         </template>
-        <template v-if="contractFile">
-          <div style="border: 1px solid var(--el-border-color-lighter); border-radius: 8px; padding: 16px; background: var(--el-fill-color-lighter)">
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px">
-              <div>
-                <div style="font-weight: 500; margin-bottom: 4px">
-                  <el-icon style="vertical-align: -2px; margin-right: 4px"><Paperclip /></el-icon>{{ contractFile.fileName }}
-                </div>
-                <div style="font-size: 12px; color: var(--el-text-color-secondary)">
-                  {{ formatFileSize(contractFile.fileSize) }} · {{ formatTime(contractFile.uploadedAt) }}
-                </div>
-              </div>
-              <el-button size="small" :icon="Download" @click="handleFileDownload">下载</el-button>
+        <el-table v-if="contractFiles.length > 0" :data="contractFiles" border size="small" style="width: 100%">
+          <el-table-column prop="fileName" label="文件名" min-width="200" show-overflow-tooltip />
+          <el-table-column label="大小" width="100">
+            <template #default="{ row }">{{ formatFileSize(row.fileSize) }}</template>
+          </el-table-column>
+          <el-table-column label="上传时间" width="170">
+            <template #default="{ row }">{{ formatTime(row.uploadedAt) }}</template>
+          </el-table-column>
+          <el-table-column label="操作" width="80" align="center">
+            <template #default="{ row }">
+              <el-button type="primary" link size="small" :icon="Download" @click="openDownload(row.id)">下载</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <div v-else style="color: var(--el-text-color-placeholder); text-align: center; padding: 16px 0">暂无合同文件</div>
+      </el-card>
+
+      <!-- ── 5b. 合同文件说明 ──────────────────────────────── -->
+      <el-card shadow="never" style="margin-bottom: 16px">
+        <template #header>
+          <span style="font-weight: 600; font-size: 15px">合同文件说明</span>
+        </template>
+        <template v-if="contractDescFile">
+          <div style="display: flex; align-items: center; justify-content: space-between; border: 1px solid var(--el-border-color-lighter); border-radius: 6px; padding: 10px 14px; background: var(--el-fill-color-lighter)">
+            <div>
+              <el-icon style="vertical-align: -2px; margin-right: 4px"><Paperclip /></el-icon>
+              <span>{{ contractDescFile.fileName }}</span>
+              <span style="font-size: 12px; color: var(--el-text-color-secondary); margin-left: 12px">{{ formatFileSize(contractDescFile.fileSize) }}</span>
             </div>
-            <div v-if="imageTypes.includes(contractFile.contentType) && filePreviewUrl" style="text-align: center; border-top: 1px solid var(--el-border-color-lighter); padding-top: 12px">
-              <el-image :src="filePreviewUrl" :preview-src-list="[filePreviewUrl]" fit="contain" style="max-width: 100%; max-height: 400px; border-radius: 6px" />
-            </div>
-            <div v-else-if="contractFile.contentType === 'application/pdf' && filePreviewUrl" style="border-top: 1px solid var(--el-border-color-lighter); padding-top: 12px">
-              <iframe :src="filePreviewUrl" style="width: 100%; height: 400px; border: none; border-radius: 6px" />
-            </div>
-            <div v-else style="text-align: center; padding: 20px 0; color: var(--el-text-color-placeholder); border-top: 1px solid var(--el-border-color-lighter); padding-top: 12px; font-size: 13px">
-              该格式不支持在线预览，请下载查看
-            </div>
+            <el-button size="small" :icon="Download" @click="openDownload(contractDescFile.id)">下载</el-button>
           </div>
         </template>
-        <el-empty v-else description="暂无合同文件" :image-size="60" />
+        <div v-else style="color: var(--el-text-color-placeholder); text-align: center; padding: 16px 0">暂无文件说明</div>
       </el-card>
 
       <!-- ── 6. 其他信息 ────────────────────────────────────── -->
@@ -538,43 +508,5 @@ onMounted(async () => {
       </el-collapse>
     </template>
 
-    <!-- ── 财务信息编辑弹窗 ── -->
-    <el-dialog v-model="financialDialogVisible" title="编辑财务信息" width="520px" :close-on-click-modal="false">
-      <el-form label-width="110px">
-        <el-form-item label="合同金额（元）">
-          <el-input-number v-model="financialForm.paymentAmount" :precision="2" :min="0" :controls="false" style="width: 100%" placeholder="请输入合同金额" />
-        </el-form-item>
-        <el-form-item label="付款方式">
-          <el-select v-model="financialForm.paymentMethod" filterable allow-create clearable placeholder="请选择付款方式" style="width: 100%">
-            <el-option v-for="m in paymentMethodOptions" :key="m" :label="m" :value="m" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="付款单位">
-          <el-select v-model="financialForm.paymentCompany" filterable allow-create clearable placeholder="请选择付款单位" style="width: 100%">
-            <el-option-group label="客户">
-              <el-option v-for="c in payerCustomerOptions" :key="'c-' + c.id" :label="c.fullName" :value="c.fullName" />
-            </el-option-group>
-            <el-option-group label="合作方">
-              <el-option v-for="p in payerPartnerOptions" :key="'p-' + p.id" :label="p.name" :value="p.name" />
-            </el-option-group>
-          </el-select>
-        </el-form-item>
-        <el-form-item label="业绩归属城市">
-          <el-input v-model="financialForm.performanceCity" placeholder="请输入业绩归属城市" />
-        </el-form-item>
-        <el-form-item label="回款状态">
-          <el-select v-model="financialForm.paymentStatus" placeholder="请选择回款状态" clearable style="width: 100%">
-            <el-option v-for="opt in paymentStatusOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="回款备注">
-          <el-input v-model="financialForm.paymentRemark" type="textarea" :rows="3" placeholder="如：首付30%已到账，尾款待验收后支付" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="financialDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="financialSaving" @click="saveFinancial">保存</el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>

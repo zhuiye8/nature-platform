@@ -7,7 +7,8 @@ import { ArrowLeft } from '@element-plus/icons-vue'
 import { createProject, updateProject, getProjectDetail, getAvailableYears, getSystemItems } from '@/api/project'
 import type { ProjectForm as ProjectFormData, ProjectSystemItem } from '@/api/project'
 import { useAuthStore } from '@/stores/auth'
-import { getContractPage, getContractDetail } from '@/api/contract'
+import { getContractPage } from '@/api/contract'
+import { regionData } from '@/utils/region-data'
 import type { ContractItem } from '@/api/contract'
 import RejectReasonPanel from '@/components/RejectReasonPanel.vue'
 import { getUploadUrl, deleteFile, uploadFileRaw } from '@/api/file'
@@ -196,16 +197,47 @@ async function fetchAvailableYears(contractId: number) {
 }
 
 // Common filing agencies (公安机关网安部门)
-const commonFilingAgencies = [
-  '公安部网络安全保卫局',
-  '北京市公安局网安总队', '上海市公安局网安总队', '广州市公安局网安支队', '深圳市公安局网安支队',
-  '南京市公安局网安支队', '杭州市公安局网安支队', '武汉市公安局网安支队', '成都市公安局网安支队',
-  '重庆市公安局网安总队', '天津市公安局网安总队', '西安市公安局网安支队', '苏州市公安局网安支队',
-  '合肥市公安局网安支队', '长沙市公安局网安支队', '郑州市公安局网安支队', '济南市公安局网安支队',
-  '福州市公安局网安支队', '昆明市公安局网安支队', '南昌市公安局网安支队', '贵阳市公安局网安支队',
-  '扬州市公安局网安支队', '淮安市公安局网安支队', '泰州市公安局网安支队', '镇江市公安局网安支队',
-  '常州市公安局网安支队', '无锡市公安局网安支队', '徐州市公安局网安支队', '南通市公安局网安支队',
-]
+// 备案机关：根据选择的行政区划自动生成名称
+const filingRegionMap = ref<Record<string, string[]>>({})
+
+function getFilingRegion(clientKey: string): string[] {
+  return filingRegionMap.value[clientKey] || []
+}
+
+function setFilingRegion(clientKey: string, val: string[]) {
+  filingRegionMap.value[clientKey] = val || []
+}
+
+const directMunicipalities = ['北京市', '上海市', '天津市', '重庆市']
+
+function generateFilingAgency(regionPath: string[]): string {
+  if (!regionPath || regionPath.length === 0) return ''
+  const province = regionPath[0]
+  const city = regionPath[1]
+  const district = regionPath[2]
+
+  if (directMunicipalities.includes(province)) {
+    // 直辖市
+    if (district) return `${province}公安局${district}分局`
+    return `${province}公安局网安总队`
+  }
+  if (district) {
+    // 区县级
+    if (district.endsWith('县') || district.endsWith('市')) {
+      return `${district}公安局`
+    }
+    return `${city}公安局${district}分局`
+  }
+  if (city) return `${city}公安局网安支队`
+  // 省级
+  if (province.includes('自治区')) return `${province}公安厅网安总队`
+  return `${province.replace('省', '')}省公安厅网安总队`
+}
+
+function onFilingRegionChange(clientKey: string, val: string[], item: any) {
+  setFilingRegion(clientKey, val)
+  item.filingAgency = generateFilingAgency(val)
+}
 
 // Security level options
 const securityLevelOptions = [
@@ -213,59 +245,10 @@ const securityLevelOptions = [
   { label: '二级', value: '二级' },
   { label: '三级', value: '三级' },
   { label: '四级', value: '四级' },
+  { label: '五级', value: '五级' },
 ]
 
-// Contract system level quotas (from contract's systemItemsSummary)
-const contractLevelQuotas = ref<Record<string, number>>({})
-
-function loadContractQuotas(contractId: number) {
-  const contract = contractOptions.value.find((c) => c.id === contractId)
-  const quotas: Record<string, number> = {}
-  if (contract?.systemItemsSummary) {
-    for (const item of contract.systemItemsSummary) {
-      const key = `${item.systemLevel}级`
-      quotas[key] = (quotas[key] || 0) + 1
-    }
-  }
-  contractLevelQuotas.value = quotas
-}
-
-// Current usage of each security level
-const currentLevelUsage = computed(() => {
-  const usage: Record<string, number> = {}
-  for (const item of formData.value.systemItems) {
-    if (item.securityLevel) {
-      usage[item.securityLevel] = (usage[item.securityLevel] || 0) + 1
-    }
-  }
-  return usage
-})
-
-// Level tags for display (quota vs usage)
-const levelTags = computed(() => {
-  const tags: { label: string; current: number; max: number; full: boolean }[] = []
-  for (const [level, max] of Object.entries(contractLevelQuotas.value)) {
-    const current = currentLevelUsage.value[level] || 0
-    tags.push({ label: level, current, max, full: current >= max })
-  }
-  return tags.sort((a, b) => a.label.localeCompare(b.label))
-})
-
-// Check if a security level option should be disabled (quota reached)
-function isLevelDisabled(levelValue: string, currentItemLevel: string | undefined): boolean {
-  const max = contractLevelQuotas.value[levelValue] ?? Infinity
-  const used = currentLevelUsage.value[levelValue] || 0
-  // If this item already has this level, don't count it against quota
-  if (currentItemLevel === levelValue) return used - 1 >= max
-  return used >= max
-}
-
-// Check if adding a new system item is allowed
-const canAddSystem = computed(() => {
-  if (Object.keys(contractLevelQuotas.value).length === 0) return true
-  const totalMax = Object.values(contractLevelQuotas.value).reduce((a, b) => a + b, 0)
-  return formData.value.systemItems.length < totalMax
-})
+// No system count limit — users can freely add systems
 
 // Watch contract selection to load years and system items
 watch(
@@ -280,7 +263,6 @@ watch(
       selectedContractName.value = contract.contractName || ''
     }
 
-    loadContractQuotas(newVal)
     await fetchAvailableYears(newVal)
   },
 )
@@ -336,19 +318,6 @@ async function fetchDetail() {
         { id: data.contractId, contractName: data.contractName } as unknown as ContractItem,
       ]
     }
-    // Load contract quotas (need full contract data)
-    try {
-      const fullContract = (await getContractDetail(data.contractId)) as any
-      if (fullContract?.systemItems) {
-        const quotas: Record<string, number> = {}
-        for (const si of fullContract.systemItems) {
-          const key = `${si.systemLevel}级`
-          quotas[key] = (quotas[key] || 0) + 1
-        }
-        contractLevelQuotas.value = quotas
-      }
-    } catch { /* ignore */ }
-
     // Load year options
     await fetchAvailableYears(data.contractId)
     // Ensure current year is in options
@@ -374,7 +343,7 @@ function addSystemItem() {
     assessedUnitContact: '',
     assessedUnitMobile: '',
     assessedUnitAddress: '',
-    hasFilingCertificate: false,
+    hasFilingCertificate: true,
     filingCertificateNo: '',
     filingCertificateIssuedAt: '',
     hasFilingForm: false,
@@ -398,13 +367,20 @@ async function handleSubmit() {
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) return
 
-  // For edit mode, validate system items
-  if (isEdit.value && formData.value.systemItems.length > 0) {
+  // Edit mode: validate system items
+  if (isEdit.value) {
+    if (formData.value.systemItems.length === 0) {
+      ElMessage.warning('请至少添加一条系统明细')
+      return
+    }
+  }
+
+  if (formData.value.systemItems.length > 0) {
     for (let i = 0; i < formData.value.systemItems.length; i++) {
       const si = formData.value.systemItems[i]
       const missing: string[] = []
       if (!si.systemName) missing.push('系统名称')
-      if (!si.filingAgency) missing.push('备案单位')
+      if (!si.filingAgency) missing.push('备案机关')
       if (!si.securityLevel) missing.push('安全等级')
       if (!si.requiredEntryDate) missing.push('要求录入日期')
       if (!si.requiredReportDeliveryDate) missing.push('要求出报告日期')
@@ -412,6 +388,9 @@ async function handleSubmit() {
       if (!si.assessedUnitContact) missing.push('联系人')
       if (!si.assessedUnitMobile) missing.push('联系电话')
       if (!si.assessedUnitAddress) missing.push('地址')
+      if (!si.filingCertificateNo) missing.push('备案证明编号')
+      if (!si.filingCertificateIssuedAt) missing.push('备案证明出具时间')
+      if (!(si as any).filingCertificateFile && !(si as any).pendingCertName) missing.push('备案证明文件')
       if (missing.length > 0) {
         ElMessage.warning(`系统 ${i + 1}「${si.systemName || '未命名'}」缺少：${missing.join('、')}`)
         return
@@ -570,19 +549,8 @@ onMounted(async () => {
         <!-- 系统明细（仅编辑模式） -->
         <div v-if="isEdit" id="system-items-section" class="n-form-section">
         <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px">
-          <div style="display: flex; align-items: center; gap: 8px">
-            <h4 class="n-section-title" style="margin: 0">系统明细</h4>
-            <el-tag
-              v-for="tag in levelTags"
-              :key="tag.label"
-              :type="tag.full ? 'success' : 'warning'"
-              size="small"
-              effect="plain"
-            >
-              {{ tag.label }} {{ tag.current }}/{{ tag.max }}
-            </el-tag>
-          </div>
-          <el-button type="primary" size="small" :disabled="!canAddSystem" @click="addSystemItem">+ 新增系统</el-button>
+          <h4 class="n-section-title" style="margin: 0">系统明细</h4>
+          <el-button type="primary" size="small" @click="addSystemItem">+ 新增系统</el-button>
         </div>
         <el-empty
           v-if="formData.systemItems.length === 0"
@@ -609,10 +577,22 @@ onMounted(async () => {
                 </el-form-item>
               </el-col>
               <el-col :span="12">
+                <el-form-item label="备案区域" required>
+                  <el-cascader
+                    :model-value="getFilingRegion(item.clientKey)"
+                    :options="regionData"
+                    :props="{ checkStrictly: true }"
+                    filterable
+                    clearable
+                    placeholder="请选择省市区"
+                    style="width: 100%"
+                    @change="(val: string[]) => onFilingRegionChange(item.clientKey, val, item)"
+                  />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
                 <el-form-item label="备案机关" required>
-                  <el-select v-model="item.filingAgency" filterable allow-create clearable placeholder="请选择或输入备案机关" style="width: 100%">
-                    <el-option v-for="a in commonFilingAgencies" :key="a" :label="a" :value="a" />
-                  </el-select>
+                  <el-input v-model="item.filingAgency" placeholder="选择区域后自动生成，可手动修改" />
                 </el-form-item>
               </el-col>
               <el-col :span="12">
@@ -623,7 +603,6 @@ onMounted(async () => {
                       :key="opt.value"
                       :label="opt.label"
                       :value="opt.value"
-                      :disabled="isLevelDisabled(opt.value, item.securityLevel)"
                     />
                   </el-select>
                 </el-form-item>
@@ -686,17 +665,9 @@ onMounted(async () => {
 
             <el-divider content-position="left">备案信息</el-divider>
             <el-row :gutter="16">
-              <!-- 备案证明：是否 + 选择文件（不自动上传） -->
+              <!-- 备案证明（必有） -->
               <el-col :span="12">
                 <el-form-item label="备案证明">
-                  <el-radio-group v-model="item.hasFilingCertificate">
-                    <el-radio :value="false">否</el-radio>
-                    <el-radio :value="true">是</el-radio>
-                  </el-radio-group>
-                </el-form-item>
-              </el-col>
-              <el-col v-if="item.hasFilingCertificate" :span="12">
-                <el-form-item label="上传证明">
                   <div style="display: flex; align-items: center; gap: 8px">
                     <el-tag v-if="(item as any).filingCertificateFile && !(item as any).pendingCertName" type="success" size="small" closable @close="markFileForDeletion((item as any).clientKey, 'FILING_CERTIFICATE', item)">
                       {{ (item as any).filingCertificateFile.fileName }}
@@ -715,18 +686,19 @@ onMounted(async () => {
                   </div>
                 </el-form-item>
               </el-col>
-              <el-col v-if="item.hasFilingCertificate" :span="12">
+              <el-col :span="12" />
+              <el-col :span="12">
                 <el-form-item label="证明编号">
                   <el-input v-model="item.filingCertificateNo" placeholder="请输入备案证明编号" />
                 </el-form-item>
               </el-col>
-              <el-col v-if="item.hasFilingCertificate" :span="12">
+              <el-col :span="12">
                 <el-form-item label="出具时间">
                   <el-date-picker v-model="item.filingCertificateIssuedAt" type="date" placeholder="请选择日期" value-format="YYYY-MM-DD" style="width: 100%" />
                 </el-form-item>
               </el-col>
 
-              <!-- 备案表：是否 + 选择文件 -->
+              <!-- 备案表 -->
               <el-col :span="12">
                 <el-form-item label="备案表">
                   <el-radio-group v-model="item.hasFilingForm">
@@ -735,8 +707,8 @@ onMounted(async () => {
                   </el-radio-group>
                 </el-form-item>
               </el-col>
-              <el-col v-if="item.hasFilingForm" :span="12">
-                <el-form-item label="上传备案表">
+              <el-col :span="12">
+                <el-form-item v-if="item.hasFilingForm" label="上传备案表">
                   <div style="display: flex; align-items: center; gap: 8px">
                     <el-tag v-if="(item as any).filingFormFile && !(item as any).pendingFormName" type="success" size="small" closable @close="markFileForDeletion((item as any).clientKey, 'FILING_FORM', item)">
                       {{ (item as any).filingFormFile.fileName }}
@@ -756,7 +728,7 @@ onMounted(async () => {
                 </el-form-item>
               </el-col>
 
-              <!-- 定级报告：是否 + 选择文件 -->
+              <!-- 定级报告 -->
               <el-col :span="12">
                 <el-form-item label="定级报告">
                   <el-radio-group v-model="item.hasClassificationReport">
@@ -765,8 +737,8 @@ onMounted(async () => {
                   </el-radio-group>
                 </el-form-item>
               </el-col>
-              <el-col v-if="item.hasClassificationReport" :span="12">
-                <el-form-item label="上传报告">
+              <el-col :span="12">
+                <el-form-item v-if="item.hasClassificationReport" label="上传定级报告">
                   <div style="display: flex; align-items: center; gap: 8px">
                     <el-tag v-if="(item as any).classificationReportFile && !(item as any).pendingReportName" type="success" size="small" closable @close="markFileForDeletion((item as any).clientKey, 'CLASSIFICATION_REPORT', item)">
                       {{ (item as any).classificationReportFile.fileName }}

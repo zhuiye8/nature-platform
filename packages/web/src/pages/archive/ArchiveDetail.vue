@@ -5,7 +5,7 @@ import { ElMessage } from 'element-plus'
 import { ArrowLeft, Upload, Download, Delete } from '@element-plus/icons-vue'
 import { getArchiveByProject, submitArchive } from '@/api/archive'
 import { getSystemItems } from '@/api/project'
-import { getFileList, getDownloadUrl, deleteFile, getUploadUrl, type FileItem } from '@/api/file'
+import { getFileList, getFileDownloadPath, deleteFile, getUploadUrl, type FileItem } from '@/api/file'
 import { getStatusLabel, getStatusTagType } from '@/utils/status-map'
 import { formatTime } from '@/utils/format'
 import { useAuthStore } from '@/stores/auth'
@@ -119,9 +119,8 @@ async function fetchItemFilesSingle(code: string) {
   } catch { itemFiles.value[code] = [] }
 }
 
-async function handleItemFileDownload(fileId: number) {
-  const result = (await getDownloadUrl(fileId)) as any
-  window.open(result.url, '_blank')
+function handleItemFileDownload(fileId: number) {
+  window.open(getFileDownloadPath(fileId), '_blank')
 }
 
 async function handleItemFileDelete(code: string, fileId: number) {

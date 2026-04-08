@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import logoWhiteUrl from '/images/logo-white.png'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useNotification } from '@/composables/useNotification'
@@ -21,6 +22,7 @@ import {
   UserFilled,
   Monitor,
   FolderChecked,
+  Coin,
 } from '@element-plus/icons-vue'
 
 import { usePermission } from '@/composables/usePermission'
@@ -124,7 +126,7 @@ onUnmounted(() => {
     >
       <!-- Logo -->
       <div class="n-sidebar__logo">
-        <img src="/images/logo-white.png" alt="Nature" class="n-sidebar__logo-img" :style="{ width: isCollapsed ? '28px' : '32px', height: 'auto' }" />
+        <img :src="logoWhiteUrl" alt="Nature" class="n-sidebar__logo-img" :style="{ width: isCollapsed ? '28px' : '32px', height: 'auto' }" />
         <transition name="n-fade">
           <span v-if="!isCollapsed" class="n-sidebar__logo-text">Nature</span>
         </transition>
@@ -199,6 +201,18 @@ onUnmounted(() => {
             <el-icon><FolderChecked /></el-icon>
             <template #title>材料归档</template>
           </el-menu-item>
+
+          <!-- Finance -->
+          <el-sub-menu v-if="hasPermission('contract:update_financial')" index="finance">
+            <template #title>
+              <el-icon><Coin /></el-icon>
+              <span>财务管理</span>
+            </template>
+            <el-menu-item index="/finance/contract" @click="navigateTo('/finance/contract')">
+              <el-icon><Document /></el-icon>
+              <template #title>合同财务</template>
+            </el-menu-item>
+          </el-sub-menu>
 
           <!-- System -->
           <el-sub-menu v-if="hasAnyPermission(['user:manage','role:manage','recycle:manage'])" index="system">
@@ -332,9 +346,11 @@ onUnmounted(() => {
           :rotate="-22"
           :z-index="9"
         >
-          <transition name="n-slide-up" mode="out-in">
-            <router-view />
-          </transition>
+          <router-view v-slot="{ Component }">
+            <transition name="n-slide-up" mode="out-in">
+              <component :is="Component" />
+            </transition>
+          </router-view>
         </el-watermark>
       </el-main>
     </el-container>

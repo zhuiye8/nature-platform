@@ -22,8 +22,6 @@ export const customer = pgTable('customer', {
   region: varchar('region', { length: 128 }),
   addressDetail: varchar('address_detail', { length: 255 }),
   uscc: varchar('uscc', { length: 64 }),
-  contactName: varchar('contact_name', { length: 64 }),
-  mobilePhone: varchar('mobile_phone', { length: 32 }),
   isGovernment: boolean('is_government').notNull().default(false),
   remark: text('remark'),
 
@@ -37,6 +35,24 @@ export const customer = pgTable('customer', {
 
 export type CustomerRow = typeof customer.$inferSelect;
 export type NewCustomer = typeof customer.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// customer_contact (one-to-many: customer has many contacts)
+// ---------------------------------------------------------------------------
+export const customerContact = pgTable('customer_contact', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  customerId: bigint('customer_id', { mode: 'number' }).notNull(),
+  contactName: varchar('contact_name', { length: 128 }).notNull(),
+  contactPhone: varchar('contact_phone', { length: 32 }),
+  position: varchar('position', { length: 64 }),
+  remark: varchar('remark', { length: 500 }),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type CustomerContactRow = typeof customerContact.$inferSelect;
+export type NewCustomerContact = typeof customerContact.$inferInsert;
 
 // ---------------------------------------------------------------------------
 // partner
@@ -56,10 +72,27 @@ export type PartnerRow = typeof partner.$inferSelect;
 export type NewPartner = typeof partner.$inferInsert;
 
 // ---------------------------------------------------------------------------
+// contract_group
+// ---------------------------------------------------------------------------
+export const contractGroup = pgTable('contract_group', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  groupName: varchar('group_name', { length: 255 }).notNull(),
+  remark: text('remark'),
+  createdBy: bigint('created_by', { mode: 'number' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedBy: bigint('updated_by', { mode: 'number' }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  deleted: boolean('deleted').notNull().default(false),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+});
+
+// ---------------------------------------------------------------------------
 // contract
 // ---------------------------------------------------------------------------
 export const contract = pgTable('contract', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  groupId: bigint('group_id', { mode: 'number' }).notNull(),
+  contractCategory: varchar('contract_category', { length: 32 }),
   customerId: bigint('customer_id', { mode: 'number' }).notNull(),
 
   contractNo: varchar('contract_no', { length: 64 }),
@@ -67,21 +100,24 @@ export const contract = pgTable('contract', {
   contactName: varchar('contact_name', { length: 64 }),
   contactPhone: varchar('contact_phone', { length: 32 }),
   paymentCompany: varchar('payment_company', { length: 255 }),
-  payerType: varchar('payer_type', { length: 16 }),
-  payerId: bigint('payer_id', { mode: 'number' }),
   paymentAmount: decimal('payment_amount', { precision: 18, scale: 2 }),
   paymentMethod: varchar('payment_method', { length: 128 }),
+  paymentInfo: text('payment_info'),
+  invoiceType: varchar('invoice_type', { length: 16 }),
+  taxRate: varchar('tax_rate', { length: 8 }),
   partnerName: varchar('partner_name', { length: 255 }),
   partnerId: bigint('partner_id', { mode: 'number' }),
   salesPersonId: bigint('sales_person_id', { mode: 'number' }),
   performanceCity: varchar('performance_city', { length: 64 }),
   dealStatus: varchar('deal_status', { length: 64 }),
-  contractType: varchar('contract_type', { length: 64 }),
+  serviceContent: varchar('service_content', { length: 64 }),
+  contractType: varchar('contract_type', { length: 32 }),
   serviceYears: jsonb('service_years').notNull().default([]),
   serviceYearDetail: text('service_year_detail'),
 
   paymentStatus: varchar('payment_status', { length: 32 }).notNull().default('UNPAID'),
   paymentRemark: text('payment_remark'),
+  financialHandlerId: bigint('financial_handler_id', { mode: 'number' }),
   signedAt: timestamp('signed_at', { withTimezone: true }),
 
   archiveStatus: varchar('archive_status', { length: 32 }).notNull().default('PENDING_ARCHIVE'),
@@ -127,7 +163,8 @@ export type NewContractSystemItem = typeof contractSystemItem.$inferInsert;
 // contract_serial
 // ---------------------------------------------------------------------------
 export const contractSerial = pgTable('contract_serial', {
-  serialYear: integer('serial_year').primaryKey(),
+  serialYear: integer('serial_year').notNull(),
+  serviceContentCode: varchar('service_content_code', { length: 8 }).notNull(),
   nextSeq: integer('next_seq').notNull().default(1),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });

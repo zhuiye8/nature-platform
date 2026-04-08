@@ -13,7 +13,6 @@ import {
   CreateBucketCommand,
   HeadBucketCommand,
 } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { ConfigService } from '@nestjs/config';
 import { eq, and, desc, isNull } from 'drizzle-orm';
 import { DRIZZLE, DrizzleDB } from '../../database/database.module';
@@ -166,7 +165,7 @@ export class AssessmentFileService implements OnModuleInit {
   // -----------------------------------------------------------------------
   // Download (presigned URL)
   // -----------------------------------------------------------------------
-  async getDownloadUrl(fileId: number) {
+  async streamFile(fileId: number) {
     const rows = await this.db
       .select()
       .from(assessmentFile)
@@ -179,10 +178,13 @@ export class AssessmentFileService implements OnModuleInit {
     const command = new GetObjectCommand({
       Bucket: BUCKET_NAME,
       Key: file.objectKey,
-      ResponseContentDisposition: `attachment; filename="${encodeURIComponent(file.fileName)}"`,
     });
-    const url = await getSignedUrl(this.s3, command, { expiresIn: 1800 });
-    return { url, fileName: file.fileName };
+    const response = await this.s3.send(command);
+    return {
+      stream: response.Body as import('stream').Readable,
+      fileName: file.fileName,
+      contentType: file.contentType,
+    };
   }
 
   // -----------------------------------------------------------------------
