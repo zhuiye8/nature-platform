@@ -4,6 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { ElMessage } from 'element-plus'
 import { User, Lock, Right } from '@element-plus/icons-vue'
+import { getDingtalkAuthUrl } from '@/api/auth'
 
 const router = useRouter()
 const route = useRoute()
@@ -30,6 +31,18 @@ async function handleLogin() {
     router.push(redirect)
   } catch { /* handled by interceptor */ }
   finally { loading.value = false }
+}
+
+const dingtalkLoading = ref(false)
+async function handleDingtalkLogin() {
+  dingtalkLoading.value = true
+  try {
+    const result = (await getDingtalkAuthUrl()) as any
+    window.location.href = result.url
+  } catch {
+    ElMessage.error('获取钉钉授权链接失败')
+    dingtalkLoading.value = false
+  }
 }
 
 function initParticles() {
@@ -138,7 +151,7 @@ onUnmounted(() => {
         <form class="lp-form" @submit.prevent="handleLogin">
           <div class="lp-field">
             <label>用户名</label>
-            <el-input v-model="form.username" placeholder="请输入用户名" size="large">
+            <el-input v-model="form.username" placeholder="用户名 / 手机号" size="large">
               <template #prefix><el-icon><User /></el-icon></template>
             </el-input>
           </div>
@@ -164,6 +177,13 @@ onUnmounted(() => {
             </span>
           </button>
         </form>
+
+        <div class="lp-divider">
+          <span>其他登录方式</span>
+        </div>
+        <button type="button" class="lp-btn-dingtalk" :disabled="dingtalkLoading" @click="handleDingtalkLogin">
+          {{ dingtalkLoading ? '跳转中...' : '钉钉登录' }}
+        </button>
 
         <div class="lp-badge">
           <span>安全认证 · 全量操作留痕</span>
@@ -322,6 +342,29 @@ onUnmounted(() => {
   border-radius: 50%; animation: spin 0.8s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+.lp-divider {
+  display: flex; align-items: center; margin: 20px 0 14px; gap: 12px;
+}
+.lp-divider::before, .lp-divider::after {
+  content: ''; flex: 1; height: 1px; background: rgba(100,160,220,0.2);
+}
+.lp-divider span {
+  font-size: 12px; color: rgba(180,210,240,0.5); white-space: nowrap;
+}
+
+.lp-btn-dingtalk {
+  width: 100%; height: 44px; border-radius: 8px; cursor: pointer;
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(100,160,220,0.25);
+  color: rgba(200,220,240,0.9); font-size: 14px; font-weight: 500;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  transition: all 0.25s;
+}
+.lp-btn-dingtalk:hover:not(:disabled) {
+  background: rgba(255,255,255,0.1); border-color: rgba(100,160,220,0.5);
+  box-shadow: 0 4px 16px rgba(64,158,255,0.15);
+}
+.lp-btn-dingtalk:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .lp-badge {
   margin-top: 18px; padding-top: 14px;

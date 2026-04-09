@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { getMyTasks } from '@/api/workflow'
 import type { TaskItem } from '@/api/workflow'
 import { getStatusLabel, getStatusTagType } from '@/utils/status-map'
 import { formatTime } from '@/utils/format'
+import request from '@/api/request'
 
 const authStore = useAuthStore()
 const router = useRouter()
@@ -94,13 +96,53 @@ function handleBusinessAction(task: TaskItem) {
 }
 
 
+// 无角色用户
+const hasNoRole = computed(() => !authStore.user?.roles?.length)
+const roleRequested = ref(false)
+const roleRequesting = ref(false)
+
+async function handleRequestRole() {
+  roleRequesting.value = true
+  try {
+    await request.post('/auth/request-role')
+    roleRequested.value = true
+    ElMessage.success('已通知管理员，请耐心等待')
+  } catch {
+    ElMessage.error('提醒失败，请稍后重试')
+  } finally {
+    roleRequesting.value = false
+  }
+}
+
 onMounted(() => {
-  fetchTasks()
+  if (!hasNoRole.value) {
+    fetchTasks()
+  }
 })
 </script>
 
 <template>
   <div>
+    <!-- 无角色等待页 -->
+    <template v-if="hasNoRole">
+      <el-card shadow="never">
+        <div style="text-align: center; padding: 60px 0">
+          <el-icon style="font-size: 64px; color: var(--el-color-primary); margin-bottom: 16px"><UserFilled /></el-icon>
+          <h2 style="color: #303133; margin: 0 0 12px">账号已创建成功</h2>
+          <p style="color: #909399; margin: 0 0 24px; font-size: 14px">请等待管理员为您分配角色后使用系统</p>
+          <el-button
+            type="primary"
+            :loading="roleRequesting"
+            :disabled="roleRequested"
+            @click="handleRequestRole"
+          >
+            {{ roleRequested ? '已提醒，请耐心等待' : '提醒管理员' }}
+          </el-button>
+        </div>
+      </el-card>
+    </template>
+
+    <template v-else>
     <!-- Welcome card -->
     <el-card shadow="never" style="margin-bottom: 16px">
       <div style="display: flex; align-items: center; justify-content: space-between">
@@ -200,5 +242,6 @@ onMounted(() => {
         </el-tab-pane>
       </el-tabs>
     </el-card>
+    </template>
   </div>
 </template>

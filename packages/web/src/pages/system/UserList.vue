@@ -110,6 +110,11 @@ onMounted(() => fetchData())
             <el-tag :type="getStatusTagType(row.sourceType)" size="small">{{ getStatusLabel(row.sourceType) }}</el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="钉钉绑定" min-width="90" align="center">
+          <template #default="{ row }">
+            <el-tag :type="row.dingUnionId ? 'success' : 'info'" size="small">{{ row.dingUnionId ? '已绑定' : '未绑定' }}</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="createdAt" label="创建时间" min-width="170" />
         <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">

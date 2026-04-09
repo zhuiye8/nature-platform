@@ -1,17 +1,23 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import { User, Lock } from '@element-plus/icons-vue'
+import { User, Lock, Link, Warning } from '@element-plus/icons-vue'
 import request from '@/api/request'
+import { getDingtalkAuthUrl, dingtalkUnbind } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
+import { useRouter } from 'vue-router'
 import { getStatusLabel } from '@/utils/status-map'
 
 const authStore = useAuthStore()
+const router = useRouter()
 const loading = ref(false)
 const profile = ref<any>(null)
 
+const mustChangePassword = computed(() => authStore.user?.mustChangePassword === true)
+const isDingBound = computed(() => !!profile.value?.dingUnionId)
+
 // 个人信息编辑
-const editForm = ref({ displayName: '', mobile: '', email: '' })
+const editForm = ref({ username: '', displayName: '', mobile: '', email: '' })
 const editSaving = ref(false)
 
 // 修改密码
@@ -24,6 +30,7 @@ async function fetchProfile() {
     const data = await request.get('/user/profile') as any
     profile.value = data
     editForm.value = {
+      username: data.username || '',
       displayName: data.displayName || '',
       mobile: data.mobile || '',
       email: data.email || '',
@@ -38,12 +45,15 @@ async function handleSaveProfile() {
     ElMessage.warning('姓名不能为空')
     return
   }
+  if (mustChangePassword.value && !editForm.value.mobile?.trim()) {
+    ElMessage.warning('手机号为必填项')
+    return
+  }
   editSaving.value = true
   try {
     await request.put('/user/profile', editForm.value)
     ElMessage.success('个人信息已更新')
     fetchProfile()
-    // 同步更新 authStore 的 displayName
     if (authStore.user) {
       authStore.user.displayName = editForm.value.displayName
     }
@@ -75,10 +85,41 @@ async function handleChangePassword() {
       oldPassword: pwdForm.value.oldPassword,
       newPassword: pwdForm.value.newPassword,
     })
-    ElMessage.success('密码修改成功，下次登录请使用新密码')
-    pwdForm.value = { oldPassword: '', newPassword: '', confirmPassword: '' }
+    if (mustChangePassword.value) {
+      ElMessage.success('密码修改成功，请重新登录')
+      authStore.logout()
+    } else {
+      ElMessage.success('密码修改成功，下次登录请使用新密码')
+      pwdForm.value = { oldPassword: '', newPassword: '', confirmPassword: '' }
+    }
   } finally {
     pwdSaving.value = false
+  }
+}
+
+// 钉钉绑定
+const dingtalkLoading = ref(false)
+async function handleBindDingtalk() {
+  dingtalkLoading.value = true
+  try {
+    const result = (await getDingtalkAuthUrl()) as any
+    window.location.href = result.url
+  } catch {
+    ElMessage.error('获取钉钉授权链接失败')
+    dingtalkLoading.value = false
+  }
+}
+
+async function handleUnbindDingtalk() {
+  try {
+    await dingtalkUnbind()
+    ElMessage.success('已解绑钉钉')
+    fetchProfile()
+    if (authStore.user) {
+      authStore.user.dingUnionId = null
+    }
+  } catch {
+    ElMessage.error('解绑失败')
   }
 }
 
@@ -88,6 +129,17 @@ onMounted(fetchProfile)
 <template>
   <div v-loading="loading" style="max-width: 800px; margin: 0 auto">
     <h2 style="margin: 0 0 20px; font-size: 18px; color: #303133">个人中心</h2>
+
+    <!-- 强制修改密码提示 -->
+    <el-alert
+      v-if="mustChangePassword"
+      title="首次登录，请先修改密码并完善个人信息后才能使用系统"
+      type="warning"
+      :icon="Warning"
+      show-icon
+      :closable="false"
+      style="margin-bottom: 16px"
+    />
 
     <!-- 个人信息 -->
     <el-card shadow="never" style="margin-bottom: 16px">
@@ -100,19 +152,20 @@ onMounted(fetchProfile)
 
       <el-form label-width="80px">
         <el-form-item label="用户名">
-          <el-input :model-value="profile?.username" disabled />
+          <el-input v-model="editForm.username" placeholder="字母、数字、下划线，3-32位" />
         </el-form-item>
         <el-form-item label="角色">
           <div style="display: flex; gap: 6px; flex-wrap: wrap">
             <el-tag v-for="role in (profile?.roles || [])" :key="role" size="small" type="info">
               {{ getStatusLabel(role) }}
             </el-tag>
+            <el-tag v-if="!profile?.roles?.length" size="small" type="warning">未分配角色</el-tag>
           </div>
         </el-form-item>
         <el-form-item label="姓名">
           <el-input v-model="editForm.displayName" placeholder="请输入姓名" />
         </el-form-item>
-        <el-form-item label="手机">
+        <el-form-item label="手机" :required="mustChangePassword">
           <el-input v-model="editForm.mobile" placeholder="请输入手机号" />
         </el-form-item>
         <el-form-item label="邮箱">
@@ -125,11 +178,12 @@ onMounted(fetchProfile)
     </el-card>
 
     <!-- 修改密码 -->
-    <el-card shadow="never">
+    <el-card shadow="never" style="margin-bottom: 16px">
       <template #header>
         <div style="display: flex; align-items: center; gap: 8px">
           <el-icon><Lock /></el-icon>
           <span style="font-weight: 600">修改密码</span>
+          <el-tag v-if="mustChangePassword" type="danger" size="small">必须修改</el-tag>
         </div>
       </template>
 
@@ -147,6 +201,26 @@ onMounted(fetchProfile)
           <el-button type="warning" :loading="pwdSaving" @click="handleChangePassword">修改密码</el-button>
         </el-form-item>
       </el-form>
+    </el-card>
+
+    <!-- 钉钉绑定 -->
+    <el-card shadow="never">
+      <template #header>
+        <div style="display: flex; align-items: center; gap: 8px">
+          <el-icon><Link /></el-icon>
+          <span style="font-weight: 600">钉钉账号</span>
+        </div>
+      </template>
+
+      <div style="display: flex; align-items: center; justify-content: space-between">
+        <div>
+          <span style="margin-right: 12px">绑定状态：</span>
+          <el-tag v-if="isDingBound" type="success" size="small">已绑定</el-tag>
+          <el-tag v-else type="info" size="small">未绑定</el-tag>
+        </div>
+        <el-button v-if="isDingBound" type="danger" plain size="small" @click="handleUnbindDingtalk">解绑钉钉</el-button>
+        <el-button v-else type="primary" size="small" :loading="dingtalkLoading" @click="handleBindDingtalk">绑定钉钉</el-button>
+      </div>
     </el-card>
   </div>
 </template>

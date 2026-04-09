@@ -10,6 +10,12 @@ const routes: RouteRecordRaw[] = [
     meta: { public: true },
   },
   {
+    path: '/dingtalk/callback',
+    name: 'DingtalkCallback',
+    component: () => import('@/pages/DingtalkCallback.vue'),
+    meta: { public: true },
+  },
+  {
     path: '/',
     component: () => import('@/layouts/DefaultLayout.vue'),
     redirect: '/dashboard',
@@ -207,6 +213,12 @@ router.beforeEach(async (to, _from, next) => {
       next({ path: '/login', query: { redirect: to.fullPath } })
       return
     }
+  }
+
+  // Force password change for new DingTalk users
+  if (authStore.user?.mustChangePassword && to.path !== '/profile') {
+    next('/profile')
+    return
   }
 
   next()

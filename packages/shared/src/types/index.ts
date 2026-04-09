@@ -31,6 +31,9 @@ export interface UserInfo {
   id: number
   username: string
   displayName: string
+  mustChangePassword?: boolean
+  dingUnionId?: string | null
+  mobile?: string | null
   permissions: string[]
   roles: string[]
 }

@@ -246,12 +246,29 @@ export class UserService {
 
   async updateProfile(
     userId: number,
-    data: { displayName?: string; mobile?: string; email?: string },
+    data: { username?: string; displayName?: string; mobile?: string; email?: string },
   ) {
     const updateData: any = { updatedAt: new Date() };
     if (data.displayName !== undefined) updateData.displayName = data.displayName;
     if (data.mobile !== undefined) updateData.mobile = data.mobile || null;
     if (data.email !== undefined) updateData.email = data.email || null;
+
+    // Username change (only for DingTalk auto-created users)
+    if (data.username !== undefined && data.username.trim()) {
+      const trimmed = data.username.trim();
+      if (!/^[a-zA-Z0-9_]{3,32}$/.test(trimmed)) {
+        throw new BadRequestException('用户名只能包含字母、数字和下划线，长度3-32位');
+      }
+      const existing = await this.db
+        .select({ id: userAccount.id })
+        .from(userAccount)
+        .where(eq(userAccount.username, trimmed))
+        .limit(1);
+      if (existing.length > 0 && existing[0].id !== userId) {
+        throw new BadRequestException('该用户名已被使用');
+      }
+      updateData.username = trimmed;
+    }
 
     await this.db
       .update(userAccount)
@@ -285,7 +302,7 @@ export class UserService {
     const newHash = await bcrypt.hash(newPassword, 10);
     await this.db
       .update(userAccount)
-      .set({ passwordHash: newHash, updatedAt: new Date() })
+      .set({ passwordHash: newHash, mustChangePwd: false, updatedAt: new Date() })
       .where(eq(userAccount.id, userId));
 
     return { success: true, message: '密码修改成功' };
