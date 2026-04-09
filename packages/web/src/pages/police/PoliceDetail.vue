@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import type { CascaderValue } from 'element-plus'
 import { ArrowLeft, Edit, Download, Upload, Delete, Paperclip } from '@element-plus/icons-vue'
 import {
   getPoliceRegisterDetail,
@@ -72,9 +73,14 @@ function generateFilingAgency(regionPath: string[]): string {
   return `${province.replace('省', '')}省公安厅网安总队`
 }
 
-function onFilingRegionChange(val: string[]) {
-  filingRegionValue.value = val
-  editForm.value.filingAgency = generateFilingAgency(val)
+function normalizeCascaderPath(val: CascaderValue | null | undefined): string[] {
+  return Array.isArray(val) ? val.map((item) => String(item)) : []
+}
+
+function onFilingRegionChange(val: CascaderValue | null | undefined) {
+  const path = normalizeCascaderPath(val)
+  filingRegionValue.value = path
+  editForm.value.filingAgency = generateFilingAgency(path)
 }
 
 function openEditDialog() {

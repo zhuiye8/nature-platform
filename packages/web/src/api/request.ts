@@ -1,13 +1,14 @@
 import axios from 'axios'
+import type { AxiosRequestConfig } from 'axios'
 import type { ApiResponse } from '@nature/shared'
 import { ElMessage } from 'element-plus'
 
-const request = axios.create({
+const instance = axios.create({
   baseURL: '/api',
   timeout: 15000,
 })
 
-request.interceptors.request.use(
+instance.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token')
     if (token) {
@@ -18,7 +19,7 @@ request.interceptors.request.use(
   (error) => Promise.reject(error),
 )
 
-request.interceptors.response.use(
+instance.interceptors.response.use(
   (response) => {
     const res = response.data as ApiResponse
     if (res.code !== 0) {
@@ -47,5 +48,23 @@ request.interceptors.response.use(
     return Promise.reject(error)
   },
 )
+
+const request = {
+  get<T = unknown, D = unknown>(url: string, config?: AxiosRequestConfig<D>) {
+    return instance.get<unknown, T, D>(url, config)
+  },
+  post<T = unknown, D = unknown>(url: string, data?: D, config?: AxiosRequestConfig<D>) {
+    return instance.post<unknown, T, D>(url, data, config)
+  },
+  put<T = unknown, D = unknown>(url: string, data?: D, config?: AxiosRequestConfig<D>) {
+    return instance.put<unknown, T, D>(url, data, config)
+  },
+  patch<T = unknown, D = unknown>(url: string, data?: D, config?: AxiosRequestConfig<D>) {
+    return instance.patch<unknown, T, D>(url, data, config)
+  },
+  delete<T = unknown, D = unknown>(url: string, config?: AxiosRequestConfig<D>) {
+    return instance.delete<unknown, T, D>(url, config)
+  },
+}
 
 export default request

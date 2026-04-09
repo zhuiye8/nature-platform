@@ -3,6 +3,7 @@ import type { PageQuery, PageResult } from '@nature/shared'
 
 export interface ProjectSystemItem {
   id?: number
+  clientKey?: string
   systemName: string
   filingAgency: string
   securityLevel: string
@@ -19,6 +20,7 @@ export interface ProjectSystemItem {
   filingCertificateIssuedAt: string | null
   hasFilingForm: boolean
   hasClassificationReport: boolean
+  sortOrder?: number
 }
 
 export interface ProjectMember {

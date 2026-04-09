@@ -11,7 +11,7 @@ export interface FileItem {
 }
 
 export function getFileList(bizType: string, bizId: number) {
-  return request.get<any, FileItem[]>('/file/list', { params: { bizType, bizId } })
+  return request.get<FileItem[]>('/file/list', { params: { bizType, bizId } })
 }
 
 /** Get preview path — appends token as query param for direct browser access */

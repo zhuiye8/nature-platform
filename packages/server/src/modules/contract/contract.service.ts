@@ -984,6 +984,15 @@ export class ContractService {
         .from(contract)
         .where(and(...contractConds));
       groupIdsFromContracts = new Set(matchingContracts.map(r => r.groupId));
+
+      // Sales role: also include groups they created (even if empty)
+      if (isSalesRole) {
+        const ownGroups = await this.db
+          .select({ id: contractGroup.id })
+          .from(contractGroup)
+          .where(and(eq(contractGroup.deleted, false), eq(contractGroup.createdBy, currentUserId)));
+        ownGroups.forEach(g => groupIdsFromContracts!.add(g.id));
+      }
     }
 
     // Intersect group ID sets

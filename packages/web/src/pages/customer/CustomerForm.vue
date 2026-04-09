@@ -2,7 +2,7 @@
 import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus, Delete } from '@element-plus/icons-vue'
-import type { FormInstance, FormRules } from 'element-plus'
+import type { CascaderValue, FormInstance, FormRules } from 'element-plus'
 import { createCustomer, updateCustomer, getCustomerDetail } from '@/api/customer'
 import type { CustomerForm as CustomerFormData, ContactFormItem } from '@/api/customer'
 import { regionData } from '@/utils/region-data'
@@ -39,8 +39,13 @@ const submitLoading = ref(false)
 
 // 区域级联：数组值 ↔ 字符串值转换
 const regionCascaderValue = ref<string[]>([])
-function onRegionChange(val: string[]) {
-  formData.value.region = val ? val.join('/') : ''
+function normalizeCascaderPath(val: CascaderValue | null | undefined): string[] {
+  return Array.isArray(val) ? val.map((item) => String(item)) : []
+}
+
+function onRegionChange(val: CascaderValue | null | undefined) {
+  const path = normalizeCascaderPath(val)
+  formData.value.region = path.join('/')
 }
 function parseRegionToArray(regionStr: string): string[] {
   return regionStr ? regionStr.split('/') : []

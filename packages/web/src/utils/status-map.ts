@@ -1,11 +1,9 @@
-/**
- * 统一状态枚举 → 中文标签 + Tag 颜色映射
- * 所有页面引用此文件，避免各页面重复定义
- */
+import type { ButtonProps, TagProps } from 'element-plus'
 
-// ── 中文标签 ──────────────────────────────────────────────────────────
+export type StatusTagType = NonNullable<TagProps['type']>
+export type ActionButtonType = NonNullable<ButtonProps['type']>
+
 export const statusLabel: Record<string, string> = {
-  // ── 通用状态 ──
   DRAFT: '草稿',
   SUBMITTED: '已提交',
   APPROVED: '已通过',
@@ -16,21 +14,18 @@ export const statusLabel: Record<string, string> = {
   PENDING: '待处理',
   IN_PROGRESS: '进行中',
   SKIPPED: '已跳过',
-  ARCHIVED: '已完成归档',
-  PARTIAL_ARCHIVE: '未完成归档',
+  ARCHIVED: '已归档',
+  PARTIAL_ARCHIVE: '部分归档',
   PENDING_ARCHIVE: '待归档',
   NOT_ARCHIVED: '未归档',
 
-  // ── 回款状态 ──
   UNPAID: '未回款',
   PARTIAL: '部分回款',
   PAID: '已回款',
 
-  // ── 用户来源 ──
   LOCAL: '本地',
   DINGTALK: '钉钉',
 
-  // ── 工作流动作 ──
   START: '启动流程',
   SUBMIT: '提交',
   APPROVE: '通过',
@@ -43,17 +38,15 @@ export const statusLabel: Record<string, string> = {
   ALL_APPROVED: '全部通过',
   ANY_REJECTED: '存在驳回',
 
-  // ── 业务类型 ──
   CONTRACT: '合同',
   PROJECT_REGISTER: '项目登记',
 
-  // ── 工作流节点 node_key ──
   CONTRACT_CREATE: '合同创建',
   CONTRACT_REVIEW: '合同审核',
   CONTRACT_AUTO_NUMBER: '自动编号',
   CONTRACT_ARCHIVE: '合同归档',
   PROJECT_REGISTER_NODE: '项目登记申请',
-  PROJECT_REVIEW: '审核项目登记',
+  PROJECT_REVIEW: '项目登记审核',
   POLICE_REGISTER: '公安登记',
   ON_SITE_ASSESSMENT: '现场测评实施',
   TECH_REVIEW: '技术审核',
@@ -63,7 +56,6 @@ export const statusLabel: Record<string, string> = {
   FINAL_REVIEW: '最终审核',
   MATERIAL_ARCHIVE: '材料归档',
 
-  // ── 审核操作 ──
   ADJUST: '调整',
   ADJUSTED: '已调整',
   REVIEW: '复核',
@@ -74,27 +66,23 @@ export const statusLabel: Record<string, string> = {
   PENDING_RECTIFICATION: '待整改',
   FINAL_REJECTED: '最终审核驳回',
 
-  // ── 审核槽位 slot_key ──
   TECH: '整体技术审核',
   CONTENT_A: '内容审核（技术）',
   CONTENT_B: '内容审核（管理）',
   CONTENT_C: '内容审核（网络）',
 
-  // ── 项目成员角色 role_type ──
   PM: '项目经理',
   ASSESSOR: '测评师',
-  TECH_REVIEWER: '技术审核',
+  TECH_REVIEWER: '技术审核人',
   CONTENT_REVIEWER_A: '内容审核A',
   CONTENT_REVIEWER_B: '内容审核B',
   CONTENT_REVIEWER_C: '内容审核C',
   REPORT_WRITER: '报告编制人',
 
-  // ── 项目成员状态 ──
   ACTIVE: '在岗',
   REMOVED: '已移除',
   RECUSED: '已回避',
 
-  // ── 系统角色 role_code ──
   super_admin: '超级管理员',
   sales: '销售',
   commercial: '商务',
@@ -102,28 +90,22 @@ export const statusLabel: Record<string, string> = {
   project_manager: '项目经理',
   assessor: '测评师',
   tech_reviewer: '技术审核人',
-  content_reviewer_tech: '内容审核(技术)',
-  content_reviewer_mgmt: '内容审核(管理)',
-  content_reviewer_network: '内容审核(网络)',
+  content_reviewer_tech: '内容审核（技术）',
+  content_reviewer_mgmt: '内容审核（管理）',
+  content_reviewer_network: '内容审核（网络）',
   report_writer: '报告编制人',
   dept_manager: '部门经理',
 
-  // ── 节点类型 node_type ──
   SIMPLE: '简单节点',
-  // REVIEW: 已在审核操作中定义为'复核'，避免重复 key
   PARALLEL_REVIEW: '并行审核',
   MULTI_ASSIGNEE: '多人协作',
 
-  // 权限分类已移至 categoryLabel（避免 key 冲突）
-
-  // ── 报告相关 ──
   REPORT_APPROVED: '报告已通过',
   REPORT_REJECTED: '报告已驳回',
   PENDING_ASSIGNMENT: '待分配',
   COMPILING: '编制中',
   REVIEWING: '审核中',
 
-  // ── 审核流程状态 ──
   TECH_APPROVED: '技术审核通过',
   TECH_REJECTED: '技术审核驳回',
   CONTENT_APPROVED: '内容审核通过',
@@ -132,36 +114,31 @@ export const statusLabel: Record<string, string> = {
   FINAL_ADJUST: '最终审核调整',
 }
 
-// ── Tag 颜色 ─────────────────────────────────────────────────────────
-export const statusTagType: Record<string, '' | 'success' | 'warning' | 'danger' | 'info'> = {
-  // 通用状态
+export const statusTagType: Record<string, StatusTagType> = {
   DRAFT: 'info',
   SUBMITTED: 'warning',
   APPROVED: 'success',
   REJECTED: 'danger',
   COMPLETED: 'success',
-  RUNNING: '',
+  RUNNING: 'info',
   CANCELLED: 'info',
   PENDING: 'warning',
-  IN_PROGRESS: '',
+  IN_PROGRESS: 'info',
   SKIPPED: 'info',
   ARCHIVED: 'success',
   PARTIAL_ARCHIVE: 'warning',
   PENDING_ARCHIVE: 'info',
   NOT_ARCHIVED: 'info',
 
-  // 回款状态
   UNPAID: 'danger',
   PARTIAL: 'warning',
   PAID: 'success',
 
-  // 用户来源
   LOCAL: 'info',
   DINGTALK: 'warning',
 
-  // 工作流动作
   START: 'info',
-  SUBMIT: '',
+  SUBMIT: 'info',
   APPROVE: 'success',
   REJECT: 'danger',
   REASSIGN: 'warning',
@@ -172,16 +149,13 @@ export const statusTagType: Record<string, '' | 'success' | 'warning' | 'danger'
   ALL_APPROVED: 'success',
   ANY_REJECTED: 'danger',
 
-  // 业务类型
-  CONTRACT: '',
+  CONTRACT: 'info',
   PROJECT_REGISTER: 'success',
 
-  // 项目成员状态
   ACTIVE: 'success',
   REMOVED: 'danger',
   RECUSED: 'warning',
 
-  // 审核操作
   REVIEW: 'warning',
   RESUBMIT: 'info',
   REJECT_TO_TECH: 'danger',
@@ -190,14 +164,12 @@ export const statusTagType: Record<string, '' | 'success' | 'warning' | 'danger'
   PENDING_RECTIFICATION: 'warning',
   FINAL_REJECTED: 'danger',
 
-  // 报告
   REPORT_APPROVED: 'success',
   REPORT_REJECTED: 'danger',
   PENDING_ASSIGNMENT: 'warning',
-  COMPILING: '',
+  COMPILING: 'info',
   REVIEWING: 'warning',
 
-  // 审核流程
   TECH_APPROVED: 'success',
   TECH_REJECTED: 'danger',
   CONTENT_APPROVED: 'success',
@@ -206,7 +178,6 @@ export const statusTagType: Record<string, '' | 'success' | 'warning' | 'danger'
   FINAL_ADJUST: 'warning',
 }
 
-// ── 权限分类名 → 中文（独立 map，避免与 statusLabel key 冲突）──
 export const categoryLabel: Record<string, string> = {
   CUSTOMER: '客户管理',
   CONTRACT: '合同管理',
@@ -226,16 +197,12 @@ export function getCategoryLabel(category: string): string {
   return categoryLabel[category] || category
 }
 
-// ── 辅助函数 ─────────────────────────────────────────────────────────
-
-/** 获取枚举值的中文标签，未匹配返回原值 */
 export function getStatusLabel(val: string | null | undefined): string {
   if (!val) return '--'
   return statusLabel[val] ?? val
 }
 
-/** 获取枚举值对应的 el-tag type */
-export function getStatusTagType(val: string | null | undefined): '' | 'success' | 'warning' | 'danger' | 'info' {
+export function getStatusTagType(val: string | null | undefined): StatusTagType {
   if (!val) return 'info'
   return statusTagType[val] ?? 'info'
 }

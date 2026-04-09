@@ -149,7 +149,7 @@ function filterCurrentRound(tasks: any[]): any[] {
   return tasks.filter((t: any) => t.status !== 'CANCELLED')
 }
 
-function getTaskTagType(row: any): string {
+function getTaskTagType(row: any): 'primary' | 'success' | 'info' | 'warning' | 'danger' {
   if (row.status === 'COMPLETED') return row.result === 'APPROVED' ? 'success' : 'danger'
   if (row.status === 'PENDING_RECTIFICATION') return 'warning'
   if (row.status === 'PENDING') return 'warning'

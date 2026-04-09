@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import type { FormInstance, FormRules } from 'element-plus'
+import type { CascaderValue, FormInstance, FormRules } from 'element-plus'
 import { ArrowLeft, Plus, Delete, Upload, Download, Paperclip } from '@element-plus/icons-vue'
 import { regionData } from '@/utils/region-data'
 import { createContract, updateContract, getContractDetail } from '@/api/contract'
@@ -66,8 +66,13 @@ const formData = ref<ContractFormData>({
 
 // 业绩城市级联
 const cityCascaderValue = ref<string[]>([])
-function onCityChange(val: string[]) {
-  formData.value.performanceCity = val ? val.join('/') : ''
+function normalizeCascaderPath(val: CascaderValue | null | undefined): string[] {
+  return Array.isArray(val) ? val.map((item) => String(item)) : []
+}
+
+function onCityChange(val: CascaderValue | null | undefined) {
+  const path = normalizeCascaderPath(val)
+  formData.value.performanceCity = path.join('/')
 }
 function parseCityToArray(str: string): string[] {
   return str ? str.split('/') : []

@@ -145,7 +145,7 @@ export interface PayerOption {
 }
 
 export function getPayerOptions(keyword?: string) {
-  return request.get<any, PayerOption[]>('/contract/payer-options', { params: { keyword } })
+  return request.get<PayerOption[]>('/contract/payer-options', { params: { keyword } })
 }
 
 // ── Contract Group API ──

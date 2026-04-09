@@ -268,7 +268,7 @@ onUnmounted(() => {
             :visible="notificationPopoverVisible"
             placement="bottom-end"
             :width="380"
-            trigger="manual"
+            trigger="click"
             :show-arrow="false"
           >
             <template #reference>

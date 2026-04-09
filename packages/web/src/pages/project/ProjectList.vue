@@ -35,16 +35,16 @@ const nodeStatusLabel: Record<string, string> = {
   MATERIAL_ARCHIVE: '归档中',
 }
 
-const nodeStatusTagType: Record<string, '' | 'info' | 'warning' | 'success' | 'danger' | 'primary'> = {
+const nodeStatusTagType: Record<string, 'info' | 'warning' | 'success' | 'danger' | 'primary'> = {
   PROJECT_REGISTER: 'info',
   PROJECT_REVIEW: 'warning',
-  POLICE_REGISTER: '',
+  POLICE_REGISTER: 'info',
   ON_SITE_ASSESSMENT: 'primary',
   TECH_REVIEW: 'warning',
   CONTENT_REVIEW: 'warning',
-  REPORT_COMPILE: '',
+  REPORT_COMPILE: 'info',
   FINAL_REVIEW: 'warning',
-  MATERIAL_ARCHIVE: '',
+  MATERIAL_ARCHIVE: 'info',
 }
 
 function getDisplayStatus(row: any): string {
@@ -55,7 +55,7 @@ function getDisplayStatus(row: any): string {
   return row.status || '--'
 }
 
-function getDisplayTagType(row: any): string {
+function getDisplayTagType(row: any): 'primary' | 'success' | 'info' | 'warning' | 'danger' {
   if (row.status === 'DRAFT') return 'info'
   if (row.status === 'REJECTED') return 'danger'
   if (row.wfStatus === 'COMPLETED') return 'success'

@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElLoading } from 'element-plus'
-import type { FormInstance, FormRules } from 'element-plus'
+import type { CascaderValue, FormInstance, FormRules } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { createProject, updateProject, getProjectDetail, getAvailableYears, getSystemItems } from '@/api/project'
 import type { ProjectForm as ProjectFormData, ProjectSystemItem } from '@/api/project'
@@ -200,11 +200,17 @@ async function fetchAvailableYears(contractId: number) {
 // 备案机关：根据选择的行政区划自动生成名称
 const filingRegionMap = ref<Record<string, string[]>>({})
 
-function getFilingRegion(clientKey: string): string[] {
+function normalizeCascaderPath(val: CascaderValue | null | undefined): string[] {
+  return Array.isArray(val) ? val.map((item) => String(item)) : []
+}
+
+function getFilingRegion(clientKey: string | undefined): string[] {
+  if (!clientKey) return []
   return filingRegionMap.value[clientKey] || []
 }
 
-function setFilingRegion(clientKey: string, val: string[]) {
+function setFilingRegion(clientKey: string | undefined, val: string[]) {
+  if (!clientKey) return
   filingRegionMap.value[clientKey] = val || []
 }
 
@@ -234,7 +240,7 @@ function generateFilingAgency(regionPath: string[]): string {
   return `${province.replace('省', '')}省公安厅网安总队`
 }
 
-function onFilingRegionChange(clientKey: string, val: string[], item: any) {
+function onFilingRegionChange(clientKey: string | undefined, val: string[], item: any) {
   setFilingRegion(clientKey, val)
   item.filingAgency = generateFilingAgency(val)
 }
@@ -586,7 +592,7 @@ onMounted(async () => {
                     clearable
                     placeholder="请选择省市区"
                     style="width: 100%"
-                    @change="(val: string[]) => onFilingRegionChange(item.clientKey, val, item)"
+                    @change="(val) => onFilingRegionChange(item.clientKey, normalizeCascaderPath(val), item)"
                   />
                 </el-form-item>
               </el-col>

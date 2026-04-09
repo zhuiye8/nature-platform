@@ -37,7 +37,7 @@ function getReviewActionLabel(_task: TaskItem): string {
   return '审核'
 }
 
-function getReviewActionType(_task: TaskItem): string {
+function getReviewActionType(_task: TaskItem): 'primary' {
   return 'primary'
 }
 

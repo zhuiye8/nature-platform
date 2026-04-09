@@ -64,16 +64,16 @@ function getAssessmentStatusLabel(row: any): string {
   return nodeMap[row.currentNode] || row.currentNode || '-'
 }
 
-function getAssessmentStatusType(row: any): string {
+function getAssessmentStatusType(row: any): 'primary' | 'success' | 'info' | 'warning' | 'danger' {
   if (row.wfStatus === 'COMPLETED') return 'success'
   if (row.pendingRectification) return 'danger'
   if (row.currentNode === 'ON_SITE_ASSESSMENT' && row.roundNo > 1) return 'danger'
-  const typeMap: Record<string, string> = {
+  const typeMap: Record<string, 'primary' | 'success' | 'info' | 'warning' | 'danger'> = {
     ON_SITE_ASSESSMENT: 'primary',
     TECH_REVIEW: 'warning',
     CONTENT_REVIEW: 'warning',
     REPORT_ASSIGN: 'warning',
-    REPORT_COMPILE: '',
+    REPORT_COMPILE: 'info',
     FINAL_REVIEW: 'warning',
     MATERIAL_ARCHIVE: 'info',
   }

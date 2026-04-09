@@ -1,4 +1,6 @@
-export interface RegionOption {
+import type { CascaderOption } from 'element-plus'
+
+export interface RegionOption extends CascaderOption {
   value: string
   label: string
   children?: RegionOption[]

@@ -18,6 +18,7 @@ export interface ActionLog {
   id: number
   operatorName: string
   action: string
+  nodeKey?: string
   remark: string | null
   createdAt: string
 }
