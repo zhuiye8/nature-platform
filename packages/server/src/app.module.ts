@@ -10,6 +10,7 @@ import { ProjectModule } from './modules/project/project.module';
 import { NotificationModule } from './modules/notification/notification.module';
 import { PoliceModule } from './modules/police/police.module';
 import { RecycleModule } from './modules/recycle/recycle.module';
+import { PlatformModule } from './modules/platform/platform.module';
 import { UserModule } from './modules/user/user.module';
 import { RoleModule } from './modules/role/role.module';
 import { PartnerModule } from './modules/partner/partner.module';
@@ -37,6 +38,7 @@ import { CompileFileModule } from './modules/compile-file/compile-file.module';
     NotificationModule,
     PoliceModule,
     RecycleModule,
+    PlatformModule,
     UserModule,
     RoleModule,
     PartnerModule,

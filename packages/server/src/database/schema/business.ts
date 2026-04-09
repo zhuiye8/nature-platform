@@ -314,3 +314,27 @@ export const materialArchive = pgTable('material_archive', {
 
 export type MaterialArchiveRow = typeof materialArchive.$inferSelect;
 export type NewMaterialArchive = typeof materialArchive.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// registration_platform (注册平台管理)
+// ---------------------------------------------------------------------------
+export const registrationPlatform = pgTable('registration_platform', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  platformName: varchar('platform_name', { length: 255 }),
+  websiteUrl: varchar('website_url', { length: 500 }),
+  account: varchar('account', { length: 128 }),
+  password: varchar('password', { length: 255 }),
+  hasCa: boolean('has_ca').notNull().default(false),
+  caExpireDate: date('ca_expire_date'),
+  caPassword: varchar('ca_password', { length: 255 }),
+  contactName: varchar('contact_name', { length: 64 }),
+  contactPhone: varchar('contact_phone', { length: 32 }),
+  remark: text('remark'),
+
+  createdBy: bigint('created_by', { mode: 'number' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedBy: bigint('updated_by', { mode: 'number' }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  deleted: boolean('deleted').notNull().default(false),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+});

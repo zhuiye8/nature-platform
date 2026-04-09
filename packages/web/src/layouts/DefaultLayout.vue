@@ -185,6 +185,12 @@ onUnmounted(() => {
             </el-menu-item>
           </el-sub-menu>
 
+          <!-- Platform -->
+          <el-menu-item v-if="hasPermission('platform:list')" index="/platform" @click="navigateTo('/platform')">
+            <el-icon><Monitor /></el-icon>
+            <template #title>注册平台管理</template>
+          </el-menu-item>
+
           <!-- Report -->
           <el-sub-menu v-if="hasAnyPermission(['report:view','report:assign','report:compile','report:review'])" index="report-group">
             <template #title>

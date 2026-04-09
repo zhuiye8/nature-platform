@@ -105,7 +105,10 @@ INSERT INTO iam_permission (permission_code, permission_name, category, enabled,
     ('resource:manage', '资源管理', 'IAM', TRUE, TRUE), ('department:manage', '部门管理', 'IAM', TRUE, TRUE),
     ('workflow:manage', '流程管理', 'IAM', TRUE, TRUE), ('audit:view', '审计日志查看', 'AUDIT', TRUE, TRUE),
     ('recycle:list', '回收站列表', 'IAM', TRUE, TRUE), ('recycle:restore', '回收站恢复', 'IAM', TRUE, TRUE),
-    ('recycle:delete', '回收站删除', 'IAM', TRUE, TRUE), ('recycle:manage', '回收站管理', 'IAM', TRUE, TRUE)
+    ('recycle:delete', '回收站删除', 'IAM', TRUE, TRUE), ('recycle:manage', '回收站管理', 'IAM', TRUE, TRUE),
+    ('platform:list', '注册平台列表', 'PLATFORM', TRUE, TRUE), ('platform:create', '创建注册平台', 'PLATFORM', TRUE, TRUE),
+    ('platform:update', '编辑注册平台', 'PLATFORM', TRUE, TRUE), ('platform:delete', '删除注册平台', 'PLATFORM', TRUE, TRUE),
+    ('platform:export', '导出注册平台', 'PLATFORM', TRUE, TRUE)
 ON CONFLICT (permission_code) DO NOTHING;
 
 -- ============================================================================
@@ -127,7 +130,8 @@ INSERT INTO iam_role_permission (role_code, permission_code) VALUES
     ('report_assigner','customer:list'),('report_assigner','contract:list'),('report_assigner','project:list'),('report_assigner','assessment:view'),('report_assigner','report:assign'),('report_assigner','report:list'),('report_assigner','report:view'),('report_assigner','wf_task:view'),('report_assigner','wf_task:operate'),
     ('archiver','customer:list'),('archiver','contract:list'),('archiver','contract:view_all'),('archiver','project:list'),('archiver','archive:list'),('archiver','archive:submit'),('archiver','wf_task:view'),('archiver','wf_task:operate'),
     ('project_director','customer:list'),('project_director','contract:list'),('project_director','project:list'),('project_director','project:review'),('project_director','project:assign_team'),('project_director','wf_task:view'),('project_director','wf_task:operate'),
-    ('finance','contract:list'),('finance','contract:update_financial'),('finance','wf_task:view')
+    ('finance','contract:list'),('finance','contract:update_financial'),('finance','wf_task:view'),
+    ('commercial','platform:list'),('commercial','platform:create'),('commercial','platform:update'),('commercial','platform:delete'),('commercial','platform:export')
 ON CONFLICT DO NOTHING;
 
 -- ============================================================================
@@ -147,6 +151,7 @@ INSERT INTO iam_resource (resource_key, resource_name, resource_type, parent_key
     ('page.police-registers','公安登记','PAGE','group.business','/police-registers','OfficeBuilding',230,TRUE,TRUE,'公安登记页面'),
     ('page.on-site-assessments','现场测评','PAGE','group.business','/on-site-assessments','Connection',240,TRUE,TRUE,'现场测评页面'),
     ('page.quality-reviews','质量审核','PAGE','group.business','/quality-reviews','CircleCheck',250,TRUE,TRUE,'质量审核页面'),
+    ('page.platforms','注册平台管理','PAGE','group.business','/platform','Monitor',260,TRUE,TRUE,'注册平台信息管理'),
     ('page.report-assignments','编制分配','PAGE','group.report','/report-assignments','Tickets',300,TRUE,TRUE,'报告编制分配'),
     ('page.report-compile','报告编制','PAGE','group.report','/report-compile','EditPen',310,TRUE,TRUE,'报告编制与提交'),
     ('page.report-reviews','报告审核','PAGE','group.report','/report-reviews','CircleCheck',320,TRUE,TRUE,'报告终审'),
@@ -166,7 +171,7 @@ INSERT INTO iam_role_resource (role_code, resource_key) SELECT 'super_admin', re
 INSERT INTO iam_role_resource (role_code, resource_key) SELECT role_code, 'page.dashboard' FROM iam_role WHERE role_code != 'super_admin' AND enabled = TRUE ON CONFLICT DO NOTHING;
 INSERT INTO iam_role_resource (role_code, resource_key) VALUES
     ('sales','group.overview'),('sales','group.business'),('sales','page.workflow'),('sales','page.customers'),('sales','page.contracts'),('sales','page.project-registers'),
-    ('commercial','group.overview'),('commercial','group.business'),('commercial','page.workflow'),('commercial','page.customers'),('commercial','page.contracts'),('commercial','page.project-registers'),
+    ('commercial','group.overview'),('commercial','group.business'),('commercial','page.workflow'),('commercial','page.customers'),('commercial','page.contracts'),('commercial','page.project-registers'),('commercial','page.platforms'),
     ('police_register','group.overview'),('police_register','group.business'),('police_register','page.workflow'),('police_register','page.police-registers'),
     ('project_manager','group.overview'),('project_manager','group.business'),('project_manager','page.workflow'),('project_manager','page.customers'),('project_manager','page.project-registers'),('project_manager','page.on-site-assessments'),
     ('assessor','group.overview'),('assessor','group.business'),('assessor','page.workflow'),('assessor','page.on-site-assessments'),
