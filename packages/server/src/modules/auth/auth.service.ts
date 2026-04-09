@@ -7,12 +7,23 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { HttpService } from '@nestjs/axios';
+import axios from 'axios';
 import * as bcrypt from 'bcrypt';
 import { eq, inArray, ilike } from 'drizzle-orm';
-import { firstValueFrom } from 'rxjs';
 import { DRIZZLE, DrizzleDB } from '../../database/database.module';
 import { userAccount, userRole, iamRolePermission } from '../../database/schema';
+
+interface DingtalkTokenResponse {
+  accessToken?: string;
+}
+
+interface DingtalkMeResponse {
+  unionId?: string;
+  openId?: string;
+  nick?: string;
+  mobile?: string;
+  avatarUrl?: string;
+}
 
 @Injectable()
 export class AuthService {
@@ -22,7 +33,6 @@ export class AuthService {
     @Inject(DRIZZLE) private readonly db: DrizzleDB,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
-    private readonly httpService: HttpService,
   ) {}
 
   // ===================================================================
@@ -101,13 +111,14 @@ export class AuthService {
     const clientSecret = this.configService.get('DINGTALK_APP_SECRET', '');
 
     // Step 1: Exchange authCode for access token
-    const tokenRes = await firstValueFrom(
-      this.httpService.post('https://api.dingtalk.com/v1.0/oauth2/userAccessToken', {
+    const tokenRes = await axios.post<DingtalkTokenResponse>(
+      'https://api.dingtalk.com/v1.0/oauth2/userAccessToken',
+      {
         clientId,
         clientSecret,
         code: authCode,
         grantType: 'authorization_code',
-      }),
+      },
     );
     const accessToken = tokenRes.data?.accessToken;
     if (!accessToken) {
@@ -116,10 +127,11 @@ export class AuthService {
     }
 
     // Step 2: Get user info
-    const userRes = await firstValueFrom(
-      this.httpService.get('https://api.dingtalk.com/v1.0/contact/users/me', {
+    const userRes = await axios.get<DingtalkMeResponse>(
+      'https://api.dingtalk.com/v1.0/contact/users/me',
+      {
         headers: { 'x-acs-dingtalk-access-token': accessToken },
-      }),
+      },
     );
     const dtUser = userRes.data;
     if (!dtUser?.unionId) {
