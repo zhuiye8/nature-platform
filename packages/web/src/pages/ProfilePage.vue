@@ -63,6 +63,10 @@ async function handleSaveProfile() {
 }
 
 async function handleChangePassword() {
+  if (mustChangePassword.value && !editForm.value.mobile?.trim()) {
+    ElMessage.warning('请先填写手机号')
+    return
+  }
   if (!pwdForm.value.oldPassword) {
     ElMessage.warning('请输入旧密码')
     return
@@ -81,6 +85,10 @@ async function handleChangePassword() {
   }
   pwdSaving.value = true
   try {
+    // 改密码时顺带保存个人信息（手机号等），避免用户忘记点保存
+    if (mustChangePassword.value) {
+      await request.put('/user/profile', editForm.value)
+    }
     await request.put('/user/change-password', {
       oldPassword: pwdForm.value.oldPassword,
       newPassword: pwdForm.value.newPassword,

@@ -31,8 +31,8 @@ pnpm-debug.log*
 # TypeScript
 *.tsbuildinfo
 
-# Drizzle
-packages/server/drizzle/
+# Drizzle (keep migration files, ignore only studio temp)
+packages/server/drizzle/meta/.snapshot
 
 # Test coverage
 coverage/

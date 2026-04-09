@@ -1,4 +1,9 @@
 -- ============================================================================
+-- DEPRECATED: 此文件仅作历史参考
+-- 数据库初始化已改用: pnpm db:migrate + scripts/seed.sql
+-- 详见: packages/server/drizzle/README.md
+-- ============================================================================
+--
 -- Nature 等保测评平台 — PostgreSQL 16 Complete Schema
 -- Target: NestJS + Drizzle ORM + TypeScript
 -- Generated: 2026-03-23

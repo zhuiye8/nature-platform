@@ -1,5 +1,7 @@
 -- ============================================================================
--- Nature 等保测评平台 — 生产用户初始化脚本
+-- DEPRECATED: 用户现在通过钉钉登录自动创建或管理员手动创建
+-- ============================================================================
+-- Nature 等保测评平台 — 生产用户初始化脚本（历史参考）
 -- 执行方式: docker exec nature-postgres psql -U nature -d nature -f /tmp/init-users.sql
 -- 或: docker cp scripts/init-users.sql nature-postgres:/tmp/ && docker exec nature-postgres psql -U nature -d nature -f /tmp/init-users.sql
 -- 所有用户密码: 123456

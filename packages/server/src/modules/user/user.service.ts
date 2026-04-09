@@ -250,7 +250,20 @@ export class UserService {
   ) {
     const updateData: any = { updatedAt: new Date() };
     if (data.displayName !== undefined) updateData.displayName = data.displayName;
-    if (data.mobile !== undefined) updateData.mobile = data.mobile || null;
+    if (data.mobile !== undefined) {
+      const mobile = data.mobile?.trim() || null;
+      if (mobile) {
+        const existing = await this.db
+          .select({ id: userAccount.id })
+          .from(userAccount)
+          .where(eq(userAccount.mobile, mobile))
+          .limit(1);
+        if (existing.length > 0 && existing[0].id !== userId) {
+          throw new BadRequestException('该手机号已被其他用户使用');
+        }
+      }
+      updateData.mobile = mobile;
+    }
     if (data.email !== undefined) updateData.email = data.email || null;
 
     // Username change (only for DingTalk auto-created users)
