@@ -539,6 +539,7 @@ onMounted(() => {
       </div>
 
       <!-- 编制报告文件池（编制人可上传，其他节点只读） -->
+      <el-alert v-if="isReportCompile" title="请在「报告管理」栏上传编制报告后再提交" type="warning" :closable="false" show-icon style="margin-top: 16px" />
       <div v-if="isReportCompile || isFinalReview" style="margin-top: 16px">
         <h4 style="margin: 0 0 8px; font-size: 14px; color: #606266">编制报告</h4>
         <FilePoolPanel api-type="compile" :project-register-id="bizId" :readonly="!isReportCompile" />
