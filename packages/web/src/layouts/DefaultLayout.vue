@@ -65,12 +65,27 @@ function navigateTo(path: string) {
   router.push(path)
 }
 
-function handleBellClick() {
+function handleBellClick(e: Event) {
+  e.stopPropagation()
   notificationPopoverVisible.value = !notificationPopoverVisible.value
   if (notificationPopoverVisible.value) {
     fetchNotifications()
   }
 }
+
+function handleGlobalClick(e: MouseEvent) {
+  if (!notificationPopoverVisible.value) return
+  const target = e.target as HTMLElement
+  if (target.closest('.el-popover') || target.closest('.n-header__action')) return
+  notificationPopoverVisible.value = false
+}
+
+onMounted(() => {
+  document.addEventListener('click', handleGlobalClick)
+})
+onUnmounted(() => {
+  document.removeEventListener('click', handleGlobalClick)
+})
 
 function getTimeAgo(dateStr: string): string {
   if (!dateStr) return ''
@@ -278,7 +293,7 @@ onUnmounted(() => {
             :show-arrow="false"
           >
             <template #reference>
-              <div class="n-header__action" @click="handleBellClick">
+              <div class="n-header__action" :class="{ 'n-bell--active': unreadCount > 0 }" @click="handleBellClick">
                 <el-badge :value="unreadCount" :hidden="unreadCount === 0" :max="99">
                   <el-icon :size="18"><Bell /></el-icon>
                 </el-badge>
@@ -498,6 +513,17 @@ onUnmounted(() => {
 .n-header__action:hover {
   background: #f1f5f9;
   color: var(--n-text-primary);
+}
+
+.n-bell--active {
+  animation: bell-pulse 2s ease-in-out infinite;
+}
+.n-bell--active .el-icon {
+  color: var(--el-color-primary);
+}
+@keyframes bell-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.15); filter: drop-shadow(0 0 6px rgba(64, 158, 255, 0.5)); }
 }
 
 .n-header__action--logout:hover {

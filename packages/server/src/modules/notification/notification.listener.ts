@@ -53,26 +53,63 @@ export class NotificationListener {
         payload.bizId,
       );
     } else {
-      // Pool mode — notify all users with matching roles from assignment rules
+      // Pool mode — notify eligible users
       this.logger.log(
-        `Pool task at node "${payload.nodeName}", notifying all eligible users`,
+        `Pool task at node "${payload.nodeName}", notifying eligible users`,
       );
-      const rules = await this.db
-        .select({ roleCode: wfAssignmentRule.roleCode })
-        .from(wfAssignmentRule)
-        .where(eq(wfAssignmentRule.nodeKey, payload.nodeKey));
 
-      const roleCodes = [...new Set(rules.map((r) => r.roleCode))];
-      if (roleCodes.length === 0) return;
-
-      // Find all users with these roles
       const userIds = new Set<number>();
-      for (const roleCode of roleCodes) {
-        const users = await this.db
-          .select({ userId: userRole.userId })
-          .from(userRole)
-          .where(eq(userRole.roleCode, roleCode));
-        users.forEach((u) => userIds.add(u.userId));
+
+      // MATERIAL_ARCHIVE: limit to relevant people only
+      if (payload.nodeKey === 'MATERIAL_ARCHIVE' && payload.bizType === 'PROJECT_REGISTER') {
+        // All archivers + all dept_managers
+        for (const roleCode of ['archiver', 'dept_manager']) {
+          const users = await this.db
+            .select({ userId: userRole.userId })
+            .from(userRole)
+            .where(eq(userRole.roleCode, roleCode));
+          users.forEach((u) => userIds.add(u.userId));
+        }
+        // Project PM
+        const pms = await this.db
+          .select({ userId: projectMember.userId })
+          .from(projectMember)
+          .where(and(eq(projectMember.projectId, payload.bizId), eq(projectMember.roleType, 'PM'), eq(projectMember.status, 'ACTIVE')));
+        pms.forEach((p) => userIds.add(p.userId));
+        // Contract creator + salesPerson
+        const proj = await this.db
+          .select({ contractId: projectRegister.contractId })
+          .from(projectRegister)
+          .where(eq(projectRegister.id, payload.bizId))
+          .limit(1);
+        if (proj[0]?.contractId) {
+          const cont = await this.db
+            .select({ createdBy: contract.createdBy, salesPersonId: contract.salesPersonId })
+            .from(contract)
+            .where(eq(contract.id, proj[0].contractId))
+            .limit(1);
+          if (cont[0]) {
+            userIds.add(cont[0].createdBy);
+            if (cont[0].salesPersonId) userIds.add(cont[0].salesPersonId);
+          }
+        }
+      } else {
+        // Default: notify all users with matching roles from assignment rules
+        const rules = await this.db
+          .select({ roleCode: wfAssignmentRule.roleCode })
+          .from(wfAssignmentRule)
+          .where(eq(wfAssignmentRule.nodeKey, payload.nodeKey));
+
+        const roleCodes = [...new Set(rules.map((r) => r.roleCode))];
+        if (roleCodes.length === 0) return;
+
+        for (const roleCode of roleCodes) {
+          const users = await this.db
+            .select({ userId: userRole.userId })
+            .from(userRole)
+            .where(eq(userRole.roleCode, roleCode));
+          users.forEach((u) => userIds.add(u.userId));
+        }
       }
 
       // Notify each user
