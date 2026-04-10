@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { eq, and, or, ilike, count, desc, SQL } from 'drizzle-orm';
+import { eq, and, or, ilike, count, desc, sql, SQL } from 'drizzle-orm';
 import { DRIZZLE, DrizzleDB } from '../../database/database.module';
 import {
   contract,
@@ -49,31 +49,30 @@ export class ContractService {
       .where(eq(userRole.userId, currentUserId));
     const roleCodes = roles.map((r) => r.roleCode);
     const isSuperAdmin = roleCodes.includes('super_admin');
-    const allowedRoles = ['super_admin', 'sales', 'commercial', 'archiver', 'dept_manager', 'project_manager'];
-    const hasContractAccess = roleCodes.some((r) => allowedRoles.includes(r));
-    const isCommercialOnly = !isSuperAdmin && (roleCodes.includes('commercial') || roleCodes.includes('archiver')) && !roleCodes.includes('sales') && !roleCodes.includes('dept_manager');
-
-    // Non-core roles see empty list
-    if (!hasContractAccess) {
-      return { list: [], total: 0, page: query.page ?? 1, pageSize: query.pageSize ?? 20 };
-    }
+    const hasSales = roleCodes.includes('sales');
+    const hasCommercial = roleCodes.includes('commercial') || roleCodes.includes('archiver');
+    const hasManager = roleCodes.includes('dept_manager') || roleCodes.includes('project_director');
 
     const conditions: SQL[] = [eq(contract.deleted, false)];
 
-    // Commercial/archiver only see APPROVED contracts
-    if (isCommercialOnly) {
-      conditions.push(eq(contract.reviewStatus, 'APPROVED'));
-    }
-
-    // Sales role: forced isolation — only see contracts where createdBy or salesPersonId matches
-    const isSalesRole = roleCodes.includes('sales') && !isSuperAdmin && !roleCodes.includes('dept_manager') && !roleCodes.includes('commercial');
-    if (isSalesRole) {
-      conditions.push(
-        or(
-          eq(contract.createdBy, currentUserId),
-          eq(contract.salesPersonId, currentUserId),
-        )!,
-      );
+    // Role-based visibility (union of all role permissions)
+    // super_admin: no filter
+    if (!isSuperAdmin) {
+      const visibilityConditions: SQL[] = [];
+      if (hasSales) {
+        visibilityConditions.push(or(eq(contract.createdBy, currentUserId), eq(contract.salesPersonId, currentUserId))!);
+      }
+      if (hasCommercial) {
+        visibilityConditions.push(eq(contract.reviewStatus, 'APPROVED'));
+      }
+      if (hasManager) {
+        // Managers see all non-draft contracts
+        visibilityConditions.push(sql`${contract.reviewStatus} != 'DRAFT'`);
+      }
+      if (visibilityConditions.length === 0) {
+        return { list: [], total: 0, page, pageSize };
+      }
+      conditions.push(visibilityConditions.length === 1 ? visibilityConditions[0] : or(...visibilityConditions)!);
     }
 
     if (query.keyword) {
@@ -936,16 +935,24 @@ export class ContractService {
       .where(eq(userRole.userId, currentUserId));
     const roleCodes = roles.map((r) => r.roleCode);
     const isSuperAdmin = roleCodes.includes('super_admin');
-    const isSalesRole = roleCodes.includes('sales') && !isSuperAdmin
-      && !roleCodes.includes('dept_manager') && !roleCodes.includes('commercial');
+    const hasSales = roleCodes.includes('sales');
+    const hasCommercial = roleCodes.includes('commercial') || roleCodes.includes('archiver');
+    const hasManager = roleCodes.includes('dept_manager') || roleCodes.includes('project_director');
 
     // Step 1: Find matching group IDs from both group-level and contract-level filters
     // Contract-level conditions (always applied to narrow down groups)
     const contractConds: SQL[] = [eq(contract.deleted, false)];
-    if (isSalesRole) {
-      contractConds.push(
-        or(eq(contract.createdBy, currentUserId), eq(contract.salesPersonId, currentUserId))!,
-      );
+
+    // Role-based visibility (union)
+    if (!isSuperAdmin) {
+      const visibilityConds: SQL[] = [];
+      if (hasSales) visibilityConds.push(or(eq(contract.createdBy, currentUserId), eq(contract.salesPersonId, currentUserId))!);
+      if (hasCommercial) visibilityConds.push(eq(contract.reviewStatus, 'APPROVED'));
+      if (hasManager) visibilityConds.push(sql`${contract.reviewStatus} != 'DRAFT'`);
+      if (visibilityConds.length === 0) {
+        return { list: [], total: 0, page, pageSize };
+      }
+      contractConds.push(visibilityConds.length === 1 ? visibilityConds[0] : or(...visibilityConds)!);
     }
     if (query.reviewStatus) contractConds.push(eq(contract.reviewStatus, query.reviewStatus));
     if (query.archiveStatus) contractConds.push(eq(contract.archiveStatus, query.archiveStatus));
@@ -976,7 +983,8 @@ export class ContractService {
     }
 
     // Groups that have at least one matching contract (for contract-level filters)
-    const hasContractFilter = !!query.reviewStatus || !!query.archiveStatus || !!query.salesPersonId || isSalesRole;
+    const needsVisibilityFilter = !isSuperAdmin && (hasSales || hasCommercial || hasManager);
+    const hasContractFilter = !!query.reviewStatus || !!query.archiveStatus || !!query.salesPersonId || needsVisibilityFilter;
     let groupIdsFromContracts: Set<number> | null = null;
     if (hasContractFilter) {
       const matchingContracts = await this.db
@@ -985,8 +993,8 @@ export class ContractService {
         .where(and(...contractConds));
       groupIdsFromContracts = new Set(matchingContracts.map(r => r.groupId));
 
-      // Sales role: also include groups they created (even if empty)
-      if (isSalesRole) {
+      // Sales: also include groups they created (even if empty)
+      if (hasSales && !isSuperAdmin) {
         const ownGroups = await this.db
           .select({ id: contractGroup.id })
           .from(contractGroup)
@@ -1025,12 +1033,16 @@ export class ContractService {
         .offset((page - 1) * pageSize),
     ]);
 
-    // Step 3: Load contracts per group (with sales isolation only, show all that match)
+    // Step 3: Load contracts per group (with role-based visibility)
     const enriched = await Promise.all(
       groups.map(async (g) => {
         const conds: SQL[] = [eq(contract.groupId, g.id), eq(contract.deleted, false)];
-        if (isSalesRole) {
-          conds.push(or(eq(contract.createdBy, currentUserId), eq(contract.salesPersonId, currentUserId))!);
+        if (!isSuperAdmin) {
+          const visConds: SQL[] = [];
+          if (hasSales) visConds.push(or(eq(contract.createdBy, currentUserId), eq(contract.salesPersonId, currentUserId))!);
+          if (hasCommercial) visConds.push(eq(contract.reviewStatus, 'APPROVED'));
+          if (hasManager) visConds.push(sql`${contract.reviewStatus} != 'DRAFT'`);
+          if (visConds.length > 0) conds.push(visConds.length === 1 ? visConds[0] : or(...visConds)!);
         }
         // Apply contract-level filters to child contracts too
         if (query.reviewStatus) conds.push(eq(contract.reviewStatus, query.reviewStatus));
@@ -1051,6 +1063,7 @@ export class ContractService {
             paymentStatus: contract.paymentStatus,
             financialHandlerId: contract.financialHandlerId,
             salesPersonId: contract.salesPersonId,
+            archivedBy: contract.archivedBy,
             createdBy: contract.createdBy,
             createdAt: contract.createdAt,
           })
@@ -1078,7 +1091,16 @@ export class ContractService {
                 .limit(1);
               financialHandlerName = handlers[0]?.displayName ?? null;
             }
-            return { ...c, salesPersonName, financialHandlerName };
+            let archiverName: string | null = null;
+            if (c.archivedBy) {
+              const archivers = await this.db
+                .select({ displayName: userAccount.displayName })
+                .from(userAccount)
+                .where(eq(userAccount.id, c.archivedBy))
+                .limit(1);
+              archiverName = archivers[0]?.displayName ?? null;
+            }
+            return { ...c, salesPersonName, financialHandlerName, archiverName };
           }),
         );
 
