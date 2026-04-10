@@ -329,6 +329,17 @@ onMounted(() => {
                     </el-tag>
                   </template>
                 </el-table-column>
+                <el-table-column label="归档状态" min-width="100" align="center">
+                  <template #default="{ row }">
+                    <el-tag v-if="row.reviewStatus === 'APPROVED'" :type="row.archiveStatus === 'ARCHIVED' ? 'success' : 'info'" size="small">
+                      {{ row.archiveStatus === 'ARCHIVED' ? '已归档' : '待归档' }}
+                    </el-tag>
+                    <span v-else>--</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="归档人" min-width="90">
+                  <template #default="{ row }">{{ row.archiverName || '--' }}</template>
+                </el-table-column>
                 <el-table-column label="合同文件" min-width="80" align="center">
                   <template #default="{ row }">
                     <el-button
@@ -364,6 +375,12 @@ onMounted(() => {
                       type="warning" link size="small"
                       @click="handleSubmit(row)"
                     >提交审核</el-button>
+                    <el-button
+                      v-if="row.reviewStatus === 'APPROVED' && (row.archiveStatus === 'PENDING_ARCHIVE' || row.archiveStatus === 'PARTIAL_ARCHIVE')"
+                      v-permission="'contract:archive'"
+                      type="success" link size="small"
+                      @click="router.push(`/contract/${row.id}?action=archive`)"
+                    >归档</el-button>
                     <el-popconfirm
                       v-if="row.reviewStatus === 'DRAFT' && isMyContract(row)"
                       title="确定删除？"

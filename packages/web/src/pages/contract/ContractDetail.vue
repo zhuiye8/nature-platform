@@ -107,7 +107,8 @@ const canArchive = computed(() =>
 
 const canEdit = computed(() => {
   if (!contract.value) return false
-  return contract.value.reviewStatus === 'DRAFT' || contract.value.reviewStatus === 'REJECTED'
+  if (contract.value.reviewStatus !== 'DRAFT' && contract.value.reviewStatus !== 'REJECTED') return false
+  return isOwner.value
 })
 
 function initArchiveForm() {
