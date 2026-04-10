@@ -1,19 +1,17 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { createPoliceRegister, getProjectManagers, getAvailableProjects } from '@/api/police'
-import type { SimpleUser, AvailableProject } from '@/api/police'
+import { createPoliceRegister, getAvailableProjects } from '@/api/police'
+import type { AvailableProject } from '@/api/police'
 
 const props = defineProps<{ visible: boolean }>()
 const emit = defineEmits<{ 'update:visible': [val: boolean]; saved: [] }>()
 
 const formRef = ref()
 const loading = ref(false)
-const projectManagers = ref<SimpleUser[]>([])
 const availableProjects = ref<AvailableProject[]>([])
 const form = ref({
   projectRegisterId: undefined as number | undefined,
-  projectManagerId: undefined as number | undefined,
   remark: '',
 })
 
@@ -23,13 +21,8 @@ const rules = {
 
 watch(() => props.visible, async (val) => {
   if (!val) return
-  form.value = { projectRegisterId: undefined, projectManagerId: undefined, remark: '' }
-  const [pms, projects] = await Promise.all([
-    getProjectManagers(),
-    getAvailableProjects(),
-  ])
-  projectManagers.value = pms
-  availableProjects.value = projects
+  form.value = { projectRegisterId: undefined, remark: '' }
+  availableProjects.value = await getAvailableProjects()
 })
 
 async function handleSubmit() {
@@ -68,11 +61,6 @@ async function handleSubmit() {
             :label="p.applicationName"
             :value="p.id"
           />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="项目经理">
-        <el-select v-model="form.projectManagerId" filterable clearable placeholder="请选择项目经理（选填）" style="width: 100%">
-          <el-option v-for="pm in projectManagers" :key="pm.id" :label="pm.displayName" :value="pm.id" />
         </el-select>
       </el-form-item>
       <el-form-item label="备注">
