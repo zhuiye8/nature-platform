@@ -7,7 +7,7 @@ import { ArrowLeft } from '@element-plus/icons-vue'
 import { createProject, updateProject, getProjectDetail, getAvailableYears, getSystemItems } from '@/api/project'
 import type { ProjectForm as ProjectFormData, ProjectSystemItem } from '@/api/project'
 import { useAuthStore } from '@/stores/auth'
-import { getContractPage } from '@/api/contract'
+import { getContractPage, getContractDetail } from '@/api/contract'
 import { regionData } from '@/utils/region-data'
 import type { ContractItem } from '@/api/contract'
 import RejectReasonPanel from '@/components/RejectReasonPanel.vue'
@@ -165,6 +165,9 @@ const rules: FormRules = {
 const contractOptions = ref<ContractItem[]>([])
 const contractLoading = ref(false)
 const selectedContractName = ref('')
+// Full contract detail (including customer region / address / contact) used to
+// auto-fill defaults when adding a new system item.
+const selectedContractDetail = ref<ContractItem | null>(null)
 
 async function searchContracts(query: string) {
   contractLoading.value = true
@@ -174,7 +177,6 @@ async function searchContracts(query: string) {
       pageSize: 20,
       keyword: query || undefined,
       reviewStatus: 'APPROVED',
-      archiveStatus: 'ARCHIVED',
       onlyMine: 'true',
     } as any)) as unknown as import('@nature/shared').PageResult<ContractItem>
     contractOptions.value = data.list
@@ -216,28 +218,24 @@ function setFilingRegion(clientKey: string | undefined, val: string[]) {
 
 const directMunicipalities = ['北京市', '上海市', '天津市', '重庆市']
 
+// Filing agency always resolves to the city-level 公安局 regardless of whether
+// a district is selected. Direct municipalities (Beijing/Shanghai/Tianjin/
+// Chongqing) use the province label because the province itself is the city
+// (e.g. "北京市公安局"). Yangzhou and other prefecture-level cities also
+// collapse to the city form (e.g. "扬州市公安局", "无锡市公安局").
 function generateFilingAgency(regionPath: string[]): string {
   if (!regionPath || regionPath.length === 0) return ''
   const province = regionPath[0]
   const city = regionPath[1]
-  const district = regionPath[2]
 
   if (directMunicipalities.includes(province)) {
-    // 直辖市
-    if (district) return `${province}公安局${district}分局`
-    return `${province}公安局网安总队`
+    return `${province}公安局`
   }
-  if (district) {
-    // 区县级
-    if (district.endsWith('县') || district.endsWith('市')) {
-      return `${district}公安局`
-    }
-    return `${city}公安局${district}分局`
+  if (city) {
+    return `${city}公安局`
   }
-  if (city) return `${city}公安局网安支队`
-  // 省级
-  if (province.includes('自治区')) return `${province}公安厅网安总队`
-  return `${province.replace('省', '')}省公安厅网安总队`
+  // Fallback when only the province is available
+  return `${province}公安厅`
 }
 
 function onFilingRegionChange(clientKey: string | undefined, val: string[], item: any) {
@@ -267,6 +265,13 @@ watch(
     const contract = contractOptions.value.find((c) => c.id === newVal)
     if (contract) {
       selectedContractName.value = contract.contractName || ''
+    }
+
+    // Load full contract detail so addSystemItem can inherit customer info
+    try {
+      selectedContractDetail.value = (await getContractDetail(newVal)) as unknown as ContractItem
+    } catch {
+      selectedContractDetail.value = null
     }
 
     await fetchAvailableYears(newVal)
@@ -324,6 +329,12 @@ async function fetchDetail() {
         { id: data.contractId, contractName: data.contractName } as unknown as ContractItem,
       ]
     }
+    // Load full contract detail so addSystemItem can inherit customer info in edit mode too
+    try {
+      selectedContractDetail.value = (await getContractDetail(data.contractId)) as unknown as ContractItem
+    } catch {
+      selectedContractDetail.value = null
+    }
     // Load year options
     await fetchAvailableYears(data.contractId)
     // Ensure current year is in options
@@ -337,18 +348,28 @@ async function fetchDetail() {
 }
 
 function addSystemItem() {
-  formData.value.systemItems.push({
-    clientKey: generateClientKey(),
+  // Inherit fields from the currently selected contract's customer info so
+  // reviewers don't have to retype them for every system item.
+  const detail = selectedContractDetail.value
+  const regionPath = detail?.customerRegion
+    ? String(detail.customerRegion).split('/').filter(Boolean)
+    : []
+  const inheritedFilingAgency =
+    regionPath.length > 0 ? generateFilingAgency(regionPath) : ''
+
+  const clientKey = generateClientKey()
+  const newItem: any = {
+    clientKey,
     systemName: '',
-    filingAgency: '',
+    filingAgency: inheritedFilingAgency,
     securityLevel: '',
     isReassessment: false,
     requiredEntryDate: '',
     requiredReportDeliveryDate: '',
-    assessedUnitName: '',
-    assessedUnitContact: '',
-    assessedUnitMobile: '',
-    assessedUnitAddress: '',
+    assessedUnitName: detail?.customerName ?? '',
+    assessedUnitContact: detail?.contactName ?? '',
+    assessedUnitMobile: detail?.contactPhone ?? '',
+    assessedUnitAddress: detail?.customerAddressDetail ?? '',
     hasFilingCertificate: true,
     filingCertificateNo: '',
     filingCertificateIssuedAt: '',
@@ -358,7 +379,14 @@ function addSystemItem() {
     pendingCertName: null,
     pendingFormName: null,
     pendingReportName: null,
-  } as any)
+  }
+  formData.value.systemItems.push(newItem)
+
+  // Preload the cascader state so the region shows as selected and remains
+  // editable by the user.
+  if (regionPath.length > 0) {
+    filingRegionMap.value[clientKey] = regionPath
+  }
 }
 
 function removeSystemItem(index: number) {

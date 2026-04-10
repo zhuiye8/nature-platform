@@ -323,6 +323,13 @@ onMounted(fetchData)
         </el-table-column>
         <el-table-column prop="contactName" label="联系人" min-width="90" />
         <el-table-column prop="contactPhone" label="手机号" min-width="120" />
+        <el-table-column prop="remark" label="备注" min-width="200">
+          <template #default="{ row }">
+            <div style="white-space: pre-wrap; word-break: break-all;">
+              {{ row.remark || '--' }}
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column prop="creatorName" label="录入人" min-width="90" />
         <el-table-column label="录入时间" min-width="170">
           <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>

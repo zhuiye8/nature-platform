@@ -6,6 +6,7 @@ import { contract, projectMember } from '../../database/schema/business';
 import { projectRegister } from '../../database/schema/business';
 import { wfInstance, wfAssignmentRule } from '../../database/schema/workflow';
 import { userRole } from '../../database/schema/iam';
+import { userAccount } from '../../database/schema/user';
 import { NotificationService } from './notification.service';
 
 interface WorkflowTaskCreatedEvent {
@@ -93,6 +94,38 @@ export class NotificationListener {
             if (cont[0].salesPersonId) userIds.add(cont[0].salesPersonId);
           }
         }
+      } else if (
+        (payload.nodeKey === 'PROJECT_REVIEW' &&
+          payload.bizType === 'PROJECT_REGISTER') ||
+        (payload.nodeKey === 'CONTRACT_REVIEW' &&
+          payload.bizType === 'CONTRACT')
+      ) {
+        // Pool review: notify only the target role from wf_instance.variables.
+        // - PROJECT_REVIEW: project_director (contract fully archived) OR dept_manager
+        // - CONTRACT_REVIEW: dept_manager (fixed), or super_admin if fallback kicked in
+        // This bypasses the default assignment-rule driven notification which would
+        // otherwise spam every role pool listed in wf_assignment_rule.
+        const inst = await this.db
+          .select({ variables: wfInstance.variables })
+          .from(wfInstance)
+          .where(eq(wfInstance.id, payload.instanceId))
+          .limit(1);
+
+        const vars =
+          (inst[0]?.variables as Record<string, any> | null) ?? {};
+        const targetRole: string = vars.reviewerRoleCode || 'dept_manager';
+
+        const poolUsers = await this.db
+          .select({ userId: userRole.userId })
+          .from(userRole)
+          .innerJoin(userAccount, eq(userRole.userId, userAccount.id))
+          .where(
+            and(
+              eq(userRole.roleCode, targetRole),
+              eq(userAccount.enabled, true),
+            ),
+          );
+        poolUsers.forEach((u) => userIds.add(u.userId));
       } else {
         // Default: notify all users with matching roles from assignment rules
         const rules = await this.db
@@ -261,6 +294,19 @@ export class NotificationListener {
           payload.bizId,
         );
       }
+
+      // CC notification: when project registration was approved via the
+      // project_director pool (i.e. contract was fully archived), send a
+      // carbon-copy to all enabled dept_managers so they stay informed.
+      if (
+        payload.bizType === 'PROJECT_REGISTER' &&
+        payload.nodeKey === 'PROJECT_REVIEW'
+      ) {
+        await this.sendProjectReviewCcIfNeeded(
+          payload.instanceId,
+          payload.bizId,
+        );
+      }
     } else if (payload.event === 'REJECT') {
       const reason = payload.remark ?? '';
       for (const uid of notifyIds) {
@@ -274,6 +320,67 @@ export class NotificationListener {
           payload.bizId,
         );
       }
+    }
+  }
+
+  /**
+   * Send a carbon-copy notification to all enabled dept_managers when a project
+   * registration has just been approved via the project_director pool.
+   *
+   * When the contract is NOT fully archived, the approval is already handled
+   * by dept_manager pool (so CC would notify themselves). We only CC when the
+   * approval came from the project_director pool, detected via
+   * wf_instance.variables.reviewerRoleCode.
+   */
+  private async sendProjectReviewCcIfNeeded(
+    instanceId: number,
+    projectRegisterId: number,
+  ): Promise<void> {
+    const instRows = await this.db
+      .select({ variables: wfInstance.variables })
+      .from(wfInstance)
+      .where(eq(wfInstance.id, instanceId))
+      .limit(1);
+
+    const vars =
+      (instRows[0]?.variables as Record<string, any> | null) ?? {};
+    if (vars.reviewerRoleCode !== 'project_director') {
+      return; // dept_manager approved — no need to CC themselves
+    }
+
+    const deptManagers = await this.db
+      .select({ userId: userRole.userId })
+      .from(userRole)
+      .innerJoin(userAccount, eq(userRole.userId, userAccount.id))
+      .where(
+        and(
+          eq(userRole.roleCode, 'dept_manager'),
+          eq(userAccount.enabled, true),
+        ),
+      );
+
+    if (deptManagers.length === 0) return;
+
+    const projRows = await this.db
+      .select({ applicationName: projectRegister.applicationName })
+      .from(projectRegister)
+      .where(eq(projectRegister.id, projectRegisterId))
+      .limit(1);
+    const appName =
+      projRows[0]?.applicationName ?? `#${projectRegisterId}`;
+
+    this.logger.log(
+      `CC-notifying ${deptManagers.length} dept_managers about project #${projectRegisterId} approval`,
+    );
+    for (const dm of deptManagers) {
+      await this.notificationService.createNotification(
+        dm.userId,
+        '一条项目登记审批通过（抄送）',
+        `项目登记「${appName}」已由项目主管审批通过`,
+        'CC_NOTIFICATION',
+        'PROJECT_REGISTER',
+        projectRegisterId,
+      );
     }
   }
 

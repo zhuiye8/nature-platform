@@ -26,6 +26,10 @@ export interface ContractItem {
   customerId: number
   customerName?: string
   customerUscc?: string | null
+  /** Customer region (format: "省/市/区") — only returned by findById, used to auto-fill project system items */
+  customerRegion?: string | null
+  /** Customer address detail — only returned by findById, used to auto-fill project system items */
+  customerAddressDetail?: string | null
   contractNo: string | null
   contractName: string | null
   contactName: string | null
@@ -59,6 +63,14 @@ export interface ContractItem {
   updatedAt: string
   systemItems?: ContractSystemItem[]
   systemItemsSummary?: { systemName: string; systemLevel: number }[]
+  /**
+   * Current reviewer label for the CONTRACT_REVIEW stage (only populated when
+   * reviewStatus === 'SUBMITTED' and the workflow is at CONTRACT_REVIEW):
+   *   - '部门经理' when pool review is active
+   *   - an actual user display name when a single-assign fallback is in effect
+   *   - null otherwise (draft / approved / archived)
+   */
+  currentReviewerLabel?: string | null
 }
 
 export interface ContractForm {

@@ -182,14 +182,24 @@ async function handleReportAssignApprove() {
   finally { submitting.value = false }
 }
 
-// Enrich task data with bizName for ReviewOpinionDialog
+// Enrich task data with bizName for ReviewOpinionDialog.
+// For CONTRACT workflows we prefer "组名(分类)" so reviewers see a meaningful
+// label at the contract review / archive stage. Matches the same format used
+// by workflow.service.ts getMyTasks for the dashboard task list.
 const taskDataForDialog = computed(() => {
   if (!taskData.value) return null
-  const name = bizData.value?.applicationName
-    || bizData.value?.projectName
-    || bizData.value?.contractName
-    || ''
-  return { ...taskData.value, bizName: name }
+  const b = bizData.value as any
+  let name = b?.applicationName || b?.projectName || ''
+  if (!name && b) {
+    if (b.groupName && b.contractCategory) {
+      name = `${b.groupName}(${b.contractCategory})`
+    } else if (b.groupName) {
+      name = b.groupName
+    } else if (b.contractName) {
+      name = b.contractName
+    }
+  }
+  return { ...taskData.value, bizName: name || '' }
 })
 const isPendingRectification = computed(() => taskData.value?.status === 'PENDING_RECTIFICATION')
 const isReviewNode = computed(() => ['TECH_REVIEW', 'CONTENT_REVIEW', 'REPORT_ASSIGN', 'REPORT_COMPILE', 'FINAL_REVIEW'].includes(nodeKey.value))

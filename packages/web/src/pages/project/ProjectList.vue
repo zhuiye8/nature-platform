@@ -63,6 +63,10 @@ function getDisplayTagType(row: any): 'primary' | 'success' | 'info' | 'warning'
   return 'info'
 }
 
+function isPoolReviewerLabel(label: string): boolean {
+  return label === '项目主管' || label === '部门经理'
+}
+
 async function fetchData() {
   loading.value = true
   try {
@@ -264,6 +268,18 @@ onMounted(() => {
         </el-table-column>
         <el-table-column prop="salesPersonName" label="签单销售" min-width="100" show-overflow-tooltip>
           <template #default="{ row }">{{ row.salesPersonName || '--' }}</template>
+        </el-table-column>
+        <el-table-column label="审批人" min-width="130" align="center">
+          <template #default="{ row }">
+            <el-tag
+              v-if="row.currentReviewerLabel"
+              size="small"
+              :type="isPoolReviewerLabel(row.currentReviewerLabel) ? 'warning' : 'info'"
+            >
+              {{ row.currentReviewerLabel }}
+            </el-tag>
+            <span v-else>--</span>
+          </template>
         </el-table-column>
         <el-table-column label="状态" min-width="120" align="center">
           <template #default="{ row }">

@@ -212,7 +212,7 @@ INSERT INTO wf_transition (definition_id, from_node_key, to_node_key, event, gua
 INSERT INTO wf_assignment_rule (node_key, slot_key, slot_label, role_code, avoidance_rule, priority) VALUES
     ('CONTRACT_REVIEW','REVIEWER','合同审核人','dept_manager','NONE',5),('CONTRACT_REVIEW','REVIEWER','合同审核人','super_admin','NONE',99),
     ('CONTRACT_ARCHIVE','ARCHIVER','合同归档人','commercial','NONE',10),('CONTRACT_ARCHIVE','ARCHIVER','合同归档人','super_admin','NONE',99),
-    ('PROJECT_REVIEW','REVIEWER','项目审核人','project_director','NONE',10),('PROJECT_REVIEW','REVIEWER','项目审核人','super_admin','NONE',99),
+    ('PROJECT_REVIEW','REVIEWER','项目审核人','project_director','NONE',10),('PROJECT_REVIEW','REVIEWER','项目审核人（部门经理池化）','dept_manager','NONE',50),('PROJECT_REVIEW','REVIEWER','项目审核人','super_admin','NONE',99),
     ('POLICE_REGISTER','OPERATOR','公安登记人','police_register','NONE',10),('POLICE_REGISTER','OPERATOR','公安登记人','super_admin','NONE',99),
     ('TECH_REVIEW','TECH','技术审核','tech_reviewer','SAME_PROJECT',10),('TECH_REVIEW','TECH','技术审核','super_admin','SAME_PROJECT',99),
     ('CONTENT_REVIEW','CONTENT_A','内容审核（技术）','content_reviewer_tech','SAME_PROJECT',10),('CONTENT_REVIEW','CONTENT_A','内容审核（技术）','super_admin','SAME_PROJECT',99),

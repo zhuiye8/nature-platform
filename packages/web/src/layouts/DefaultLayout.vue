@@ -106,6 +106,7 @@ function getRefRoute(item: NotificationItem): string {
   const typeRouteMap: Record<string, string> = {
     CONTRACT: `/contract/${item.refId}`,
     PROJECT: `/project/${item.refId}`,
+    PROJECT_REGISTER: `/project/${item.refId}`,
   }
   return typeRouteMap[item.refType] || '/dashboard'
 }

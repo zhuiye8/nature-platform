@@ -17,7 +17,7 @@ import {
   wfTransition,
   wfAssignmentRule,
 } from '../../database/schema/workflow';
-import { contract, projectRegister } from '../../database/schema/business';
+import { contract, contractGroup, projectRegister } from '../../database/schema/business';
 import { reviewOpinion } from '../../database/schema/review-opinion';
 import { compileReportFile } from '../../database/schema/assessment-file';
 import { userRole } from '../../database/schema/iam';
@@ -167,6 +167,40 @@ export class WorkflowService {
 
       return result[0];
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Update instance variables (shallow merge)
+  //
+  // Used by business layer to inject fresh context before signaling a resume.
+  // Example: project.service re-queries contract archiveStatus before
+  // re-submitting a rejected project registration, then patches the workflow
+  // variables so that ReviewHandler.onEnter picks up the latest reviewer role.
+  // ---------------------------------------------------------------------------
+  async updateVariables(
+    instanceId: number,
+    patch: Record<string, any>,
+  ): Promise<void> {
+    const rows = await this.db
+      .select({ variables: wfInstance.variables })
+      .from(wfInstance)
+      .where(eq(wfInstance.id, instanceId))
+      .limit(1);
+
+    if (!rows[0]) {
+      throw new NotFoundException(`Instance #${instanceId} not found`);
+    }
+
+    const currentVars =
+      (rows[0].variables as Record<string, any> | null) ?? {};
+
+    await this.db
+      .update(wfInstance)
+      .set({
+        variables: { ...currentVars, ...patch },
+        updatedAt: new Date(),
+      })
+      .where(eq(wfInstance.id, instanceId));
   }
 
   // ---------------------------------------------------------------------------
@@ -504,14 +538,37 @@ export class WorkflowService {
             .limit(1);
 
           // Get business name based on bizType
+          //
+          // For contracts we prefer the group-scoped label "合同组名称(合同分类)"
+          // because the individual contractName / contractNo may be empty or
+          // look cryptic to a dept_manager reviewing the task. Fallbacks are
+          // applied in order: group+category → group only → contractName → id.
           let bizName = '';
           if (row.bizType === 'CONTRACT') {
             const contracts = await this.db
-              .select({ contractName: contract.contractName })
+              .select({
+                contractName: contract.contractName,
+                contractCategory: contract.contractCategory,
+                groupName: contractGroup.groupName,
+              })
               .from(contract)
+              .leftJoin(
+                contractGroup,
+                eq(contract.groupId, contractGroup.id),
+              )
               .where(eq(contract.id, row.bizId))
               .limit(1);
-            bizName = contracts[0]?.contractName ?? '';
+
+            const c = contracts[0];
+            if (c?.groupName && c.contractCategory) {
+              bizName = `${c.groupName}(${c.contractCategory})`;
+            } else if (c?.groupName) {
+              bizName = c.groupName;
+            } else if (c?.contractName) {
+              bizName = c.contractName;
+            } else {
+              bizName = `合同 #${row.bizId}`;
+            }
           } else if (row.bizType === 'PROJECT_REGISTER') {
             const projects = await this.db
               .select({ applicationName: projectRegister.applicationName })

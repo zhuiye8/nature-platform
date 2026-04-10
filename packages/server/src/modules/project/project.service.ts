@@ -18,7 +18,7 @@ import {
 import { userAccount } from '../../database/schema/user';
 import { userRole } from '../../database/schema/iam';
 import { fieldChangeLog, fileAttachment } from '../../database/schema/common';
-import { wfInstance, wfActionLog } from '../../database/schema/workflow';
+import { wfInstance, wfActionLog, wfTask } from '../../database/schema/workflow';
 import {
   CreateProjectDto,
   UpdateProjectDto,
@@ -107,6 +107,12 @@ export class ProjectService {
         .offset((page - 1) * pageSize),
     ]);
 
+    // Pool role labels for the reviewer column
+    const POOL_LABELS: Record<string, string> = {
+      project_director: '项目主管',
+      dept_manager: '部门经理',
+    };
+
     // Enrich with sales person name (签单销售 from contract)
     const enriched = await Promise.all(
       rows.map(async (row) => {
@@ -144,7 +150,56 @@ export class ProjectService {
           .where(and(eq(projectSystemItem.projectRegisterId, row.id!), eq(projectSystemItem.deleted, false)));
         const systemItemCount = siCount[0]?.total ?? 0;
 
-        return { ...row, salesPersonName, rejectRemark, systemItemCount };
+        // Current reviewer label (only when waiting at PROJECT_REVIEW)
+        let currentReviewerLabel: string | null = null;
+        if (
+          row.status === 'SUBMITTED' &&
+          row.currentNode === 'PROJECT_REVIEW'
+        ) {
+          const instRows = await this.db
+            .select({ variables: wfInstance.variables, instanceId: wfInstance.id })
+            .from(wfInstance)
+            .where(
+              and(
+                eq(wfInstance.bizType, 'PROJECT_REGISTER'),
+                eq(wfInstance.bizId, row.id!),
+              ),
+            )
+            .limit(1);
+
+          const vars =
+            (instRows[0]?.variables as Record<string, any> | null) ?? {};
+
+          if (vars.isPoolReview && POOL_LABELS[vars.reviewerRoleCode]) {
+            currentReviewerLabel = POOL_LABELS[vars.reviewerRoleCode];
+          } else if (instRows[0]) {
+            // Single-assign (fallback to super_admin or legacy) → show name
+            const reviewer = await this.db
+              .select({ name: userAccount.displayName })
+              .from(wfTask)
+              .innerJoin(
+                userAccount,
+                eq(wfTask.assigneeId, userAccount.id),
+              )
+              .where(
+                and(
+                  eq(wfTask.instanceId, instRows[0].instanceId),
+                  eq(wfTask.nodeKey, 'PROJECT_REVIEW'),
+                  eq(wfTask.status, 'PENDING'),
+                ),
+              )
+              .limit(1);
+            currentReviewerLabel = reviewer[0]?.name ?? null;
+          }
+        }
+
+        return {
+          ...row,
+          salesPersonName,
+          rejectRemark,
+          systemItemCount,
+          currentReviewerLabel,
+        };
       }),
     );
 
@@ -259,6 +314,25 @@ export class ProjectService {
   // Create
   // -----------------------------------------------------------------------
   async create(dto: CreateProjectDto, userId: number) {
+    // Verify contract exists and has passed review
+    // (archive status is no longer required — both archived and
+    // partially-archived contracts may register projects; archive state only
+    // decides which reviewer role gets the approval task)
+    const contractRow = await this.db
+      .select({ reviewStatus: contract.reviewStatus })
+      .from(contract)
+      .where(
+        and(eq(contract.id, dto.contractId), eq(contract.deleted, false)),
+      )
+      .limit(1);
+
+    if (!contractRow[0]) {
+      throw new BadRequestException('合同不存在');
+    }
+    if (contractRow[0].reviewStatus !== 'APPROVED') {
+      throw new BadRequestException('只有已通过审核的合同才能创建项目登记');
+    }
+
     // Check uniqueness: contractId + contractYear WHERE deleted=FALSE
     const existing = await this.db
       .select({ id: projectRegister.id })
@@ -559,6 +633,23 @@ export class ProjectService {
       );
     }
 
+    // Decide reviewer role based on contract's CURRENT archive status.
+    // This is re-evaluated at every submission (first + resubmit) so that a
+    // contract that got fully archived between rejection and resubmission
+    // will route the next approval to project directors instead of dept managers.
+    const contractRow = await this.db
+      .select({ archiveStatus: contract.archiveStatus })
+      .from(contract)
+      .where(eq(contract.id, existing.contractId))
+      .limit(1);
+
+    const reviewerRoleCode =
+      contractRow[0]?.archiveStatus === 'ARCHIVED'
+        ? 'project_director'
+        : 'dept_manager';
+    const isPoolReview = true; // both modes are pool; fallback to single-assign
+    // happens inside ReviewHandler.onEnter when the target role has no users.
+
     await this.db
       .update(projectRegister)
       .set({
@@ -575,7 +666,14 @@ export class ProjectService {
     );
 
     if (existingWf && existingWf.instance.status === 'RUNNING') {
-      // Resubmission: find the PENDING task at PROJECT_REGISTER node and signal it
+      // Resubmission: patch variables with the latest decision BEFORE signaling
+      // so that ReviewHandler.onEnter picks up the fresh reviewerRoleCode when
+      // the transition reenters the PROJECT_REVIEW node.
+      await this.workflowService.updateVariables(existingWf.instance.id, {
+        reviewerRoleCode,
+        isPoolReview,
+      });
+
       const pendingTask = existingWf.tasks.find(
         (t) =>
           t.nodeKey === 'PROJECT_REGISTER' && t.status === 'PENDING',
@@ -590,12 +688,13 @@ export class ProjectService {
         );
       }
     } else {
-      // First submission: create new workflow instance
+      // First submission: create new workflow instance with variables
       await this.workflowService.startInstance(
         'PROJECT_ASSESSMENT_FLOW',
         'PROJECT_REGISTER',
         id,
         userId,
+        { reviewerRoleCode, isPoolReview },
       );
 
       // Auto-signal the first SIMPLE node to advance to PROJECT_REVIEW

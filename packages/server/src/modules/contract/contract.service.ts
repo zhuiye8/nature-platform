@@ -17,6 +17,7 @@ import { partner } from '../../database/schema/business';
 import { userRole } from '../../database/schema/iam';
 import { userAccount } from '../../database/schema/user';
 import { fieldChangeLog } from '../../database/schema/common';
+import { wfInstance, wfTask } from '../../database/schema/workflow';
 import {
   CreateContractDto,
   UpdateContractDto,
@@ -202,7 +203,19 @@ export class ContractService {
             .limit(1);
           financialHandlerName = handlers[0]?.displayName ?? null;
         }
-        return { ...row, salesPersonName, archiverName, financialHandlerName, systemItemsSummary: items };
+        // Current reviewer label (only when waiting at CONTRACT_REVIEW)
+        const currentReviewerLabel = await this.resolveContractReviewerLabel(
+          row.id,
+          row.reviewStatus,
+        );
+        return {
+          ...row,
+          salesPersonName,
+          archiverName,
+          financialHandlerName,
+          systemItemsSummary: items,
+          currentReviewerLabel,
+        };
       }),
     );
 
@@ -212,6 +225,64 @@ export class ContractService {
       page,
       pageSize,
     };
+  }
+
+  // -----------------------------------------------------------------------
+  // Resolve the reviewer label for a contract at the CONTRACT_REVIEW node.
+  // Returns:
+  //   - '部门经理' when pool review is active
+  //   - an actual user display name when a single-assign fallback is in effect
+  //   - null when the contract is not currently awaiting review
+  // -----------------------------------------------------------------------
+  private async resolveContractReviewerLabel(
+    contractId: number,
+    reviewStatus: string,
+  ): Promise<string | null> {
+    if (reviewStatus !== 'SUBMITTED') return null;
+
+    const POOL_LABELS: Record<string, string> = {
+      dept_manager: '部门经理',
+    };
+
+    const instRows = await this.db
+      .select({
+        variables: wfInstance.variables,
+        instanceId: wfInstance.id,
+      })
+      .from(wfInstance)
+      .where(
+        and(
+          eq(wfInstance.bizType, 'CONTRACT'),
+          eq(wfInstance.bizId, contractId),
+          eq(wfInstance.currentNode, 'CONTRACT_REVIEW'),
+        ),
+      )
+      .limit(1);
+
+    if (!instRows[0]) return null;
+
+    const vars =
+      (instRows[0].variables as Record<string, any> | null) ?? {};
+
+    if (vars.isPoolReview && POOL_LABELS[vars.reviewerRoleCode]) {
+      return POOL_LABELS[vars.reviewerRoleCode];
+    }
+
+    // Single-assign (fallback to super_admin or legacy) → resolve actual assignee name
+    const reviewer = await this.db
+      .select({ name: userAccount.displayName })
+      .from(wfTask)
+      .innerJoin(userAccount, eq(wfTask.assigneeId, userAccount.id))
+      .where(
+        and(
+          eq(wfTask.instanceId, instRows[0].instanceId),
+          eq(wfTask.nodeKey, 'CONTRACT_REVIEW'),
+          eq(wfTask.status, 'PENDING'),
+        ),
+      )
+      .limit(1);
+
+    return reviewer[0]?.name ?? null;
   }
 
   // -----------------------------------------------------------------------
@@ -259,6 +330,8 @@ export class ContractService {
         updatedAt: contract.updatedAt,
         customerName: customer.fullName,
         customerUscc: customer.uscc,
+        customerRegion: customer.region,
+        customerAddressDetail: customer.addressDetail,
       })
       .from(contract)
       .leftJoin(customer, eq(contract.customerId, customer.id))
@@ -609,6 +682,12 @@ export class ContractService {
       );
     }
 
+    // Contract review uses fixed dept_manager pool. The fallback to a single
+    // super_admin assignee when dept_manager has no active users is handled
+    // inside ReviewHandler.onEnter.
+    const reviewerRoleCode = 'dept_manager';
+    const isPoolReview = true;
+
     await this.db
       .update(contract)
       .set({
@@ -625,7 +704,15 @@ export class ContractService {
     );
 
     if (existingWf && existingWf.instance.status === 'RUNNING') {
-      // Resubmission: find the PENDING task at CONTRACT_CREATE node and signal it
+      // Resubmission: patch variables with the latest decision BEFORE signaling
+      // so ReviewHandler.onEnter picks up the fresh reviewerRoleCode when the
+      // transition reenters CONTRACT_REVIEW. (For contracts the values never
+      // change, but the call is kept for symmetry with project registration.)
+      await this.workflowService.updateVariables(existingWf.instance.id, {
+        reviewerRoleCode,
+        isPoolReview,
+      });
+
       const pendingTask = existingWf.tasks.find(
         (t) => t.nodeKey === 'CONTRACT_CREATE' && t.status === 'PENDING',
       );
@@ -639,12 +726,13 @@ export class ContractService {
         );
       }
     } else {
-      // First submission: create new workflow instance
+      // First submission: create new workflow instance with variables
       await this.workflowService.startInstance(
         'CONTRACT_FLOW',
         'CONTRACT',
         id,
         userId,
+        { reviewerRoleCode, isPoolReview },
       );
 
       // Auto-signal the first SIMPLE node (CONTRACT_CREATE) to advance to CONTRACT_REVIEW
@@ -1100,7 +1188,15 @@ export class ContractService {
                 .limit(1);
               archiverName = archivers[0]?.displayName ?? null;
             }
-            return { ...c, salesPersonName, financialHandlerName, archiverName };
+            const currentReviewerLabel =
+              await this.resolveContractReviewerLabel(c.id, c.reviewStatus);
+            return {
+              ...c,
+              salesPersonName,
+              financialHandlerName,
+              archiverName,
+              currentReviewerLabel,
+            };
           }),
         );
 

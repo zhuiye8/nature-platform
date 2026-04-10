@@ -134,6 +134,10 @@ function isDraftOrRejected(row: any) {
   return row.reviewStatus === 'DRAFT' || row.reviewStatus === 'REJECTED'
 }
 
+function isPoolReviewerLabel(label: string): boolean {
+  return label === '部门经理' || label === '项目主管'
+}
+
 // ── 文件管理 ──
 const fileMap = ref<Record<number, boolean>>({})
 const descFileMap = ref<Record<number, boolean>>({})
@@ -327,6 +331,18 @@ onMounted(() => {
                     <el-tag :type="reviewStatusTagType[row.reviewStatus] || 'info'" size="small">
                       {{ reviewStatusLabel[row.reviewStatus] || row.reviewStatus }}
                     </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column label="审核人" min-width="120" align="center">
+                  <template #default="{ row }">
+                    <el-tag
+                      v-if="row.currentReviewerLabel"
+                      size="small"
+                      :type="isPoolReviewerLabel(row.currentReviewerLabel) ? 'warning' : 'info'"
+                    >
+                      {{ row.currentReviewerLabel }}
+                    </el-tag>
+                    <span v-else>--</span>
                   </template>
                 </el-table-column>
                 <el-table-column label="归档状态" min-width="100" align="center">
