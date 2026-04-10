@@ -5,9 +5,10 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
-import { eq, asc } from 'drizzle-orm';
+import { eq, and, asc } from 'drizzle-orm';
 import { DRIZZLE, DrizzleDB } from '../../database/database.module';
-import { iamRole, iamPermission, iamRolePermission } from '../../database/schema/iam';
+import { iamRole, iamPermission, iamRolePermission, userRole } from '../../database/schema/iam';
+import { userAccount } from '../../database/schema/user';
 import { CreateRoleDto, UpdateRoleDto, AssignPermissionsDto } from './dto/role.dto';
 
 @Injectable()
@@ -155,5 +156,48 @@ export class RoleService {
     }
 
     return grouped;
+  }
+
+  // ===================================================================
+  // Role Members
+  // ===================================================================
+
+  async getUsersByRole(roleCode: string) {
+    const rows = await this.db
+      .select({
+        userId: userRole.userId,
+        sortOrder: userRole.sortOrder,
+        username: userAccount.username,
+        displayName: userAccount.displayName,
+        mobile: userAccount.mobile,
+      })
+      .from(userRole)
+      .innerJoin(userAccount, eq(userRole.userId, userAccount.id))
+      .where(eq(userRole.roleCode, roleCode))
+      .orderBy(asc(userRole.sortOrder), asc(userAccount.id));
+
+    return rows;
+  }
+
+  async updateRoleUsers(roleCode: string, users: { userId: number; sortOrder: number }[]) {
+    // Verify role exists
+    const role = await this.db.select().from(iamRole).where(eq(iamRole.roleCode, roleCode)).limit(1);
+    if (!role[0]) throw new NotFoundException('角色不存在');
+
+    // Delete all existing user_role for this roleCode
+    await this.db.delete(userRole).where(eq(userRole.roleCode, roleCode));
+
+    // Insert new records
+    if (users.length > 0) {
+      await this.db.insert(userRole).values(
+        users.map((u) => ({
+          userId: u.userId,
+          roleCode,
+          sortOrder: u.sortOrder,
+        })),
+      );
+    }
+
+    return { success: true, count: users.length };
   }
 }

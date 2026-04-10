@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getUserDetail, createUser, updateUser } from '@/api/user'
+import { getUserDetail, createUser, updateUser, checkUsername } from '@/api/user'
 import type { UserForm as UserFormType } from '@/api/user'
 
 const props = defineProps<{ visible: boolean; userId: number | null }>()
@@ -12,8 +12,28 @@ const loading = ref(false)
 const isEdit = ref(false)
 const form = ref<UserFormType>({ username: '', displayName: '' })
 
+// Async validator: format + uniqueness (only used in create mode; editing disables the input)
+const validateUsername = async (_rule: any, value: string, callback: (err?: Error) => void) => {
+  if (!value) {
+    return callback(new Error('请输入用户名'))
+  }
+  if (!/^[a-zA-Z0-9_]{3,32}$/.test(value)) {
+    return callback(new Error('用户名只能包含字母、数字和下划线，长度3-32位'))
+  }
+  try {
+    const res = await checkUsername(value)
+    if (!res.available) {
+      return callback(new Error(res.reason || '该用户名已被使用'))
+    }
+    callback()
+  } catch {
+    // Network errors shouldn't block submit; backend will re-check
+    callback()
+  }
+}
+
 const rules = {
-  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
+  username: [{ required: true, validator: validateUsername, trigger: 'blur' }],
   displayName: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }, { min: 6, message: '密码至少6位', trigger: 'blur' }],
 }

@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
-import { getRoleList, getRoleDetail, deleteRole, assignRolePermissions, getAllPermissions } from '@/api/role'
-import type { RoleItem, PermissionItem } from '@/api/role'
+import { Plus, Top, Bottom, Delete } from '@element-plus/icons-vue'
+import { getRoleList, getRoleDetail, deleteRole, assignRolePermissions, getAllPermissions, getRoleUsers, updateRoleUsers } from '@/api/role'
+import type { RoleItem, PermissionItem, RoleMember } from '@/api/role'
 import { getCategoryLabel } from '@/utils/status-map'
+import { getSimpleUserList } from '@/api/user'
 import RoleForm from './RoleForm.vue'
 
 const tableData = ref<RoleItem[]>([])
@@ -18,6 +19,16 @@ const permTargetRoleCode = ref('')
 const permTargetRoleName = ref('')
 const checkedPerms = ref<string[]>([])
 const permGroups = ref<Record<string, PermissionItem[]>>({})
+
+// Member management dialog
+const memberDialogVisible = ref(false)
+const memberTargetRoleCode = ref('')
+const memberTargetRoleName = ref('')
+const memberList = ref<RoleMember[]>([])
+const memberLoading = ref(false)
+const memberSaving = ref(false)
+const allUsers = ref<{ id: number; displayName: string; username: string }[]>([])
+const addUserId = ref<number | undefined>(undefined)
 
 async function fetchData() {
   loading.value = true
@@ -39,6 +50,7 @@ async function handleDelete(row: RoleItem) {
   } catch { /* handled */ }
 }
 
+// Permission dialog
 async function openPermDialog(row: RoleItem) {
   permTargetRoleCode.value = row.roleCode
   permTargetRoleName.value = row.roleName
@@ -58,6 +70,83 @@ async function handleAssignPerms() {
   } catch { /* handled */ }
 }
 
+// Member dialog
+async function openMemberDialog(row: RoleItem) {
+  memberTargetRoleCode.value = row.roleCode
+  memberTargetRoleName.value = row.roleName
+  memberLoading.value = true
+  memberDialogVisible.value = true
+  addUserId.value = undefined
+  try {
+    memberList.value = await getRoleUsers(row.roleCode)
+    if (allUsers.value.length === 0) {
+      allUsers.value = (await getSimpleUserList()) as any
+    }
+  } finally {
+    memberLoading.value = false
+  }
+}
+
+// Users not yet in this role
+function availableUsers() {
+  const existing = new Set(memberList.value.map(m => m.userId))
+  return allUsers.value.filter(u => !existing.has(u.id))
+}
+
+function handleAddMember() {
+  if (!addUserId.value) return
+  const user = allUsers.value.find(u => u.id === addUserId.value)
+  if (!user) return
+  const maxOrder = memberList.value.length > 0 ? Math.max(...memberList.value.map(m => m.sortOrder)) + 1 : 0
+  memberList.value.push({
+    userId: user.id,
+    username: user.username,
+    displayName: user.displayName,
+    mobile: null,
+    sortOrder: maxOrder,
+  })
+  addUserId.value = undefined
+}
+
+function handleRemoveMember(index: number) {
+  memberList.value.splice(index, 1)
+  reindex()
+}
+
+function handleMoveUp(index: number) {
+  if (index <= 0) return
+  const temp = memberList.value[index]
+  memberList.value[index] = memberList.value[index - 1]
+  memberList.value[index - 1] = temp
+  reindex()
+}
+
+function handleMoveDown(index: number) {
+  if (index >= memberList.value.length - 1) return
+  const temp = memberList.value[index]
+  memberList.value[index] = memberList.value[index + 1]
+  memberList.value[index + 1] = temp
+  reindex()
+}
+
+function reindex() {
+  memberList.value = memberList.value.map((m, i) => ({ ...m, sortOrder: i }))
+}
+
+async function handleSaveMembers() {
+  memberSaving.value = true
+  try {
+    await updateRoleUsers(
+      memberTargetRoleCode.value,
+      memberList.value.map((m, i) => ({ userId: m.userId, sortOrder: i })),
+    )
+    ElMessage.success('成员保存成功')
+    memberDialogVisible.value = false
+  } finally {
+    memberSaving.value = false
+  }
+}
+
 onMounted(() => fetchData())
 </script>
 
@@ -71,7 +160,6 @@ onMounted(() => fetchData())
         </div>
       </template>
 
-      <div style="text-align: right; color: #909399; font-size: 12px; margin-bottom: 6px">&larr; 可左右滑动查看更多信息 &rarr;</div>
       <el-table v-loading="loading" :data="tableData" stripe border style="width: 100%">
         <el-table-column prop="roleCode" label="角色编码" min-width="150" />
         <el-table-column prop="roleName" label="角色名称" min-width="120" />
@@ -87,10 +175,11 @@ onMounted(() => fetchData())
             <el-tag :type="row.enabled ? 'success' : 'danger'" size="small">{{ row.enabled ? '启用' : '禁用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="220" fixed="right">
+        <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
             <el-button v-permission="'role:update'" type="primary" link size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button v-permission="'role:update'" link size="small" @click="openPermDialog(row)">权限</el-button>
+            <el-button v-permission="'role:manage'" type="warning" link size="small" @click="openMemberDialog(row)">成员</el-button>
             <el-popconfirm v-if="!row.systemFlag" title="确定要删除该角色吗？" @confirm="handleDelete(row)">
               <template #reference>
                 <el-button v-permission="'role:delete'" type="danger" link size="small">删除</el-button>
@@ -116,6 +205,52 @@ onMounted(() => fetchData())
       <template #footer>
         <el-button @click="permDialogVisible = false">取消</el-button>
         <el-button type="primary" @click="handleAssignPerms">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- Member Management Dialog -->
+    <el-dialog v-model="memberDialogVisible" :title="`${memberTargetRoleName} — 成员管理`" width="640px" :close-on-click-modal="false">
+      <div v-loading="memberLoading">
+        <p style="color: #909399; font-size: 12px; margin: 0 0 12px">排序越靠前，自动分配任务时优先级越高</p>
+
+        <el-table :data="memberList" border size="small" style="width: 100%; margin-bottom: 16px">
+          <el-table-column label="#" width="50" align="center">
+            <template #default="{ $index }">{{ $index + 1 }}</template>
+          </el-table-column>
+          <el-table-column prop="displayName" label="姓名" min-width="90" />
+          <el-table-column prop="username" label="用户名" min-width="110" />
+          <el-table-column label="操作" width="130" align="center">
+            <template #default="{ $index }">
+              <el-button :icon="Top" link size="small" :disabled="$index === 0" @click="handleMoveUp($index)" title="上移" />
+              <el-button :icon="Bottom" link size="small" :disabled="$index === memberList.length - 1" @click="handleMoveDown($index)" title="下移" />
+              <el-button :icon="Delete" type="danger" link size="small" @click="handleRemoveMember($index)" title="移除" />
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <div v-if="memberList.length === 0" style="text-align: center; color: #909399; padding: 16px 0; font-size: 13px">暂无成员</div>
+
+        <!-- Add member -->
+        <div style="display: flex; gap: 8px; align-items: center">
+          <el-select
+            v-model="addUserId"
+            filterable
+            placeholder="搜索用户添加"
+            style="flex: 1"
+          >
+            <el-option
+              v-for="u in availableUsers()"
+              :key="u.id"
+              :label="`${u.displayName}（${u.username}）`"
+              :value="u.id"
+            />
+          </el-select>
+          <el-button type="primary" :icon="Plus" @click="handleAddMember" :disabled="!addUserId">添加</el-button>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="memberDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="memberSaving" @click="handleSaveMembers">保存</el-button>
       </template>
     </el-dialog>
   </div>

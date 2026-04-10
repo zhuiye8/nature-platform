@@ -32,6 +32,21 @@ export class RoleController {
     return this.roleService.getAllPermissions();
   }
 
+  @Get(':roleCode/users')
+  @RequirePermission('role:manage')
+  async getUsersByRole(@Param('roleCode') roleCode: string) {
+    return this.roleService.getUsersByRole(roleCode);
+  }
+
+  @Put(':roleCode/users')
+  @RequirePermission('role:manage')
+  async updateRoleUsers(
+    @Param('roleCode') roleCode: string,
+    @Body() body: { users: { userId: number; sortOrder: number }[] },
+  ) {
+    return this.roleService.updateRoleUsers(roleCode, body.users);
+  }
+
   @Get(':id')
   @RequirePermission('role:list')
   async findById(@Param('id', ParseIntPipe) id: number) {

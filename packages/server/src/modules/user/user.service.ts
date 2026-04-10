@@ -105,21 +105,27 @@ export class UserService {
   // Create
   // -----------------------------------------------------------------------
   async create(dto: CreateUserDto) {
+    // Normalize + format check (defense-in-depth; DTO also checks)
+    const username = dto.username?.trim();
+    if (!username || !/^[a-zA-Z0-9_]{3,32}$/.test(username)) {
+      throw new BadRequestException('用户名只能包含字母、数字和下划线，长度3-32位');
+    }
+
     // Check username uniqueness
     const existing = await this.db
       .select({ id: userAccount.id })
       .from(userAccount)
-      .where(eq(userAccount.username, dto.username))
+      .where(eq(userAccount.username, username))
       .limit(1);
     if (existing.length > 0) {
-      throw new BadRequestException(`Username "${dto.username}" already exists`);
+      throw new BadRequestException(`用户名 "${username}" 已存在`);
     }
 
     const hash = await bcrypt.hash(dto.password, 10);
     const result = await this.db
       .insert(userAccount)
       .values({
-        username: dto.username,
+        username,
         passwordHash: hash,
         displayName: dto.displayName,
         mobile: dto.mobile ?? null,
@@ -206,11 +212,45 @@ export class UserService {
   }
 
   // -----------------------------------------------------------------------
+  // Check username availability (for form real-time validation)
+  // -----------------------------------------------------------------------
+  async checkUsername(username: string, excludeId?: number) {
+    const trimmed = username?.trim();
+    if (!trimmed) {
+      return { available: false, reason: '用户名不能为空' };
+    }
+    if (!/^[a-zA-Z0-9_]{3,32}$/.test(trimmed)) {
+      return {
+        available: false,
+        reason: '用户名只能包含字母、数字和下划线，长度3-32位',
+      };
+    }
+
+    const rows = await this.db
+      .select({ id: userAccount.id })
+      .from(userAccount)
+      .where(eq(userAccount.username, trimmed))
+      .limit(1);
+
+    if (rows.length === 0) {
+      return { available: true };
+    }
+    if (excludeId && rows[0].id === excludeId) {
+      return { available: true };
+    }
+    return { available: false, reason: '该用户名已被使用' };
+  }
+
+  // -----------------------------------------------------------------------
   // Simple list for dropdowns
   // -----------------------------------------------------------------------
   async findSimpleList() {
     return this.db
-      .select({ id: userAccount.id, displayName: userAccount.displayName })
+      .select({
+        id: userAccount.id,
+        username: userAccount.username,
+        displayName: userAccount.displayName,
+      })
       .from(userAccount)
       .where(eq(userAccount.enabled, true))
       .orderBy(userAccount.displayName);

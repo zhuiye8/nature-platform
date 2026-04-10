@@ -40,6 +40,16 @@ export class UserController {
     return this.userService.findSimpleList();
   }
 
+  @Get('check-username')
+  @RequirePermission('user:list')
+  async checkUsername(
+    @Query('username') username: string,
+    @Query('excludeId') excludeId?: string,
+  ) {
+    const excl = excludeId ? parseInt(excludeId, 10) : undefined;
+    return this.userService.checkUsername(username, excl);
+  }
+
   // ── 个人中心（无需权限，仅需登录） ──
 
   @Get('profile')

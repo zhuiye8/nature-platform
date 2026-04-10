@@ -48,3 +48,18 @@ export const assignRolePermissions = (roleCode: string, permissionCodes: string[
 
 export const getAllPermissions = (): Promise<Record<string, PermissionItem[]>> =>
   request.get('/role/all-permissions') as any
+
+// Role members
+export interface RoleMember {
+  userId: number
+  username: string
+  displayName: string
+  mobile: string | null
+  sortOrder: number
+}
+
+export const getRoleUsers = (roleCode: string): Promise<RoleMember[]> =>
+  request.get(`/role/${roleCode}/users`) as any
+
+export const updateRoleUsers = (roleCode: string, users: { userId: number; sortOrder: number }[]) =>
+  request.put(`/role/${roleCode}/users`, { users })

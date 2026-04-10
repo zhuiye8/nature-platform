@@ -7,12 +7,16 @@ import {
   IsArray,
   Min,
   MinLength,
+  Matches,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateUserDto {
   @IsString()
   @IsNotEmpty()
+  @Matches(/^[a-zA-Z0-9_]{3,32}$/, {
+    message: '用户名只能包含字母、数字和下划线，长度3-32位',
+  })
   username!: string;
 
   @IsString()

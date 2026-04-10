@@ -28,6 +28,7 @@ export interface UserForm {
 
 export interface SimpleUser {
   id: number
+  username: string
   displayName: string
 }
 
@@ -54,3 +55,11 @@ export const resetUserPassword = (id: number, newPassword: string) =>
 
 export const getSimpleUserList = (): Promise<SimpleUser[]> =>
   request.get('/user/simple-list') as any
+
+export const checkUsername = (
+  username: string,
+  excludeId?: number,
+): Promise<{ available: boolean; reason?: string }> =>
+  request.get('/user/check-username', {
+    params: { username, excludeId },
+  }) as any
