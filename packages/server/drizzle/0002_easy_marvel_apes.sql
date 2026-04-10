@@ -1,0 +1,1 @@
+ALTER TABLE "contract_serial" ADD CONSTRAINT "contract_serial_serial_year_service_content_code_pk" PRIMARY KEY("serial_year","service_content_code");

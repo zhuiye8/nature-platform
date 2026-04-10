@@ -274,14 +274,23 @@ onMounted(fetchData)
 
       <!-- Table -->
       <el-table v-loading="loading" :data="tableData" stripe border style="width: 100%">
-        <el-table-column prop="platformName" label="平台名称" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="websiteUrl" label="网址" min-width="200" show-overflow-tooltip>
+        <el-table-column prop="id" label="编号" width="70" align="center" />
+        <el-table-column prop="platformName" label="平台名称" min-width="150">
           <template #default="{ row }">
-            <el-link v-if="row.websiteUrl" type="primary" :href="row.websiteUrl" target="_blank" underline="never">{{ row.websiteUrl }}</el-link>
+            <span style="white-space: normal; word-break: break-all; line-height: 1.5">{{ row.platformName || '--' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="网址" min-width="200">
+          <template #default="{ row }">
+            <el-link v-if="row.websiteUrl" type="primary" :href="row.websiteUrl" target="_blank" underline="never" style="white-space: normal; word-break: break-all; line-height: 1.5">{{ row.websiteUrl }}</el-link>
             <span v-else>--</span>
           </template>
         </el-table-column>
-        <el-table-column prop="account" label="账户" min-width="120" show-overflow-tooltip />
+        <el-table-column label="账户" min-width="120">
+          <template #default="{ row }">
+            <span style="white-space: normal; word-break: break-all; line-height: 1.5">{{ row.account || '--' }}</span>
+          </template>
+        </el-table-column>
         <el-table-column min-width="120">
           <template #header>
             <div style="display: flex; align-items: center; gap: 4px">

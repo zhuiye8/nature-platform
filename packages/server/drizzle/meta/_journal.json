@@ -15,6 +15,13 @@
       "when": 1775733726910,
       "tag": "0001_chemical_tarantula",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1775743865380,
+      "tag": "0002_easy_marvel_apes",
+      "breakpoints": true
     }
   ]
 }

@@ -44,7 +44,7 @@ export class PlatformService {
         .select()
         .from(registrationPlatform)
         .where(whereClause)
-        .orderBy(desc(registrationPlatform.createdAt))
+        .orderBy(desc(registrationPlatform.createdAt), desc(registrationPlatform.id))
         .limit(pageSize)
         .offset((page - 1) * pageSize),
     ]);
@@ -97,7 +97,7 @@ export class PlatformService {
       .select()
       .from(registrationPlatform)
       .where(and(...conditions)!)
-      .orderBy(desc(registrationPlatform.createdAt));
+      .orderBy(desc(registrationPlatform.createdAt), desc(registrationPlatform.id));
 
     const enriched = await Promise.all(
       rows.map(async (row) => {
@@ -151,7 +151,20 @@ export class PlatformService {
     await this.findById(id);
     const result = await this.db
       .update(registrationPlatform)
-      .set({ ...dto, updatedBy: userId, updatedAt: new Date() })
+      .set({
+        platformName: dto.platformName ?? null,
+        websiteUrl: dto.websiteUrl ?? null,
+        account: dto.account ?? null,
+        password: dto.password ?? null,
+        hasCa: dto.hasCa ?? false,
+        caExpireDate: dto.caExpireDate || null,
+        caPassword: dto.caPassword ?? null,
+        contactName: dto.contactName ?? null,
+        contactPhone: dto.contactPhone ?? null,
+        remark: dto.remark ?? null,
+        updatedBy: userId,
+        updatedAt: new Date(),
+      })
       .where(eq(registrationPlatform.id, id))
       .returning();
     return result[0];

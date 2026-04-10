@@ -10,6 +10,7 @@ import {
   jsonb,
   decimal,
   date,
+  primaryKey,
 } from 'drizzle-orm/pg-core';
 
 // ---------------------------------------------------------------------------
@@ -167,7 +168,9 @@ export const contractSerial = pgTable('contract_serial', {
   serviceContentCode: varchar('service_content_code', { length: 8 }).notNull(),
   nextSeq: integer('next_seq').notNull().default(1),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => [
+  primaryKey({ columns: [table.serialYear, table.serviceContentCode] }),
+]);
 
 export type ContractSerialRow = typeof contractSerial.$inferSelect;
 export type NewContractSerial = typeof contractSerial.$inferInsert;
