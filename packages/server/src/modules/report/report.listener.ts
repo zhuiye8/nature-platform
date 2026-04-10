@@ -3,6 +3,7 @@ import { OnEvent } from '@nestjs/event-emitter';
 import { eq, and } from 'drizzle-orm';
 import { DRIZZLE, DrizzleDB } from '../../database/database.module';
 import { projectRegister, projectMember } from '../../database/schema/business';
+import { wfTask } from '../../database/schema/workflow';
 
 @Injectable()
 export class ReportListener {
@@ -66,6 +67,32 @@ export class ReportListener {
             });
           }
         }
+
+        // Set REPORT_COMPILE task assignee to the designated writer
+        // (workflow creates a PENDING pool task, we convert it to direct assignment)
+        setTimeout(async () => {
+          try {
+            const { wfInstance } = await import('../../database/schema/workflow');
+            const instances = await this.db
+              .select({ id: wfInstance.id })
+              .from(wfInstance)
+              .where(and(eq(wfInstance.bizType, 'PROJECT_REGISTER'), eq(wfInstance.bizId, payload.bizId)))
+              .limit(1);
+            if (instances[0]) {
+              await this.db
+                .update(wfTask)
+                .set({ assigneeId: reportWriterIds[0] })
+                .where(and(
+                  eq(wfTask.instanceId, instances[0].id),
+                  eq(wfTask.nodeKey, 'REPORT_COMPILE'),
+                  eq(wfTask.status, 'PENDING'),
+                ));
+              this.logger.log(`Set REPORT_COMPILE assignee to user #${reportWriterIds[0]}`);
+            }
+          } catch (e) {
+            this.logger.warn('Failed to set REPORT_COMPILE assignee', e);
+          }
+        }, 1000);
       }
     }
   }
