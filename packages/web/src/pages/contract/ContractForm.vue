@@ -286,8 +286,10 @@ async function fetchDetail() {
         contactOptions.value = []
       }
     }
-    // Pre-fill partner option
-    if (data.partnerId && data.partnerName) {
+    // Pre-fill partner option: "无" is stored as partnerId=null, partnerName="无"
+    if (data.partnerName === '无' || (!data.partnerId && !data.partnerName)) {
+      formData.value.partnerId = 0
+    } else if (data.partnerId && data.partnerName) {
       if (!partnerOptions.value.find(p => p.id === data.partnerId)) {
         partnerOptions.value.push({ id: data.partnerId, name: data.partnerName } as PartnerItem)
       }
@@ -394,6 +396,7 @@ async function handleSubmit() {
       })),
     }
     if (isEdit.value && contractId.value) {
+      delete cleanData.groupId
       await updateContract(contractId.value, cleanData)
       ElMessage.success('更新成功')
     } else {
