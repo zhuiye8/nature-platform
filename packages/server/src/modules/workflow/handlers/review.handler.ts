@@ -10,6 +10,15 @@ export class ReviewHandler implements NodeHandler {
 
   constructor(private readonly assignmentService: AssignmentService) {}
 
+  // Only these nodes read wf_instance.variables for pool/role-override routing.
+  // All other REVIEW nodes (TECH_REVIEW, FINAL_REVIEW, REPORT_ASSIGN,
+  // REPORT_COMPILE) must use the rule-table so that SAME_PROJECT avoidance
+  // and per-role sort_order selection work correctly.
+  private static readonly VARIABLE_DRIVEN_NODES = new Set([
+    'PROJECT_REVIEW',
+    'CONTRACT_REVIEW',
+  ]);
+
   async onEnter(ctx: NodeContext): Promise<void> {
     // Get projectId for assignment avoidance
     let projectId = (ctx.instance.variables as Record<string, any>)
@@ -18,60 +27,65 @@ export class ReviewHandler implements NodeHandler {
       projectId = ctx.instance.bizId;
     }
 
-    // ── Variable-driven assignment (for PROJECT_REVIEW pool/fallback) ──────
-    const vars = (ctx.instance.variables as Record<string, any>) || {};
-    let reviewerRoleCode: string | undefined = vars.reviewerRoleCode;
-    let isPoolReview: boolean = vars.isPoolReview === true;
-
     let assigneeId: number | null = null;
 
-    if (isPoolReview && reviewerRoleCode) {
-      // Pool mode: verify target role has at least one enabled user
-      const hasUsers =
-        await this.assignmentService.hasActiveRoleUsers(reviewerRoleCode);
+    if (ReviewHandler.VARIABLE_DRIVEN_NODES.has(ctx.nodeDef.nodeKey)) {
+      // ── Variable-driven assignment (PROJECT_REVIEW / CONTRACT_REVIEW) ──
+      const vars = (ctx.instance.variables as Record<string, any>) || {};
+      let reviewerRoleCode: string | undefined = vars.reviewerRoleCode;
+      let isPoolReview: boolean = vars.isPoolReview === true;
 
-      if (!hasUsers) {
-        // Fallback: pool target has no active users → single-assign to super_admin
-        this.logger.warn(
-          `Pool role "${reviewerRoleCode}" has no active users at node "${ctx.nodeDef.nodeKey}", falling back to super_admin single-assign`,
-        );
-        reviewerRoleCode = 'super_admin';
-        isPoolReview = false;
+      if (isPoolReview && reviewerRoleCode) {
+        // Pool mode: verify target role has at least one enabled user
+        const hasUsers =
+          await this.assignmentService.hasActiveRoleUsers(reviewerRoleCode);
 
-        // Persist the fallback decision so findPage / notifications see it
-        const currentVars =
-          (ctx.instance.variables as Record<string, any>) || {};
-        await ctx.db
-          .update(wfInstance)
-          .set({
-            variables: { ...currentVars, reviewerRoleCode, isPoolReview },
-            updatedAt: new Date(),
-          })
-          .where(eq(wfInstance.id, ctx.instance.id));
+        if (!hasUsers) {
+          this.logger.warn(
+            `Pool role "${reviewerRoleCode}" has no active users at node "${ctx.nodeDef.nodeKey}", falling back to super_admin single-assign`,
+          );
+          reviewerRoleCode = 'super_admin';
+          isPoolReview = false;
 
+          const currentVars =
+            (ctx.instance.variables as Record<string, any>) || {};
+          await ctx.db
+            .update(wfInstance)
+            .set({
+              variables: { ...currentVars, reviewerRoleCode, isPoolReview },
+              updatedAt: new Date(),
+            })
+            .where(eq(wfInstance.id, ctx.instance.id));
+
+          assigneeId = await this.assignmentService.resolveAssignee(
+            ctx.nodeDef.nodeKey,
+            null,
+            projectId,
+            [],
+            'super_admin',
+          );
+        } else {
+          assigneeId = null;
+        }
+      } else if (reviewerRoleCode) {
         assigneeId = await this.assignmentService.resolveAssignee(
           ctx.nodeDef.nodeKey,
           null,
           projectId,
           [],
-          'super_admin',
+          reviewerRoleCode,
         );
       } else {
-        // Pool: leave assigneeId NULL so all active users of the role can see it
-        assigneeId = null;
+        assigneeId = await this.assignmentService.resolveAssignee(
+          ctx.nodeDef.nodeKey,
+          null,
+          projectId,
+          [],
+        );
       }
-    } else if (reviewerRoleCode) {
-      // Single-assign mode driven by explicit role
-      assigneeId = await this.assignmentService.resolveAssignee(
-        ctx.nodeDef.nodeKey,
-        null,
-        projectId,
-        [],
-        reviewerRoleCode,
-      );
     } else {
-      // Legacy path: no variables set (historical data / other flows)
-      // → fall back to the rule-table default behavior
+      // ── Rule-table assignment (TECH_REVIEW, FINAL_REVIEW, etc.) ──────
+      // Uses wf_assignment_rule with proper SAME_PROJECT avoidance
       assigneeId = await this.assignmentService.resolveAssignee(
         ctx.nodeDef.nodeKey,
         null,

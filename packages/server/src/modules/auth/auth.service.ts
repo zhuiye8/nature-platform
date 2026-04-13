@@ -11,7 +11,7 @@ import axios from 'axios';
 import * as bcrypt from 'bcrypt';
 import { eq, inArray, ilike } from 'drizzle-orm';
 import { DRIZZLE, DrizzleDB } from '../../database/database.module';
-import { userAccount, userRole, iamRolePermission } from '../../database/schema';
+import { userAccount, userRole, iamRole, iamRolePermission } from '../../database/schema';
 
 interface DingtalkTokenResponse {
   accessToken?: string;
@@ -69,7 +69,7 @@ export class AuthService {
       throw new UnauthorizedException('用户名或密码错误');
     }
 
-    const { roles, permissions } = await this.loadUserPermissions(user.id);
+    const { roles, roleNames, permissions } = await this.loadUserPermissions(user.id);
     const payload = { sub: user.id, username: user.username };
 
     return {
@@ -84,6 +84,7 @@ export class AuthService {
         mobile: user.mobile,
         permissions,
         roles,
+        roleNames,
       },
     };
   }
@@ -289,7 +290,7 @@ export class AuthService {
   }
 
   private async buildLoginResult(user: any) {
-    const { roles, permissions } = await this.loadUserPermissions(user.id);
+    const { roles, roleNames, permissions } = await this.loadUserPermissions(user.id);
     const payload = { sub: user.id, username: user.username };
 
     return {
@@ -305,6 +306,7 @@ export class AuthService {
         mobile: user.mobile,
         permissions,
         roles,
+        roleNames,
       },
     };
   }
@@ -380,7 +382,7 @@ export class AuthService {
       throw new UnauthorizedException('用户不存在或已被禁用');
     }
 
-    const { roles, permissions } = await this.loadUserPermissions(user.id);
+    const { roles, roleNames, permissions } = await this.loadUserPermissions(user.id);
 
     return {
       id: user.id,
@@ -391,23 +393,26 @@ export class AuthService {
       mobile: user.mobile,
       permissions,
       roles,
+      roleNames,
     };
   }
 
   private async loadUserPermissions(userId: number) {
     const roleRows = await this.db
-      .select({ roleCode: userRole.roleCode })
+      .select({ roleCode: userRole.roleCode, roleName: iamRole.roleName })
       .from(userRole)
+      .innerJoin(iamRole, eq(userRole.roleCode, iamRole.roleCode))
       .where(eq(userRole.userId, userId));
 
     const roles = roleRows.map((r) => r.roleCode);
+    const roleNames = roleRows.map((r) => r.roleName);
 
     if (roles.includes('super_admin')) {
-      return { roles, permissions: ['*:*'] };
+      return { roles, roleNames, permissions: ['*:*'] };
     }
 
     if (roles.length === 0) {
-      return { roles, permissions: [] };
+      return { roles, roleNames, permissions: [] };
     }
 
     const permRows = await this.db
@@ -417,6 +422,6 @@ export class AuthService {
 
     const permissions = permRows.map((p) => p.code);
 
-    return { roles, permissions };
+    return { roles, roleNames, permissions };
   }
 }

@@ -164,8 +164,8 @@ onMounted(fetchProfile)
         </el-form-item>
         <el-form-item label="角色">
           <div style="display: flex; gap: 6px; flex-wrap: wrap">
-            <el-tag v-for="role in (profile?.roles || [])" :key="role" size="small" type="info">
-              {{ getStatusLabel(role) }}
+            <el-tag v-for="(role, idx) in (profile?.roles || [])" :key="role" size="small" type="info">
+              {{ profile?.roleNames?.[idx] || getStatusLabel(role) }}
             </el-tag>
             <el-tag v-if="!profile?.roles?.length" size="small" type="warning">未分配角色</el-tag>
           </div>

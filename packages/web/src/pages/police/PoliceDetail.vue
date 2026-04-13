@@ -6,7 +6,7 @@ import { ArrowLeft, Download, Upload, Delete, Paperclip } from '@element-plus/ic
 import { getPoliceRegisterDetail, exportPoliceExcel } from '@/api/police'
 import { getStatusLabel, getStatusTagType } from '@/utils/status-map'
 import { formatTime } from '@/utils/format'
-import { getFileList, getFileDownloadPath, getUploadUrl, deleteFile, type FileItem } from '@/api/file'
+import { getFileList, getFileDownloadPath, getFilePreviewPath, getUploadUrl, deleteFile, type FileItem } from '@/api/file'
 import { getSystemItems } from '@/api/project'
 import SystemItemDetailDialog from '@/components/SystemItemDetailDialog.vue'
 
@@ -72,13 +72,49 @@ function formatFileSize(bytes: number) {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
+const imageTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+function isImage(file: FileItem) {
+  return imageTypes.includes((file as any).contentType || '')
+}
+function isPdf(file: FileItem) {
+  return (file as any).contentType === 'application/pdf'
+}
+
+// ── File preview dialog ──
+const previewVisible = ref(false)
+const previewUrl = ref('')
+const previewFileName = ref('')
+const previewFileId = ref(0)
+const previewType = ref<'image' | 'pdf' | 'none'>('none')
+
+const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp']
+function getPreviewType(fileName: string): 'image' | 'pdf' | 'none' {
+  const lower = fileName.toLowerCase()
+  if (imageExts.some((e) => lower.endsWith(e))) return 'image'
+  if (lower.endsWith('.pdf')) return 'pdf'
+  return 'none'
+}
+
+function openFilePreview(fileId: number, fileName: string) {
+  const type = getPreviewType(fileName)
+  if (type === 'none') {
+    openFileDownload(fileId)
+    return
+  }
+  previewType.value = type
+  previewUrl.value = getFilePreviewPath(fileId)
+  previewFileName.value = fileName
+  previewFileId.value = fileId
+  previewVisible.value = true
+}
+
 function openFileDownload(id: number) {
   window.open(getFileDownloadPath(id), '_blank')
 }
 
 // ── 项目成员分组 ──
-const roleTypeLabel: Record<string, string> = { PM: '项目经理', ASSESSOR: '测评师' }
-const roleTypeTagType: Record<string, 'primary' | 'success' | 'warning' | 'info'> = { PM: 'primary', ASSESSOR: 'success' }
+const roleTypeLabel: Record<string, string> = { PM: '项目经理', ASSESSOR: '测评师', REPORT_WRITER: '报告编制人' }
+const roleTypeTagType: Record<string, 'primary' | 'success' | 'warning' | 'info'> = { PM: 'primary', ASSESSOR: 'success', REPORT_WRITER: 'warning' }
 
 // ── 状态映射 ──
 function policeStatusLabel(s: string) {
@@ -179,10 +215,11 @@ onMounted(fetchDetail)
           <el-descriptions :column="2" border size="small">
             <el-descriptions-item label="备案证明">
               <template v-if="si.filingCertificateFile">
-                <el-link type="primary" underline="never" @click="openFileDownload(si.filingCertificateFile.id)">
+                <el-link type="primary" underline="never" @click="openFilePreview(si.filingCertificateFile.id, si.filingCertificateFile.fileName)">
                   {{ si.filingCertificateFile.fileName }}
                 </el-link>
                 <span style="color: #999; font-size: 12px; margin-left: 8px">({{ formatFileSize(si.filingCertificateFile.fileSize) }})</span>
+                <el-button type="primary" link size="small" :icon="Download" style="margin-left: 8px" @click.stop="openFileDownload(si.filingCertificateFile.id)">下载</el-button>
               </template>
               <span v-else style="color: #999">未上传</span>
             </el-descriptions-item>
@@ -190,18 +227,20 @@ onMounted(fetchDetail)
             <el-descriptions-item label="出具时间">{{ si.filingCertificateIssuedAt || '--' }}</el-descriptions-item>
             <el-descriptions-item label="备案表">
               <template v-if="si.hasFilingForm && si.filingFormFile">
-                <el-link type="primary" underline="never" @click="openFileDownload(si.filingFormFile.id)">
+                <el-link type="primary" underline="never" @click="openFilePreview(si.filingFormFile.id, si.filingFormFile.fileName)">
                   {{ si.filingFormFile.fileName }}
                 </el-link>
+                <el-button type="primary" link size="small" :icon="Download" style="margin-left: 8px" @click.stop="openFileDownload(si.filingFormFile.id)">下载</el-button>
               </template>
               <span v-else-if="si.hasFilingForm" style="color: #e6a23c">有（未上传）</span>
               <span v-else style="color: #999">无</span>
             </el-descriptions-item>
             <el-descriptions-item label="定级报告">
               <template v-if="si.hasClassificationReport && si.classificationReportFile">
-                <el-link type="primary" underline="never" @click="openFileDownload(si.classificationReportFile.id)">
+                <el-link type="primary" underline="never" @click="openFilePreview(si.classificationReportFile.id, si.classificationReportFile.fileName)">
                   {{ si.classificationReportFile.fileName }}
                 </el-link>
+                <el-button type="primary" link size="small" :icon="Download" style="margin-left: 8px" @click.stop="openFileDownload(si.classificationReportFile.id)">下载</el-button>
               </template>
               <span v-else-if="si.hasClassificationReport" style="color: #e6a23c">有（未上传）</span>
               <span v-else style="color: #999">无</span>
@@ -261,7 +300,9 @@ onMounted(fetchDetail)
           <el-table-column label="#" type="index" width="50" align="center" />
           <el-table-column prop="fileName" label="文件名" min-width="200" show-overflow-tooltip>
             <template #default="{ row }">
-              <el-icon style="vertical-align: -2px; margin-right: 4px"><Paperclip /></el-icon>{{ row.fileName }}
+              <el-link type="primary" underline="never" @click="openFilePreview(row.id, row.fileName)">
+                <el-icon style="vertical-align: -2px; margin-right: 4px"><Paperclip /></el-icon>{{ row.fileName }}
+              </el-link>
             </template>
           </el-table-column>
           <el-table-column label="大小" width="100">
@@ -299,5 +340,16 @@ onMounted(fetchDetail)
       v-model:visible="siDialogVisible"
       :item="siDialogItem"
     />
+
+    <!-- 文件预览弹窗 -->
+    <el-dialog v-model="previewVisible" :title="previewFileName" width="80%" top="5vh" destroy-on-close>
+      <div v-if="previewType === 'image'" style="text-align: center">
+        <el-image :src="previewUrl" fit="contain" style="max-width: 100%; max-height: 70vh" />
+      </div>
+      <iframe v-else-if="previewType === 'pdf'" :src="previewUrl" style="width: 100%; height: 70vh; border: none" />
+      <template #footer>
+        <el-button :icon="Download" @click="handleFileDownload(previewFileId)">下载</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>

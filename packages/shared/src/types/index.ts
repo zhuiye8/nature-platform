@@ -36,6 +36,8 @@ export interface UserInfo {
   mobile?: string | null
   permissions: string[]
   roles: string[]
+  /** Role display names from iam_role.role_name (same order as roles[]) */
+  roleNames?: string[]
 }
 
 /** Login request body */

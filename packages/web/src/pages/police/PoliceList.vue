@@ -5,7 +5,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Download, Upload, Delete } from '@element-plus/icons-vue'
 import { getPoliceRegisterPage, exportPoliceExcel } from '@/api/police'
 import type { PoliceItem } from '@/api/police'
-import { getFileList, getUploadUrl, getFileDownloadPath, deleteFile, type FileItem } from '@/api/file'
+import { getFileList, getUploadUrl, getFileDownloadPath, getFilePreviewPath, deleteFile, type FileItem } from '@/api/file'
 import { formatTime } from '@/utils/format'
 
 const router = useRouter()
@@ -81,6 +81,34 @@ function formatFileSize(bytes: number) {
   if (bytes < 1024) return bytes + ' B'
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+}
+
+// ── File preview dialog ──
+const previewVisible = ref(false)
+const previewUrl = ref('')
+const previewFileName = ref('')
+const previewFileId = ref(0)
+const previewType = ref<'image' | 'pdf' | 'none'>('none')
+
+const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp']
+function getPreviewType(fileName: string): 'image' | 'pdf' | 'none' {
+  const lower = fileName.toLowerCase()
+  if (imageExts.some((e) => lower.endsWith(e))) return 'image'
+  if (lower.endsWith('.pdf')) return 'pdf'
+  return 'none'
+}
+
+function openFilePreview(fileId: number, fileName: string) {
+  const type = getPreviewType(fileName)
+  if (type === 'none') {
+    openDownload(fileId)
+    return
+  }
+  previewType.value = type
+  previewUrl.value = getFilePreviewPath(fileId)
+  previewFileName.value = fileName
+  previewFileId.value = fileId
+  previewVisible.value = true
 }
 
 onMounted(() => fetchData())
@@ -179,7 +207,13 @@ onMounted(() => fetchData())
         </el-upload>
       </div>
       <el-table v-if="fileDialogFiles.length > 0" :data="fileDialogFiles" border size="small">
-        <el-table-column prop="fileName" label="文件名" min-width="200" show-overflow-tooltip />
+        <el-table-column prop="fileName" label="文件名" min-width="200" show-overflow-tooltip>
+          <template #default="{ row }">
+            <el-link type="primary" underline="never" @click="openFilePreview(row.id, row.fileName)">
+              {{ row.fileName }}
+            </el-link>
+          </template>
+        </el-table-column>
         <el-table-column label="大小" width="90">
           <template #default="{ row }">{{ formatFileSize(row.fileSize) }}</template>
         </el-table-column>
@@ -196,6 +230,17 @@ onMounted(() => fetchData())
       <div v-else style="color: var(--el-text-color-placeholder); text-align: center; padding: 24px 0; font-size: 13px">
         暂无扫描件，请点击上方按钮上传
       </div>
+    </el-dialog>
+
+    <!-- 文件预览弹窗 -->
+    <el-dialog v-model="previewVisible" :title="previewFileName" width="80%" top="5vh" destroy-on-close>
+      <div v-if="previewType === 'image'" style="text-align: center">
+        <el-image :src="previewUrl" fit="contain" style="max-width: 100%; max-height: 70vh" />
+      </div>
+      <iframe v-else-if="previewType === 'pdf'" :src="previewUrl" style="width: 100%; height: 70vh; border: none" />
+      <template #footer>
+        <el-button :icon="Download" @click="openDownload(previewFileId)">下载</el-button>
+      </template>
     </el-dialog>
   </div>
 </template>

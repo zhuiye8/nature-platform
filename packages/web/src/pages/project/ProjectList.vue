@@ -30,6 +30,7 @@ const nodeStatusLabel: Record<string, string> = {
   ON_SITE_ASSESSMENT: '测评中',
   TECH_REVIEW: '技术审核中',
   CONTENT_REVIEW: '内容审核中',
+  REPORT_ASSIGN: '报告分配中',
   REPORT_COMPILE: '编制中',
   FINAL_REVIEW: '最终审核中',
   MATERIAL_ARCHIVE: '归档中',

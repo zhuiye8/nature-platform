@@ -68,32 +68,75 @@ export class ReportListener {
           }
         }
 
-        // Set REPORT_COMPILE task assignee to the designated writer
-        // (workflow creates a PENDING pool task, we convert it to direct assignment)
-        setTimeout(async () => {
-          try {
-            const { wfInstance } = await import('../../database/schema/workflow');
-            const instances = await this.db
-              .select({ id: wfInstance.id })
-              .from(wfInstance)
-              .where(and(eq(wfInstance.bizType, 'PROJECT_REGISTER'), eq(wfInstance.bizId, payload.bizId)))
-              .limit(1);
-            if (instances[0]) {
-              await this.db
-                .update(wfTask)
-                .set({ assigneeId: reportWriterIds[0] })
-                .where(and(
-                  eq(wfTask.instanceId, instances[0].id),
-                  eq(wfTask.nodeKey, 'REPORT_COMPILE'),
-                  eq(wfTask.status, 'PENDING'),
-                ));
-              this.logger.log(`Set REPORT_COMPILE assignee to user #${reportWriterIds[0]}`);
-            }
-          } catch (e) {
-            this.logger.warn('Failed to set REPORT_COMPILE assignee', e);
-          }
-        }, 1000);
+        // Set REPORT_COMPILE task assignee to the designated writer.
+        // The workflow creates a PENDING pool task asynchronously — use a
+        // retry loop instead of a fragile setTimeout(1000) to avoid races.
+        this.assignReportCompileTask(
+          payload.bizId,
+          reportWriterIds[0],
+        );
       }
     }
+  }
+
+  /**
+   * Retry-based assignment of the REPORT_COMPILE task to the designated writer.
+   * The task may not exist yet when this listener fires (event ordering),
+   * so we poll up to 5 times with 500 ms intervals.
+   */
+  private async assignReportCompileTask(
+    projectRegisterId: number,
+    writerId: number,
+  ): Promise<void> {
+    const { wfInstance } = await import('../../database/schema/workflow');
+    const MAX_RETRIES = 5;
+    const RETRY_DELAY = 500;
+
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      await new Promise((r) => setTimeout(r, RETRY_DELAY));
+
+      try {
+        const instances = await this.db
+          .select({ id: wfInstance.id })
+          .from(wfInstance)
+          .where(
+            and(
+              eq(wfInstance.bizType, 'PROJECT_REGISTER'),
+              eq(wfInstance.bizId, projectRegisterId),
+            ),
+          )
+          .limit(1);
+
+        if (!instances[0]) continue;
+
+        const updated = await this.db
+          .update(wfTask)
+          .set({ assigneeId: writerId })
+          .where(
+            and(
+              eq(wfTask.instanceId, instances[0].id),
+              eq(wfTask.nodeKey, 'REPORT_COMPILE'),
+              eq(wfTask.status, 'PENDING'),
+            ),
+          )
+          .returning({ id: wfTask.id });
+
+        if (updated.length > 0) {
+          this.logger.log(
+            `Set REPORT_COMPILE assignee to user #${writerId} (attempt ${attempt + 1})`,
+          );
+          return;
+        }
+      } catch (e) {
+        this.logger.warn(
+          `assignReportCompileTask attempt ${attempt + 1} failed`,
+          e,
+        );
+      }
+    }
+
+    this.logger.warn(
+      `Failed to assign REPORT_COMPILE task for project #${projectRegisterId} after ${MAX_RETRIES} retries`,
+    );
   }
 }

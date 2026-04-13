@@ -9,7 +9,7 @@ import { eq, and, or, ilike, count, desc, SQL } from 'drizzle-orm';
 import * as bcrypt from 'bcrypt';
 import { DRIZZLE, DrizzleDB } from '../../database/database.module';
 import { userAccount } from '../../database/schema/user';
-import { userRole } from '../../database/schema/iam';
+import { userRole, iamRole } from '../../database/schema/iam';
 import { fieldChangeLog } from '../../database/schema/common';
 import {
   CreateUserDto,
@@ -277,11 +277,16 @@ export class UserService {
     if (!rows[0]) throw new NotFoundException('User not found');
 
     const roles = await this.db
-      .select({ roleCode: userRole.roleCode })
+      .select({ roleCode: userRole.roleCode, roleName: iamRole.roleName })
       .from(userRole)
+      .innerJoin(iamRole, eq(userRole.roleCode, iamRole.roleCode))
       .where(eq(userRole.userId, userId));
 
-    return { ...rows[0], roles: roles.map((r) => r.roleCode) };
+    return {
+      ...rows[0],
+      roles: roles.map((r) => r.roleCode),
+      roleNames: roles.map((r) => r.roleName),
+    };
   }
 
   async updateProfile(

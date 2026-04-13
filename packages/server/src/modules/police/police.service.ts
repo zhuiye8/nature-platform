@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { eq, and, or, ilike, count, desc, SQL } from 'drizzle-orm';
 import * as ExcelJS from 'exceljs';
+import * as path from 'path';
 import { DRIZZLE, DrizzleDB } from '../../database/database.module';
 import {
   policeRegister,
@@ -329,8 +330,9 @@ export class PoliceService {
   }
 
   // -----------------------------------------------------------------------
-  // Export Excel — one row per system item, 14 columns
-  // Styled: header row = bold black text on blue background, auto column width
+  // Export Excel — 14 columns, one row per system item.
+  // Uses the official police import template to preserve the "导入说明"
+  // sheet and header formatting required by the external police system.
   // -----------------------------------------------------------------------
   async exportExcel(id: number): Promise<{ buffer: Buffer; fileName: string }> {
     const detail = await this.findById(id);
@@ -348,43 +350,61 @@ export class PoliceService {
       pmMobile = u[0]?.mobile ?? '';
     }
 
-    // Assessor names
+    // Assessor names (comma-separated)
     const assessorNames = pd.members
       .filter((m) => m.roleType === 'ASSESSOR')
       .map((m) => m.displayName)
       .join(',');
 
-    // Column definitions: header label + minimum width
-    const columns: { header: string; minWidth: number }[] = [
-      { header: '被测评系统名称', minWidth: 28 },
-      { header: '备案证明编号', minWidth: 22 },
-      { header: '安全保护等级', minWidth: 14 },
-      { header: '备案机关', minWidth: 18 },
-      { header: '被测评系统单位名称', minWidth: 22 },
-      { header: '被测评系统单位联系人', minWidth: 14 },
-      { header: '联系方式', minWidth: 16 },
-      { header: '所属行业', minWidth: 12 },
-      { header: '项目地址', minWidth: 30 },
-      { header: '项目经理', minWidth: 12 },
-      { header: '联系方式', minWidth: 16 },
-      { header: '项目组成员', minWidth: 30 },
-      { header: '预计测评开始时间', minWidth: 18 },
-      { header: '预计测评结束时间', minWidth: 18 },
+    // ── Load template ──
+    const templatePath = path.join(
+      __dirname,
+      '..',
+      '..',
+      'assets',
+      'police-export-template.xlsx',
+    );
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.readFile(templatePath);
+
+    // The template has 2 sheets: "导入说明" (keep as-is) + "信息系统" (write data)
+    const ws = wb.getWorksheet('信息系统');
+    if (!ws) throw new NotFoundException('模板中缺少"信息系统"工作表');
+
+    // Template row 1 has 7 column headers. We need 14 columns total.
+    // Overwrite header row with all 14 columns and apply styling.
+    const headers = [
+      '被测评系统名称',
+      '备案证明编号',
+      '安全保护等级',
+      '备案机关',
+      '被测评系统单位名称',
+      '被测评系统单位联系人',
+      '联系方式',
+      '所属行业',
+      '项目地址',
+      '项目经理',
+      '联系方式',
+      '项目组成员',
+      '预计测评开始时间',
+      '预计测评结束时间',
     ];
 
-    const wb = new ExcelJS.Workbook();
-    const ws = wb.addWorksheet('信息系统');
-
-    // ── Header row ──
-    const headerRow = ws.addRow(columns.map((c) => c.header));
-    headerRow.eachCell((cell) => {
+    const headerRow = ws.getRow(1);
+    headers.forEach((h, i) => {
+      const cell = headerRow.getCell(i + 1);
+      cell.value = h;
       cell.font = { bold: true, color: { argb: 'FF000000' }, size: 11 };
       cell.fill = {
         type: 'pattern',
         pattern: 'solid',
-        fgColor: { argb: 'FFD6E4F0' }, // light blue
+        fgColor: { argb: 'FFD6E4F0' },
       };
-      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+      cell.alignment = {
+        horizontal: 'center',
+        vertical: 'middle',
+        wrapText: true,
+      };
       cell.border = {
         top: { style: 'thin' },
         bottom: { style: 'thin' },
@@ -394,7 +414,13 @@ export class PoliceService {
     });
     headerRow.height = 28;
 
-    // ── Data rows ──
+    // ── Clear any template placeholder data rows (row 2+) ──
+    const lastRow = ws.lastRow?.number ?? 1;
+    for (let r = lastRow; r >= 2; r--) {
+      ws.spliceRows(r, 1);
+    }
+
+    // ── Write data rows ──
     for (const si of pd.systemItems as any[]) {
       const row = ws.addRow([
         si.systemName ?? '',
@@ -424,16 +450,15 @@ export class PoliceService {
       });
     }
 
-    // ── Auto column width (max of header width vs content width, capped) ──
-    columns.forEach((col, idx) => {
+    // ── Auto column width ──
+    const minWidths = [28, 22, 14, 18, 22, 14, 16, 12, 30, 12, 16, 30, 18, 18];
+    minWidths.forEach((mw, idx) => {
       const colNum = idx + 1;
-      let maxLen = col.header.length;
+      let maxLen = (headers[idx] ?? '').length;
       ws.getColumn(colNum).eachCell({ includeEmpty: false }, (cell) => {
-        const val = String(cell.value ?? '');
-        maxLen = Math.max(maxLen, val.length);
+        maxLen = Math.max(maxLen, String(cell.value ?? '').length);
       });
-      // Use the wider of: minWidth or content-based width, capped at 50
-      ws.getColumn(colNum).width = Math.min(Math.max(col.minWidth, maxLen + 2), 50);
+      ws.getColumn(colNum).width = Math.min(Math.max(mw, maxLen + 2), 50);
     });
 
     const buf = Buffer.from(await wb.xlsx.writeBuffer());
