@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { eq, and, or, ilike, count, desc, SQL } from 'drizzle-orm';
-import * as XLSX from 'xlsx';
+import * as ExcelJS from 'exceljs';
 import { DRIZZLE, DrizzleDB } from '../../database/database.module';
 import {
   policeRegister,
@@ -330,6 +330,7 @@ export class PoliceService {
 
   // -----------------------------------------------------------------------
   // Export Excel — one row per system item, 14 columns
+  // Styled: header row = bold black text on blue background, auto column width
   // -----------------------------------------------------------------------
   async exportExcel(id: number): Promise<{ buffer: Buffer; fileName: string }> {
     const detail = await this.findById(id);
@@ -353,44 +354,89 @@ export class PoliceService {
       .map((m) => m.displayName)
       .join(',');
 
-    const headers = [
-      '被测评系统名称',
-      '备案证明编号',
-      '安全保护等级',
-      '备案机关',
-      '被测评系统单位名称',
-      '被测评系统单位联系人',
-      '联系方式',
-      '所属行业',
-      '项目地址',
-      '项目经理',
-      '联系方式',
-      '项目组成员',
-      '预计测评开始时间',
-      '预计测评结束时间',
+    // Column definitions: header label + minimum width
+    const columns: { header: string; minWidth: number }[] = [
+      { header: '被测评系统名称', minWidth: 28 },
+      { header: '备案证明编号', minWidth: 22 },
+      { header: '安全保护等级', minWidth: 14 },
+      { header: '备案机关', minWidth: 18 },
+      { header: '被测评系统单位名称', minWidth: 22 },
+      { header: '被测评系统单位联系人', minWidth: 14 },
+      { header: '联系方式', minWidth: 16 },
+      { header: '所属行业', minWidth: 12 },
+      { header: '项目地址', minWidth: 30 },
+      { header: '项目经理', minWidth: 12 },
+      { header: '联系方式', minWidth: 16 },
+      { header: '项目组成员', minWidth: 30 },
+      { header: '预计测评开始时间', minWidth: 18 },
+      { header: '预计测评结束时间', minWidth: 18 },
     ];
 
-    const dataRows = pd.systemItems.map((si: any) => [
-      si.systemName ?? '',
-      si.filingCertificateNo ?? '',
-      si.securityLevel ?? '',
-      si.filingAgency ?? '',
-      si.assessedUnitName ?? '',
-      si.assessedUnitContact ?? '',
-      si.assessedUnitMobile ?? '',
-      si.assessedUnitIndustry ?? '',
-      si.assessedUnitAddress ?? '',
-      pm?.displayName ?? '',
-      pmMobile,
-      assessorNames,
-      si.requiredEntryDate ?? '',
-      si.requiredReportDeliveryDate ?? '',
-    ]);
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('信息系统');
 
-    const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, '信息系统');
-    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    // ── Header row ──
+    const headerRow = ws.addRow(columns.map((c) => c.header));
+    headerRow.eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: 'FF000000' }, size: 11 };
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFD6E4F0' }, // light blue
+      };
+      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+      cell.border = {
+        top: { style: 'thin' },
+        bottom: { style: 'thin' },
+        left: { style: 'thin' },
+        right: { style: 'thin' },
+      };
+    });
+    headerRow.height = 28;
+
+    // ── Data rows ──
+    for (const si of pd.systemItems as any[]) {
+      const row = ws.addRow([
+        si.systemName ?? '',
+        si.filingCertificateNo ?? '',
+        si.securityLevel ?? '',
+        si.filingAgency ?? '',
+        si.assessedUnitName ?? '',
+        si.assessedUnitContact ?? '',
+        si.assessedUnitMobile ?? '',
+        si.assessedUnitIndustry ?? '',
+        si.assessedUnitAddress ?? '',
+        pm?.displayName ?? '',
+        pmMobile,
+        assessorNames,
+        si.requiredEntryDate ?? '',
+        si.requiredReportDeliveryDate ?? '',
+      ]);
+      row.eachCell((cell) => {
+        cell.font = { size: 11 };
+        cell.alignment = { vertical: 'middle', wrapText: true };
+        cell.border = {
+          top: { style: 'thin' },
+          bottom: { style: 'thin' },
+          left: { style: 'thin' },
+          right: { style: 'thin' },
+        };
+      });
+    }
+
+    // ── Auto column width (max of header width vs content width, capped) ──
+    columns.forEach((col, idx) => {
+      const colNum = idx + 1;
+      let maxLen = col.header.length;
+      ws.getColumn(colNum).eachCell({ includeEmpty: false }, (cell) => {
+        const val = String(cell.value ?? '');
+        maxLen = Math.max(maxLen, val.length);
+      });
+      // Use the wider of: minWidth or content-based width, capped at 50
+      ws.getColumn(colNum).width = Math.min(Math.max(col.minWidth, maxLen + 2), 50);
+    });
+
+    const buf = Buffer.from(await wb.xlsx.writeBuffer());
 
     const today = new Date().toISOString().slice(0, 10);
     const appName = pd.applicationName || `公安登记${id}`;
