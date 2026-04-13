@@ -6,6 +6,7 @@ import {
   NotFoundException,
   OnModuleInit,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
   S3Client,
   PutObjectCommand,
@@ -30,6 +31,7 @@ export class FileService implements OnModuleInit {
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDB,
     private readonly configService: ConfigService,
+    private readonly eventEmitter: EventEmitter2,
   ) {
     let endpoint = this.configService.get('MINIO_ENDPOINT', 'http://localhost:9010');
     // Ensure endpoint has protocol prefix
@@ -125,6 +127,13 @@ export class FileService implements OnModuleInit {
         uploaderId: userId,
       })
       .returning();
+
+    this.eventEmitter.emit('file.uploaded', {
+      bizType,
+      bizId,
+      uploaderId: userId,
+      fileId: rows[0].id,
+    });
 
     return rows[0];
   }

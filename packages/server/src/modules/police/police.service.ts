@@ -2,9 +2,9 @@ import {
   Inject,
   Injectable,
   NotFoundException,
-  BadRequestException,
 } from '@nestjs/common';
-import { eq, and, or, ilike, count, desc, notInArray, SQL } from 'drizzle-orm';
+import { eq, and, or, ilike, count, desc, SQL } from 'drizzle-orm';
+import * as XLSX from 'xlsx';
 import { DRIZZLE, DrizzleDB } from '../../database/database.module';
 import {
   policeRegister,
@@ -14,22 +14,14 @@ import {
   contract,
   customer,
 } from '../../database/schema/business';
-import { WorkflowService } from '../workflow/workflow.service';
 import { userAccount } from '../../database/schema/user';
 import { userRole } from '../../database/schema/iam';
-import { fieldChangeLog, fileAttachment } from '../../database/schema/common';
-import {
-  CreatePoliceDto,
-  UpdatePoliceDto,
-  QueryPoliceDto,
-} from './dto/police.dto';
+import { fileAttachment } from '../../database/schema/common';
+import { QueryPoliceDto } from './dto/police.dto';
 
 @Injectable()
 export class PoliceService {
-  constructor(
-    @Inject(DRIZZLE) private readonly db: DrizzleDB,
-    private readonly workflowService: WorkflowService,
-  ) {}
+  constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
 
   // -----------------------------------------------------------------------
   // Paginated list
@@ -38,7 +30,6 @@ export class PoliceService {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
 
-    // Check if super_admin or police_register role
     const roleCheck = await this.db
       .select({ roleCode: userRole.roleCode })
       .from(userRole)
@@ -47,13 +38,17 @@ export class PoliceService {
     const isSuperAdmin = roleCodes.includes('super_admin');
     const isPoliceRole = roleCodes.includes('police_register');
 
-    // If not super_admin and not police_register role, filter by project membership
     let visibleProjectIds: number[] | null = null;
     if (!isSuperAdmin && !isPoliceRole) {
       const myProjects = await this.db
         .select({ projectId: projectMember.projectId })
         .from(projectMember)
-        .where(and(eq(projectMember.userId, userId), eq(projectMember.status, 'ACTIVE')));
+        .where(
+          and(
+            eq(projectMember.userId, userId),
+            eq(projectMember.status, 'ACTIVE'),
+          ),
+        );
       visibleProjectIds = myProjects.map((p) => p.projectId);
       if (visibleProjectIds.length === 0) {
         return { list: [], total: 0, page, pageSize };
@@ -64,62 +59,89 @@ export class PoliceService {
     if (visibleProjectIds) {
       conditions.push(
         or(
-          ...visibleProjectIds.map((pid) => eq(policeRegister.projectRegisterId, pid)),
+          ...visibleProjectIds.map((pid) =>
+            eq(policeRegister.projectRegisterId, pid),
+          ),
         )!,
       );
     }
     if (query.keyword) {
       const pattern = `%${query.keyword}%`;
-      conditions.push(
-        or(
-          ilike(policeRegister.registerNo, pattern),
-          ilike(projectRegister.applicationName, pattern),
-        )!,
-      );
+      conditions.push(ilike(projectRegister.applicationName, pattern));
     }
     if (query.status) {
       conditions.push(eq(policeRegister.status, query.status));
     }
 
-    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+    const whereClause =
+      conditions.length > 0 ? and(...conditions) : undefined;
 
     const [totalResult, rows] = await Promise.all([
-      this.db.select({ total: count() }).from(policeRegister)
-        .leftJoin(projectRegister, eq(policeRegister.projectRegisterId, projectRegister.id))
+      this.db
+        .select({ total: count() })
+        .from(policeRegister)
+        .leftJoin(
+          projectRegister,
+          eq(policeRegister.projectRegisterId, projectRegister.id),
+        )
         .where(whereClause),
       this.db
         .select({
           id: policeRegister.id,
           projectRegisterId: policeRegister.projectRegisterId,
-          registerNo: policeRegister.registerNo,
-          scanFileUrl: policeRegister.scanFileUrl,
-          remark: policeRegister.remark,
           status: policeRegister.status,
-          createdBy: policeRegister.createdBy,
           createdAt: policeRegister.createdAt,
           applicationName: projectRegister.applicationName,
         })
         .from(policeRegister)
-        .leftJoin(projectRegister, eq(policeRegister.projectRegisterId, projectRegister.id))
+        .leftJoin(
+          projectRegister,
+          eq(policeRegister.projectRegisterId, projectRegister.id),
+        )
         .where(whereClause)
         .orderBy(desc(policeRegister.createdAt))
         .limit(pageSize)
         .offset((page - 1) * pageSize),
     ]);
 
-    // Enrich with registrant name
     const enriched = await Promise.all(
       rows.map(async (row) => {
-        let registrantName = '';
-        if (row.createdBy) {
-          const users = await this.db
-            .select({ displayName: userAccount.displayName })
-            .from(userAccount)
-            .where(eq(userAccount.id, row.createdBy))
+        // System item count
+        const siCount = await this.db
+          .select({ total: count() })
+          .from(projectSystemItem)
+          .where(
+            and(
+              eq(projectSystemItem.projectRegisterId, row.projectRegisterId),
+              eq(projectSystemItem.deleted, false),
+            ),
+          );
+        const systemItemCount = siCount[0]?.total ?? 0;
+
+        // PM name + mobile
+        let pmName: string | null = null;
+        let pmMobile: string | null = null;
+        if (row.projectRegisterId) {
+          const pmRows = await this.db
+            .select({
+              displayName: userAccount.displayName,
+              mobile: userAccount.mobile,
+            })
+            .from(projectMember)
+            .innerJoin(userAccount, eq(projectMember.userId, userAccount.id))
+            .where(
+              and(
+                eq(projectMember.projectId, row.projectRegisterId),
+                eq(projectMember.roleType, 'PM'),
+                eq(projectMember.status, 'ACTIVE'),
+              ),
+            )
             .limit(1);
-          registrantName = users[0]?.displayName ?? '';
+          pmName = pmRows[0]?.displayName ?? null;
+          pmMobile = pmRows[0]?.mobile ?? null;
         }
-        // Check if file exists in file_attachment
+
+        // Has file
         const files = await this.db
           .select({ id: fileAttachment.id })
           .from(fileAttachment)
@@ -132,60 +154,55 @@ export class PoliceService {
           )
           .limit(1);
         const hasFile = files.length > 0;
-        // Get PM from project_member
-        let projectManagerName: string | null = null;
-        if (row.projectRegisterId) {
-          const pmRows = await this.db
-            .select({ displayName: userAccount.displayName })
-            .from(projectMember)
-            .leftJoin(userAccount, eq(projectMember.userId, userAccount.id))
-            .where(and(eq(projectMember.projectId, row.projectRegisterId), eq(projectMember.roleType, 'PM'), eq(projectMember.status, 'ACTIVE')))
-            .limit(1);
-          projectManagerName = pmRows[0]?.displayName ?? null;
-        }
-        return { ...row, registrantName, hasFile, projectManagerName };
+
+        return {
+          ...row,
+          systemItemCount,
+          pmName,
+          pmMobile,
+          hasFile,
+        };
       }),
     );
 
-    return { list: enriched, total: totalResult[0]?.total ?? 0, page, pageSize };
+    return {
+      list: enriched,
+      total: totalResult[0]?.total ?? 0,
+      page,
+      pageSize,
+    };
   }
 
   // -----------------------------------------------------------------------
-  // Single record
+  // Single record — full project detail (aligned with ProjectDetail)
   // -----------------------------------------------------------------------
   async findById(id: number) {
     const rows = await this.db
       .select({
         id: policeRegister.id,
         projectRegisterId: policeRegister.projectRegisterId,
-        registerNo: policeRegister.registerNo,
-        filingAgency: policeRegister.filingAgency,
-        contactName: policeRegister.contactName,
-        contactPhone: policeRegister.contactPhone,
-        projectManagerId: policeRegister.projectManagerId,
-        scanFileUrl: policeRegister.scanFileUrl,
-        remark: policeRegister.remark,
         status: policeRegister.status,
         createdBy: policeRegister.createdBy,
         createdAt: policeRegister.createdAt,
         updatedAt: policeRegister.updatedAt,
-        projectManagerName: userAccount.displayName,
       })
       .from(policeRegister)
-      .leftJoin(userAccount, eq(policeRegister.projectManagerId, userAccount.id))
       .where(eq(policeRegister.id, id))
       .limit(1);
 
-    if (!rows[0]) throw new NotFoundException(`Police register #${id} not found`);
+    if (!rows[0])
+      throw new NotFoundException(`Police register #${id} not found`);
 
     const record = rows[0];
 
-    // Enrich with project detail
+    // ── Project + Contract + Customer enrichment ──
     const projects = await this.db
       .select({
         applicationName: projectRegister.applicationName,
+        applicationNo: projectRegister.applicationNo,
         contractYear: projectRegister.contractYear,
         contractId: projectRegister.contractId,
+        remark: projectRegister.remark,
       })
       .from(projectRegister)
       .where(eq(projectRegister.id, record.projectRegisterId))
@@ -193,34 +210,71 @@ export class PoliceService {
 
     const proj = projects[0];
 
-    // Contract info
     let contractNo = '';
     let contractName = '';
     let customerName = '';
+    let customerUscc = '';
+    let contactName = '';
+    let contactPhone = '';
+    let serviceContent = '';
+    let contractType = '';
+    let salesPersonName = '';
+    let partnerName = '';
+    let serviceYears: number[] = [];
+    let paymentAmount: string | null = null;
+    let customerAddress = '';
+
     if (proj?.contractId) {
       const contracts = await this.db
         .select({
           contractNo: contract.contractNo,
           contractName: contract.contractName,
           customerName: customer.fullName,
+          customerUscc: customer.uscc,
+          customerAddress: customer.addressDetail,
+          contactName: contract.contactName,
+          contactPhone: contract.contactPhone,
+          serviceContent: contract.serviceContent,
+          contractType: contract.contractType,
+          salesPersonId: contract.salesPersonId,
+          partnerName: contract.partnerName,
+          serviceYears: contract.serviceYears,
+          paymentAmount: contract.paymentAmount,
         })
         .from(contract)
         .leftJoin(customer, eq(contract.customerId, customer.id))
         .where(eq(contract.id, proj.contractId))
         .limit(1);
-      contractNo = contracts[0]?.contractNo ?? '';
-      contractName = contracts[0]?.contractName ?? '';
-      customerName = contracts[0]?.customerName ?? '';
+
+      const c = contracts[0];
+      if (c) {
+        contractNo = c.contractNo ?? '';
+        contractName = c.contractName ?? '';
+        customerName = c.customerName ?? '';
+        customerUscc = c.customerUscc ?? '';
+        customerAddress = c.customerAddress ?? '';
+        contactName = c.contactName ?? '';
+        contactPhone = c.contactPhone ?? '';
+        serviceContent = c.serviceContent ?? '';
+        contractType = c.contractType ?? '';
+        partnerName = c.partnerName ?? '';
+        serviceYears = (c.serviceYears as number[]) ?? [];
+        paymentAmount = c.paymentAmount ?? null;
+
+        if (c.salesPersonId) {
+          const sp = await this.db
+            .select({ displayName: userAccount.displayName })
+            .from(userAccount)
+            .where(eq(userAccount.id, c.salesPersonId))
+            .limit(1);
+          salesPersonName = sp[0]?.displayName ?? '';
+        }
+      }
     }
 
-    // System items
+    // ── System items (full fields) ──
     const systemItems = await this.db
-      .select({
-        id: projectSystemItem.id,
-        systemName: projectSystemItem.systemName,
-        securityLevel: projectSystemItem.securityLevel,
-        assessedUnitName: projectSystemItem.assessedUnitName,
-      })
+      .select()
       .from(projectSystemItem)
       .where(
         and(
@@ -230,11 +284,14 @@ export class PoliceService {
       )
       .orderBy(projectSystemItem.sortOrder);
 
-    // Project members (PM + assessors)
+    // ── Project members ──
     const members = await this.db
       .select({
+        id: projectMember.id,
         userId: projectMember.userId,
         roleType: projectMember.roleType,
+        status: projectMember.status,
+        assignedAt: projectMember.assignedAt,
         displayName: userAccount.displayName,
       })
       .from(projectMember)
@@ -250,10 +307,21 @@ export class PoliceService {
       ...record,
       projectDetail: {
         applicationName: proj?.applicationName ?? '',
+        applicationNo: proj?.applicationNo ?? '',
         contractYear: proj?.contractYear ?? null,
         contractNo,
         contractName,
         customerName,
+        customerUscc,
+        customerAddress,
+        contactName,
+        contactPhone,
+        serviceContent,
+        contractType,
+        salesPersonName,
+        partnerName,
+        serviceYears,
+        paymentAmount,
         systemItems,
         members,
       },
@@ -261,170 +329,73 @@ export class PoliceService {
   }
 
   // -----------------------------------------------------------------------
-  // Create
+  // Export Excel — one row per system item, 14 columns
   // -----------------------------------------------------------------------
-  async create(dto: CreatePoliceDto, userId: number) {
-    const result = await this.db
-      .insert(policeRegister)
-      .values({
-        projectRegisterId: dto.projectRegisterId,
-        projectManagerId: dto.projectManagerId ?? null,
-        registerNo: dto.registerNo ?? null,
-        filingAgency: dto.filingAgency ?? null,
-        contactName: dto.contactName ?? null,
-        contactPhone: dto.contactPhone ?? null,
-        scanFileUrl: dto.scanFileUrl ?? null,
-        remark: dto.remark ?? null,
-        status: 'DRAFT',
-        createdBy: userId,
-      })
-      .returning();
-    return result[0];
-  }
+  async exportExcel(id: number): Promise<{ buffer: Buffer; fileName: string }> {
+    const detail = await this.findById(id);
+    const pd = detail.projectDetail;
 
-  // -----------------------------------------------------------------------
-  // Update (DRAFT only)
-  // -----------------------------------------------------------------------
-  async update(id: number, dto: UpdatePoliceDto, userId: number) {
-    const old = await this.findById(id);
-    if (old.status !== 'DRAFT') {
-      throw new BadRequestException('Only DRAFT records can be updated');
-    }
-
-    const result = await this.db
-      .update(policeRegister)
-      .set({ ...dto, updatedBy: userId, updatedAt: new Date() })
-      .where(eq(policeRegister.id, id))
-      .returning();
-
-    await this.logFieldChanges('police_register', id, old as any, dto as any, userId);
-    return result[0];
-  }
-
-  // -----------------------------------------------------------------------
-  // Complete
-  // -----------------------------------------------------------------------
-  async complete(id: number, userId: number) {
-    const record = await this.findById(id);
-    if (record.status !== 'DRAFT') {
-      throw new BadRequestException('Only DRAFT records can be completed');
-    }
-
-    // 1. Update police register status
-    await this.db
-      .update(policeRegister)
-      .set({ status: 'COMPLETED', updatedBy: userId, updatedAt: new Date() })
-      .where(eq(policeRegister.id, id));
-
-    // 2. Signal workflow: complete POLICE_REGISTER node
-    try {
-      // Directly query wf_task for the POLICE_REGISTER node
-      const { wfTask, wfInstance } = await import('../../database/schema/workflow');
-      const policeTasks = await this.db
-        .select({ taskId: wfTask.id, instanceId: wfTask.instanceId })
-        .from(wfTask)
-        .innerJoin(wfInstance, eq(wfTask.instanceId, wfInstance.id))
-        .where(
-          and(
-            eq(wfInstance.bizType, 'PROJECT_REGISTER'),
-            eq(wfInstance.bizId, record.projectRegisterId),
-            eq(wfTask.nodeKey, 'POLICE_REGISTER'),
-            eq(wfTask.status, 'PENDING'),
-          ),
-        )
+    // PM info
+    const pm = pd.members.find((m) => m.roleType === 'PM');
+    let pmMobile = '';
+    if (pm) {
+      const u = await this.db
+        .select({ mobile: userAccount.mobile })
+        .from(userAccount)
+        .where(eq(userAccount.id, pm.userId))
         .limit(1);
-
-      if (policeTasks.length > 0) {
-        await this.workflowService.signal(
-          policeTasks[0].instanceId,
-          policeTasks[0].taskId,
-          'SUBMIT',
-          '公安登记完成',
-          userId,
-        );
-      }
-    } catch (e) {
-      console.error('Police register workflow signal failed:', e);
-      throw new BadRequestException('公安登记完成但工作流推进失败，请联系管理员');
+      pmMobile = u[0]?.mobile ?? '';
     }
 
-    return { success: true };
-  }
+    // Assessor names
+    const assessorNames = pd.members
+      .filter((m) => m.roleType === 'ASSESSOR')
+      .map((m) => m.displayName)
+      .join(',');
 
-  // -----------------------------------------------------------------------
-  // Project managers list (for dropdown)
-  // -----------------------------------------------------------------------
-  async getProjectManagers() {
-    const rows = await this.db
-      .select({ id: userAccount.id, displayName: userAccount.displayName })
-      .from(userAccount)
-      .innerJoin(userRole, eq(userAccount.id, userRole.userId))
-      .where(
-        and(
-          eq(userRole.roleCode, 'project_manager'),
-          eq(userAccount.enabled, true),
-        ),
-      );
-    return rows;
-  }
-
-  // -----------------------------------------------------------------------
-  // Available projects (approved but without police registration)
-  // -----------------------------------------------------------------------
-  async getAvailableProjects() {
-    // Get project_register_ids that already have police registrations
-    const existingPolice = await this.db
-      .select({ projectRegisterId: policeRegister.projectRegisterId })
-      .from(policeRegister);
-    const existingIds = existingPolice.map((r) => r.projectRegisterId);
-
-    const conditions: SQL[] = [
-      eq(projectRegister.status, 'APPROVED'),
-      eq(projectRegister.deleted, false),
+    const headers = [
+      '被测评系统名称',
+      '备案证明编号',
+      '安全保护等级',
+      '备案机关',
+      '被测评系统单位名称',
+      '被测评系统单位联系人',
+      '联系方式',
+      '所属行业',
+      '项目地址',
+      '项目经理',
+      '联系方式',
+      '项目组成员',
+      '预计测评开始时间',
+      '预计测评结束时间',
     ];
 
-    const rows = await this.db
-      .select({
-        id: projectRegister.id,
-        applicationName: projectRegister.applicationName,
-      })
-      .from(projectRegister)
-      .where(
-        existingIds.length > 0
-          ? and(...conditions, notInArray(projectRegister.id, existingIds))!
-          : and(...conditions)!,
-      )
-      .orderBy(desc(projectRegister.createdAt));
+    const dataRows = pd.systemItems.map((si: any) => [
+      si.systemName ?? '',
+      si.filingCertificateNo ?? '',
+      si.securityLevel ?? '',
+      si.filingAgency ?? '',
+      si.assessedUnitName ?? '',
+      si.assessedUnitContact ?? '',
+      si.assessedUnitMobile ?? '',
+      si.assessedUnitIndustry ?? '',
+      si.assessedUnitAddress ?? '',
+      pm?.displayName ?? '',
+      pmMobile,
+      assessorNames,
+      si.requiredEntryDate ?? '',
+      si.requiredReportDeliveryDate ?? '',
+    ]);
 
-    return rows;
-  }
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '信息系统');
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 
-  // -----------------------------------------------------------------------
-  // Audit helper
-  // -----------------------------------------------------------------------
-  private async logFieldChanges(
-    bizType: string,
-    bizId: number,
-    oldRecord: Record<string, unknown>,
-    newValues: Record<string, unknown>,
-    operatorId: number,
-  ) {
-    const entries: any[] = [];
-    for (const key of Object.keys(newValues)) {
-      if (newValues[key] === undefined) continue;
-      const oldVal = oldRecord[key];
-      const newVal = newValues[key];
-      if (String(oldVal ?? '') !== String(newVal ?? '')) {
-        entries.push({
-          bizType, bizId, fieldName: key,
-          oldValue: oldVal != null ? String(oldVal) : null,
-          newValue: newVal != null ? String(newVal) : null,
-          operatorId,
-        });
-      }
-    }
-    if (entries.length > 0) {
-      await this.db.insert(fieldChangeLog).values(entries);
-    }
+    const today = new Date().toISOString().slice(0, 10);
+    const appName = pd.applicationName || `公安登记${id}`;
+    const fileName = `${appName}-公安登记-${today}.xlsx`;
+
+    return { buffer: buf, fileName };
   }
 }

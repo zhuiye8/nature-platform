@@ -1,20 +1,19 @@
 import {
   Controller,
   Get,
-  Post,
-  Put,
   Query,
   Param,
-  Body,
+  Res,
   UseGuards,
   ParseIntPipe,
 } from '@nestjs/common';
 import { PoliceService } from './police.service';
-import { CreatePoliceDto, UpdatePoliceDto, QueryPoliceDto } from './dto/police.dto';
+import { QueryPoliceDto } from './dto/police.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import type { Response } from 'express';
 
 @Controller('police')
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -30,46 +29,25 @@ export class PoliceController {
     return this.policeService.findPage(query, user.id);
   }
 
-  @Get('project-managers')
+  @Get(':id/export')
   @RequirePermission('police:list')
-  async getProjectManagers() {
-    return this.policeService.getProjectManagers();
-  }
-
-  @Get('available-projects')
-  @RequirePermission('police:list')
-  async getAvailableProjects() {
-    return this.policeService.getAvailableProjects();
+  async exportExcel(
+    @Param('id', ParseIntPipe) id: number,
+    @Res() res: Response,
+  ) {
+    const { buffer, fileName } = await this.policeService.exportExcel(id);
+    const encodedName = encodeURIComponent(fileName);
+    res.set({
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${encodedName}"; filename*=UTF-8''${encodedName}`,
+    });
+    res.send(buffer);
   }
 
   @Get(':id')
   @RequirePermission('police:list')
   async findById(@Param('id', ParseIntPipe) id: number) {
     return this.policeService.findById(id);
-  }
-
-  @Post()
-  @RequirePermission('police:create')
-  async create(@Body() dto: CreatePoliceDto, @CurrentUser() user: { id: number }) {
-    return this.policeService.create(dto, user.id);
-  }
-
-  @Put(':id')
-  @RequirePermission('police:update')
-  async update(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() dto: UpdatePoliceDto,
-    @CurrentUser() user: { id: number },
-  ) {
-    return this.policeService.update(id, dto, user.id);
-  }
-
-  @Post(':id/complete')
-  @RequirePermission('police:complete')
-  async complete(
-    @Param('id', ParseIntPipe) id: number,
-    @CurrentUser() user: { id: number },
-  ) {
-    return this.policeService.complete(id, user.id);
   }
 }

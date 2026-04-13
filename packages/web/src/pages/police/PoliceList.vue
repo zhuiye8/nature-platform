@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { Search, Refresh, Plus } from '@element-plus/icons-vue'
-import { getPoliceRegisterPage, completePoliceRegister } from '@/api/police'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Search, Refresh, Download, Upload, Delete } from '@element-plus/icons-vue'
+import { getPoliceRegisterPage, exportPoliceExcel } from '@/api/police'
 import type { PoliceItem } from '@/api/police'
-import PoliceForm from './PoliceForm.vue'
+import { getFileList, getUploadUrl, getFileDownloadPath, deleteFile, type FileItem } from '@/api/file'
+import { formatTime } from '@/utils/format'
 
 const router = useRouter()
 const tableData = ref<PoliceItem[]>([])
@@ -15,8 +16,6 @@ const statusFilter = ref('')
 const currentPage = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
-const formVisible = ref(false)
-const editId = ref<number | null>(null)
 
 async function fetchData() {
   loading.value = true
@@ -36,19 +35,52 @@ async function fetchData() {
 
 function handleSearch() { currentPage.value = 1; fetchData() }
 function handleReset() { keyword.value = ''; statusFilter.value = ''; currentPage.value = 1; fetchData() }
-function handleCreate() { editId.value = null; formVisible.value = true }
-function handleEdit(row: PoliceItem) { editId.value = row.id; formVisible.value = true }
 
-async function handleComplete(row: PoliceItem) {
-  try {
-    await completePoliceRegister(row.id)
-    ElMessage.success('登记完成')
-    fetchData()
-  } catch { /* handled */ }
+// ── 文件管理弹窗 ──
+const fileDialogVisible = ref(false)
+const fileDialogPoliceId = ref(0)
+const fileDialogFiles = ref<FileItem[]>([])
+const uploadHeaders = computed(() => ({ Authorization: `Bearer ${localStorage.getItem('token')}` }))
+
+async function openFileDialog(row: PoliceItem) {
+  fileDialogPoliceId.value = row.id
+  fileDialogVisible.value = true
+  await refreshFileList()
 }
 
-function handleViewFile(url: string) {
-  window.open(url, '_blank')
+async function refreshFileList() {
+  try {
+    fileDialogFiles.value = (await getFileList('POLICE', fileDialogPoliceId.value)) as any as FileItem[]
+  } catch {
+    fileDialogFiles.value = []
+  }
+}
+
+function handleFileUploadSuccess() {
+  ElMessage.success('上传成功')
+  refreshFileList()
+  fetchData()
+}
+
+async function handleFileDelete(fileId: number) {
+  try {
+    await ElMessageBox.confirm('确定删除该文件？', '确认', { type: 'warning' })
+    await deleteFile(fileId)
+    ElMessage.success('已删除')
+    refreshFileList()
+    fetchData()
+  } catch { /* cancelled */ }
+}
+
+function openDownload(fileId: number) {
+  window.open(getFileDownloadPath(fileId), '_blank')
+}
+
+function formatFileSize(bytes: number) {
+  if (!bytes) return '-'
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
 onMounted(() => fetchData())
@@ -60,57 +92,110 @@ onMounted(() => fetchData())
       <template #header>
         <div style="display: flex; align-items: center; justify-content: space-between">
           <span style="font-weight: 600; font-size: 16px">公安登记</span>
-          <el-button v-permission="'police:create'" type="primary" :icon="Plus" @click="handleCreate">新建登记</el-button>
         </div>
       </template>
 
       <div style="margin-bottom: 16px; display: flex; gap: 12px">
-        <el-input v-model="keyword" placeholder="搜索登记编号/项目名称" clearable style="width: 280px" :prefix-icon="Search" @keyup.enter="handleSearch" />
+        <el-input v-model="keyword" placeholder="搜索项目名称" clearable style="width: 280px" :prefix-icon="Search" @keyup.enter="handleSearch" />
         <el-select v-model="statusFilter" placeholder="状态" clearable style="width: 120px" @change="handleSearch">
-          <el-option label="草稿" value="DRAFT" />
-          <el-option label="已完成" value="COMPLETED" />
+          <el-option label="待登记" value="DRAFT" />
+          <el-option label="已登记" value="COMPLETED" />
         </el-select>
         <el-button :icon="Search" type="primary" @click="handleSearch">搜索</el-button>
         <el-button :icon="Refresh" @click="handleReset">重置</el-button>
       </div>
 
-      <div style="text-align: right; color: #909399; font-size: 12px; margin-bottom: 6px">&larr; 可左右滑动查看更多信息 &rarr;</div>
       <el-table v-loading="loading" :data="tableData" stripe border style="width: 100%">
         <el-table-column label="项目名称" min-width="200" show-overflow-tooltip>
           <template #default="{ row }">
-            <el-link v-if="row.projectRegisterId" type="primary" underline="never" style="white-space: normal; word-break: break-all; line-height: 1.5" @click="router.push(`/project/${row.projectRegisterId}`)">{{ row.applicationName }}</el-link>
-            <span v-else style="white-space: normal; word-break: break-all">{{ row.applicationName || '--' }}</span>
+            <el-link type="primary" underline="never" style="white-space: normal; word-break: break-all; line-height: 1.5" @click="router.push(`/police/${row.id}`)">
+              {{ row.applicationName || '--' }}
+            </el-link>
           </template>
         </el-table-column>
-        <el-table-column prop="registerNo" label="登记编号" min-width="140" show-overflow-tooltip />
-        <el-table-column prop="registrantName" label="登记人" min-width="100" />
-        <el-table-column prop="projectManagerName" label="项目经理" min-width="100" />
+        <el-table-column label="系统数量" min-width="90" align="center">
+          <template #default="{ row }">{{ row.systemItemCount ?? 0 }}</template>
+        </el-table-column>
+        <el-table-column prop="pmName" label="项目经理" min-width="100" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.pmName || '--' }}</template>
+        </el-table-column>
+        <el-table-column prop="pmMobile" label="手机号" min-width="130">
+          <template #default="{ row }">{{ row.pmMobile || '--' }}</template>
+        </el-table-column>
         <el-table-column label="电子扫描件" min-width="100" align="center">
           <template #default="{ row }">
-            <el-tag v-if="row.hasFile" type="success" size="small">已上传</el-tag>
-            <span v-else style="color: #909399">无</span>
+            <el-button
+              :type="row.hasFile ? 'success' : 'info'"
+              link size="small"
+              @click="openFileDialog(row)"
+            >
+              {{ row.hasFile ? '已上传' : '上传' }}
+            </el-button>
           </template>
         </el-table-column>
         <el-table-column label="状态" min-width="90" align="center">
           <template #default="{ row }">
             <el-tag :type="row.status === 'COMPLETED' ? 'success' : 'info'" size="small">
-              {{ row.status === 'COMPLETED' ? '已完成' : '草稿' }}
+              {{ row.status === 'COMPLETED' ? '已登记' : '待登记' }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="createdAt" label="创建时间" min-width="170" />
-        <el-table-column label="操作" width="100" fixed="right">
+        <el-table-column label="创建时间" min-width="170">
+          <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link size="small" @click="router.push(`/police/${row.id}`)">查看</el-button>
+            <el-button type="success" link size="small" :icon="Download" @click="exportPoliceExcel(row.id)">导出</el-button>
           </template>
         </el-table-column>
       </el-table>
 
       <div style="display: flex; justify-content: flex-end; margin-top: 16px">
-        <el-pagination v-model:current-page="currentPage" v-model:page-size="pageSize" :page-sizes="[10, 20, 50]" :total="total" layout="total, sizes, prev, pager, next" @size-change="() => { currentPage = 1; fetchData() }" @current-change="fetchData" />
+        <el-pagination
+          v-model:current-page="currentPage"
+          v-model:page-size="pageSize"
+          :page-sizes="[10, 20, 50]"
+          :total="total"
+          layout="total, sizes, prev, pager, next"
+          @size-change="() => { currentPage = 1; fetchData() }"
+          @current-change="fetchData"
+        />
       </div>
     </el-card>
 
-    <PoliceForm v-model:visible="formVisible" @saved="fetchData" />
+    <!-- 电子扫描件管理弹窗 -->
+    <el-dialog v-model="fileDialogVisible" title="电子扫描件管理" width="640px" destroy-on-close>
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px">
+        <span style="font-weight: 600; font-size: 14px">扫描件列表</span>
+        <el-upload
+          :action="getUploadUrl('POLICE', fileDialogPoliceId)"
+          :headers="uploadHeaders"
+          :show-file-list="false"
+          :on-success="handleFileUploadSuccess"
+          accept=".pdf,.jpg,.jpeg,.png,.zip"
+        >
+          <el-button type="primary" :icon="Upload" size="small">上传</el-button>
+        </el-upload>
+      </div>
+      <el-table v-if="fileDialogFiles.length > 0" :data="fileDialogFiles" border size="small">
+        <el-table-column prop="fileName" label="文件名" min-width="200" show-overflow-tooltip />
+        <el-table-column label="大小" width="90">
+          <template #default="{ row }">{{ formatFileSize(row.fileSize) }}</template>
+        </el-table-column>
+        <el-table-column label="上传时间" width="160">
+          <template #default="{ row }">{{ formatTime(row.uploadedAt) }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="120" align="center">
+          <template #default="{ row }">
+            <el-button type="primary" link size="small" :icon="Download" @click="openDownload(row.id)">下载</el-button>
+            <el-button type="danger" link size="small" :icon="Delete" @click="handleFileDelete(row.id)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div v-else style="color: var(--el-text-color-placeholder); text-align: center; padding: 24px 0; font-size: 13px">
+        暂无扫描件，请点击上方按钮上传
+      </div>
+    </el-dialog>
   </div>
 </template>

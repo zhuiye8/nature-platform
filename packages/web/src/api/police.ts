@@ -1,30 +1,16 @@
 import request from './request'
+import axios from 'axios'
 
 export interface PoliceItem {
   id: number
   projectRegisterId: number
-  registerNo: string | null
-  filingAgency: string | null
-  contactName: string | null
-  contactPhone: string | null
-  projectManagerId: number
-  projectManagerName: string | null
-  remark: string | null
+  applicationName: string | null
+  systemItemCount: number
+  pmName: string | null
+  pmMobile: string | null
+  hasFile: boolean
   status: string
   createdAt: string
-}
-
-export interface PoliceForm {
-  projectRegisterId: number
-  projectManagerId: number
-  registerNo?: string
-  scanFileUrl?: string
-  remark?: string
-}
-
-export interface SimpleUser {
-  id: number
-  displayName: string
 }
 
 export const getPoliceRegisterPage = (params: Record<string, any>) =>
@@ -33,22 +19,29 @@ export const getPoliceRegisterPage = (params: Record<string, any>) =>
 export const getPoliceRegisterDetail = (id: number) =>
   request.get(`/police/${id}`)
 
-export const createPoliceRegister = (data: PoliceForm) =>
-  request.post('/police', data)
+export async function exportPoliceExcel(id: number) {
+  const token = localStorage.getItem('token')
+  const res = await axios.get(`/api/police/${id}/export`, {
+    responseType: 'blob',
+    headers: { Authorization: `Bearer ${token}` },
+  })
 
-export const updatePoliceRegister = (id: number, data: Partial<PoliceForm>) =>
-  request.put(`/police/${id}`, data)
+  const blob = new Blob([res.data], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
 
-export const completePoliceRegister = (id: number) =>
-  request.post(`/police/${id}/complete`)
+  // Extract filename from Content-Disposition header
+  const cd = res.headers['content-disposition']
+  let fileName = `公安登记-${new Date().toISOString().slice(0, 10)}.xlsx`
+  if (cd) {
+    const match = cd.match(/filename\*=UTF-8''(.+)/i)
+    if (match) fileName = decodeURIComponent(match[1].replace(/"/g, ''))
+  }
 
-export const getProjectManagers = (): Promise<SimpleUser[]> =>
-  request.get('/police/project-managers') as any
-
-export interface AvailableProject {
-  id: number
-  applicationName: string
+  link.download = fileName
+  link.click()
+  URL.revokeObjectURL(url)
 }
-
-export const getAvailableProjects = (): Promise<AvailableProject[]> =>
-  request.get('/police/available-projects') as any
