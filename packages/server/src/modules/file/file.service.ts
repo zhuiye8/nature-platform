@@ -168,7 +168,7 @@ export class FileService implements OnModuleInit {
   }
 
   // -----------------------------------------------------------------------
-  // Stream file from S3 (proxy download)
+  // Stream file from S3 (proxy download) — no modification
   // -----------------------------------------------------------------------
   async streamFile(id: number) {
     const rows = await this.db
@@ -194,6 +194,158 @@ export class FileService implements OnModuleInit {
       contentType: file.contentType,
       fileSize: file.fileSize,
     };
+  }
+
+  // -----------------------------------------------------------------------
+  // Stream file for preview — applies watermark for images / PDFs.
+  // Returns a Buffer (not a stream) because watermarking needs the full
+  // content in memory. Other formats pass through unmodified.
+  // -----------------------------------------------------------------------
+  async streamFilePreview(
+    id: number,
+    viewer: { displayName?: string | null; username?: string | null },
+  ) {
+    const rows = await this.db
+      .select()
+      .from(fileAttachment)
+      .where(and(eq(fileAttachment.id, id), eq(fileAttachment.deleted, false)))
+      .limit(1);
+
+    if (rows.length === 0) {
+      throw new NotFoundException('文件不存在');
+    }
+
+    const file = rows[0];
+    const command = new GetObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: file.storagePath,
+    });
+    const response = await this.s3.send(command);
+
+    // Read entire body into a buffer
+    const body = response.Body as import('stream').Readable;
+    const chunks: Buffer[] = [];
+    for await (const chunk of body) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    const buffer = Buffer.concat(chunks);
+
+    const name = viewer.displayName ?? viewer.username ?? '用户';
+    const username = viewer.username ?? '';
+    const now = new Date();
+    const ts = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const watermarkText = `${name}${username ? `(${username})` : ''} ${ts}`;
+
+    const contentType = file.contentType || '';
+    try {
+      if (contentType.startsWith('image/')) {
+        const processed = await this.applyImageWatermark(buffer, watermarkText);
+        return {
+          buffer: processed,
+          fileName: file.fileName,
+          contentType,
+        };
+      }
+      if (contentType === 'application/pdf') {
+        const processed = await this.applyPdfWatermark(buffer, watermarkText);
+        return {
+          buffer: processed,
+          fileName: file.fileName,
+          contentType,
+        };
+      }
+    } catch (e) {
+      this.logger.warn(`Watermark failed for file #${id}: ${(e as Error).message}`);
+    }
+
+    // Unsupported type or watermark failed → return raw
+    return {
+      buffer,
+      fileName: file.fileName,
+      contentType,
+    };
+  }
+
+  /**
+   * Overlay a tiled, rotated watermark text on a raster image using sharp.
+   */
+  private async applyImageWatermark(
+    input: Buffer,
+    text: string,
+  ): Promise<Buffer> {
+    const sharp = (await import('sharp')).default;
+    const img = sharp(input);
+    const meta = await img.metadata();
+    const width = meta.width ?? 800;
+    const height = meta.height ?? 600;
+
+    // Build a repeating SVG pattern across the whole image
+    const safeText = text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+    const tileW = 360;
+    const tileH = 200;
+    const cols = Math.ceil(width / tileW) + 1;
+    const rows = Math.ceil(height / tileH) + 1;
+    const labels: string[] = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const x = c * tileW + (r % 2 === 0 ? 0 : tileW / 2);
+        const y = r * tileH + tileH / 2;
+        labels.push(
+          `<text x="${x}" y="${y}" fill="rgba(0,0,0,0.12)" font-size="18" font-family="sans-serif" transform="rotate(-22 ${x} ${y})">${safeText}</text>`,
+        );
+      }
+    }
+    const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${labels.join('')}</svg>`;
+
+    return img
+      .composite([{ input: Buffer.from(svg), blend: 'over' }])
+      .toBuffer();
+  }
+
+  /**
+   * Overlay a tiled watermark on every page of a PDF using pdf-lib.
+   */
+  private async applyPdfWatermark(
+    input: Buffer,
+    text: string,
+  ): Promise<Buffer> {
+    const { PDFDocument, StandardFonts, degrees, rgb } = await import(
+      'pdf-lib'
+    );
+    const pdfDoc = await PDFDocument.load(input);
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+    // Strip non-Latin chars because StandardFonts don't support Chinese.
+    // Render the username + timestamp; Chinese display name is replaced
+    // with a placeholder to keep PDFs valid.
+    const latinOnly = text.replace(/[^\x20-\x7E]/g, '*');
+
+    const pages = pdfDoc.getPages();
+    const fontSize = 14;
+    const step = 220; // horizontal/vertical spacing between watermarks
+
+    for (const page of pages) {
+      const { width, height } = page.getSize();
+      for (let y = step / 2; y < height + step; y += step) {
+        for (let x = -step; x < width + step; x += step) {
+          page.drawText(latinOnly, {
+            x,
+            y,
+            size: fontSize,
+            font,
+            color: rgb(0, 0, 0),
+            opacity: 0.1,
+            rotate: degrees(-22),
+          });
+        }
+      }
+    }
+
+    const bytes = await pdfDoc.save();
+    return Buffer.from(bytes);
   }
 
   // -----------------------------------------------------------------------

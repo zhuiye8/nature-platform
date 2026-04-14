@@ -58,16 +58,30 @@ export class FileController {
     @Param('id', ParseIntPipe) id: number,
     @Query('mode') mode: string | undefined,
     @Res() res: Response,
+    @CurrentUser() user: { id: number; displayName?: string; username?: string },
   ) {
+    if (mode === 'preview') {
+      // Preview: buffer → watermark (images/PDFs) → send with inline disposition
+      const { buffer, fileName, contentType } =
+        await this.fileService.streamFilePreview(id, {
+          displayName: user?.displayName,
+          username: user?.username,
+        });
+      const encodedName = encodeURIComponent(fileName);
+      res.set({
+        'Content-Type': contentType,
+        'Content-Disposition': `inline; filename="${encodedName}"; filename*=UTF-8''${encodedName}`,
+      });
+      res.send(buffer);
+      return;
+    }
+
+    // Download: raw stream, no watermark
     const { stream, fileName, contentType } = await this.fileService.streamFile(id);
     const encodedName = encodeURIComponent(fileName);
-    const disposition = mode === 'preview'
-      ? `inline; filename="${encodedName}"; filename*=UTF-8''${encodedName}`
-      : `attachment; filename="${encodedName}"; filename*=UTF-8''${encodedName}`;
-
     res.set({
       'Content-Type': contentType,
-      'Content-Disposition': disposition,
+      'Content-Disposition': `attachment; filename="${encodedName}"; filename*=UTF-8''${encodedName}`,
     });
     stream.pipe(res);
   }

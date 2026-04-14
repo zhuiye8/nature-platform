@@ -12,6 +12,7 @@ interface FileInfo {
 
 interface SystemItemWithFiles {
   id?: number
+  systemNo?: string | null
   systemName: string
   filingAgency?: string | null
   securityLevel?: string | null
@@ -89,6 +90,7 @@ function renderFileStatus(hasFlag: boolean, file: FileInfo | null | undefined) {
       <!-- 基本信息 -->
       <h4 style="margin: 0 0 12px; color: var(--n-text-secondary, #666)">基本信息</h4>
       <el-descriptions :column="2" border size="small">
+        <el-descriptions-item label="项目编号" :span="2">{{ item.systemNo || '-' }}</el-descriptions-item>
         <el-descriptions-item label="系统名称">{{ item.systemName }}</el-descriptions-item>
         <el-descriptions-item label="安全等级">{{ getStatusLabel(item.securityLevel) || '-' }}</el-descriptions-item>
         <el-descriptions-item label="备案单位">{{ item.filingAgency || '-' }}</el-descriptions-item>

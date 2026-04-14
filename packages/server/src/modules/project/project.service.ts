@@ -333,24 +333,12 @@ export class ProjectService {
       throw new BadRequestException('只有已通过审核的合同才能创建项目登记');
     }
 
-    // Check uniqueness: contractId + contractYear WHERE deleted=FALSE
-    const existing = await this.db
-      .select({ id: projectRegister.id })
-      .from(projectRegister)
-      .where(
-        and(
-          eq(projectRegister.contractId, dto.contractId),
-          eq(projectRegister.contractYear, dto.contractYear),
-          eq(projectRegister.deleted, false),
-        ),
-      )
-      .limit(1);
-
-    if (existing.length > 0) {
-      throw new BadRequestException(
-        `Project registration for contract #${dto.contractId} year ${dto.contractYear} already exists`,
-      );
-    }
+    // Note: We intentionally do NOT enforce uniqueness on (contractId +
+    // contractYear) anymore. A contract can have multiple project
+    // registrations in the same year — typically because not all systems
+    // have filing certificates ready at once, so sales registers in batches.
+    // System numbers (system_no) keep accumulating across these batches via
+    // the project_system_serial table.
 
     const result = await this.db
       .insert(projectRegister)

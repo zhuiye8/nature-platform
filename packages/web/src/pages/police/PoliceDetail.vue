@@ -80,32 +80,19 @@ function isPdf(file: FileItem) {
   return (file as any).contentType === 'application/pdf'
 }
 
-// ── File preview dialog ──
-const previewVisible = ref(false)
-const previewUrl = ref('')
-const previewFileName = ref('')
-const previewFileId = ref(0)
-const previewType = ref<'image' | 'pdf' | 'none'>('none')
-
+// ── File preview (opens in new tab; backend applies watermark) ──
 const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp']
-function getPreviewType(fileName: string): 'image' | 'pdf' | 'none' {
+function canPreviewByName(fileName: string): boolean {
   const lower = fileName.toLowerCase()
-  if (imageExts.some((e) => lower.endsWith(e))) return 'image'
-  if (lower.endsWith('.pdf')) return 'pdf'
-  return 'none'
+  return imageExts.some((e) => lower.endsWith(e)) || lower.endsWith('.pdf')
 }
 
 function openFilePreview(fileId: number, fileName: string) {
-  const type = getPreviewType(fileName)
-  if (type === 'none') {
+  if (!canPreviewByName(fileName)) {
     openFileDownload(fileId)
     return
   }
-  previewType.value = type
-  previewUrl.value = getFilePreviewPath(fileId)
-  previewFileName.value = fileName
-  previewFileId.value = fileId
-  previewVisible.value = true
+  window.open(getFilePreviewPath(fileId), '_blank')
 }
 
 function openFileDownload(id: number) {
@@ -184,69 +171,59 @@ onMounted(fetchDetail)
         <h3 style="margin: 0 0 12px; font-size: 15px; font-weight: 600">
           系统明细（{{ detail.projectDetail.systemItems.length }} 个）
         </h3>
-        <el-card
-          v-for="(si, idx) in (systemItemsWithFiles.length ? systemItemsWithFiles : detail.projectDetail.systemItems)"
-          :key="si.id || idx"
-          shadow="never"
-          style="margin-bottom: 12px; border: 1px solid var(--el-border-color-lighter)"
-        >
-          <template #header>
-            <span style="font-weight: 600">{{ si.systemName }}{{ si.securityLevel ? '（' + si.securityLevel + '）' : '' }}</span>
-          </template>
-
-          <el-descriptions :column="2" border size="small">
-            <el-descriptions-item label="备案机关">{{ si.filingAgency || '--' }}</el-descriptions-item>
-            <el-descriptions-item label="安全等级">{{ si.securityLevel || '--' }}</el-descriptions-item>
-            <el-descriptions-item label="是否复评">{{ si.isReassessment ? '是' : '否' }}</el-descriptions-item>
-            <el-descriptions-item label="要求录入日期">{{ si.requiredEntryDate || '--' }}</el-descriptions-item>
-            <el-descriptions-item label="要求出报告日期">{{ si.requiredReportDeliveryDate || '--' }}</el-descriptions-item>
-          </el-descriptions>
-
-          <h5 style="margin: 12px 0 8px; color: #606266">被测单位信息</h5>
-          <el-descriptions :column="2" border size="small">
-            <el-descriptions-item label="单位名称">{{ si.assessedUnitName || '--' }}</el-descriptions-item>
-            <el-descriptions-item label="所属行业">{{ si.assessedUnitIndustry || '--' }}</el-descriptions-item>
-            <el-descriptions-item label="联系人">{{ si.assessedUnitContact || '--' }}</el-descriptions-item>
-            <el-descriptions-item label="联系电话">{{ si.assessedUnitMobile || '--' }}</el-descriptions-item>
-            <el-descriptions-item label="地址" :span="2">{{ si.assessedUnitAddress || '--' }}</el-descriptions-item>
-          </el-descriptions>
-
-          <h5 style="margin: 12px 0 8px; color: #606266">备案信息</h5>
-          <el-descriptions :column="2" border size="small">
-            <el-descriptions-item label="备案证明">
-              <template v-if="si.filingCertificateFile">
-                <el-link type="primary" underline="never" @click="openFilePreview(si.filingCertificateFile.id, si.filingCertificateFile.fileName)">
-                  {{ si.filingCertificateFile.fileName }}
-                </el-link>
-                <span style="color: #999; font-size: 12px; margin-left: 8px">({{ formatFileSize(si.filingCertificateFile.fileSize) }})</span>
-                <el-button type="primary" link size="small" :icon="Download" style="margin-left: 8px" @click.stop="openFileDownload(si.filingCertificateFile.id)">下载</el-button>
-              </template>
-              <span v-else style="color: #999">未上传</span>
-            </el-descriptions-item>
-            <el-descriptions-item label="证明编号">{{ si.filingCertificateNo || '--' }}</el-descriptions-item>
-            <el-descriptions-item label="出具时间">{{ si.filingCertificateIssuedAt || '--' }}</el-descriptions-item>
-            <el-descriptions-item label="备案表">
-              <template v-if="si.hasFilingForm && si.filingFormFile">
-                <el-link type="primary" underline="never" @click="openFilePreview(si.filingFormFile.id, si.filingFormFile.fileName)">
-                  {{ si.filingFormFile.fileName }}
-                </el-link>
-                <el-button type="primary" link size="small" :icon="Download" style="margin-left: 8px" @click.stop="openFileDownload(si.filingFormFile.id)">下载</el-button>
-              </template>
-              <span v-else-if="si.hasFilingForm" style="color: #e6a23c">有（未上传）</span>
-              <span v-else style="color: #999">无</span>
-            </el-descriptions-item>
-            <el-descriptions-item label="定级报告">
-              <template v-if="si.hasClassificationReport && si.classificationReportFile">
-                <el-link type="primary" underline="never" @click="openFilePreview(si.classificationReportFile.id, si.classificationReportFile.fileName)">
-                  {{ si.classificationReportFile.fileName }}
-                </el-link>
-                <el-button type="primary" link size="small" :icon="Download" style="margin-left: 8px" @click.stop="openFileDownload(si.classificationReportFile.id)">下载</el-button>
-              </template>
-              <span v-else-if="si.hasClassificationReport" style="color: #e6a23c">有（未上传）</span>
-              <span v-else style="color: #999">无</span>
-            </el-descriptions-item>
-          </el-descriptions>
-        </el-card>
+        <el-table :data="(systemItemsWithFiles.length ? systemItemsWithFiles : detail.projectDetail.systemItems)" stripe border size="small" style="width: 100%">
+          <el-table-column prop="systemNo" label="项目编号" min-width="200" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.systemNo || '--' }}</template>
+          </el-table-column>
+          <el-table-column prop="systemName" label="被测评系统名称" min-width="200" show-overflow-tooltip>
+            <template #default="{ row }">
+              <el-link type="primary" underline="never" @click="showSiDetail(row)">{{ row.systemName }}</el-link>
+            </template>
+          </el-table-column>
+          <el-table-column prop="filingCertificateNo" label="备案证明编号" min-width="180" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.filingCertificateNo || '--' }}</template>
+          </el-table-column>
+          <el-table-column prop="securityLevel" label="安全保护等级" min-width="110" align="center">
+            <template #default="{ row }">{{ row.securityLevel || '--' }}</template>
+          </el-table-column>
+          <el-table-column prop="filingAgency" label="备案机关" min-width="150" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.filingAgency || '--' }}</template>
+          </el-table-column>
+          <el-table-column prop="assessedUnitName" label="被测评系统单位名称" min-width="180" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.assessedUnitName || '--' }}</template>
+          </el-table-column>
+          <el-table-column label="备案证明" width="100" align="center">
+            <template #default="{ row }">
+              <el-link v-if="row.filingCertificateFile" type="primary" :underline="false" @click="openFilePreview(row.filingCertificateFile.id, row.filingCertificateFile.fileName)">
+                <el-icon><Paperclip /></el-icon>
+              </el-link>
+              <span v-else style="color: #999">--</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="备案表" width="80" align="center">
+            <template #default="{ row }">
+              <el-link v-if="row.hasFilingForm && row.filingFormFile" type="primary" :underline="false" @click="openFilePreview(row.filingFormFile.id, row.filingFormFile.fileName)">
+                <el-icon><Paperclip /></el-icon>
+              </el-link>
+              <span v-else-if="row.hasFilingForm" style="color: #e6a23c">有</span>
+              <span v-else style="color: #999">--</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="定级报告" width="80" align="center">
+            <template #default="{ row }">
+              <el-link v-if="row.hasClassificationReport && row.classificationReportFile" type="primary" :underline="false" @click="openFilePreview(row.classificationReportFile.id, row.classificationReportFile.fileName)">
+                <el-icon><Paperclip /></el-icon>
+              </el-link>
+              <span v-else-if="row.hasClassificationReport" style="color: #e6a23c">有</span>
+              <span v-else style="color: #999">--</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="80" fixed="right" align="center">
+            <template #default="{ row }">
+              <el-button type="primary" link size="small" @click="showSiDetail(row)">详情</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
       </div>
 
       <!-- ── 项目成员 ── -->
@@ -340,16 +317,5 @@ onMounted(fetchDetail)
       v-model:visible="siDialogVisible"
       :item="siDialogItem"
     />
-
-    <!-- 文件预览弹窗 -->
-    <el-dialog v-model="previewVisible" :title="previewFileName" width="80%" top="5vh" destroy-on-close>
-      <div v-if="previewType === 'image'" style="text-align: center">
-        <el-image :src="previewUrl" fit="contain" style="max-width: 100%; max-height: 70vh" />
-      </div>
-      <iframe v-else-if="previewType === 'pdf'" :src="previewUrl" style="width: 100%; height: 70vh; border: none" />
-      <template #footer>
-        <el-button :icon="Download" @click="handleFileDownload(previewFileId)">下载</el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>

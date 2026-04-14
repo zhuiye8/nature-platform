@@ -207,6 +207,7 @@ export type NewProjectRegister = typeof projectRegister.$inferInsert;
 export const projectSystemItem = pgTable('project_system_item', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
   projectRegisterId: bigint('project_register_id', { mode: 'number' }).notNull(),
+  systemNo: varchar('system_no', { length: 128 }),
   systemName: varchar('system_name', { length: 255 }).notNull(),
   filingAgency: varchar('filing_agency', { length: 255 }),
   securityLevel: varchar('security_level', { length: 64 }),
@@ -235,6 +236,26 @@ export const projectSystemItem = pgTable('project_system_item', {
 
 export type ProjectSystemItemRow = typeof projectSystemItem.$inferSelect;
 export type NewProjectSystemItem = typeof projectSystemItem.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// project_system_serial — per (contract, year) counter for system numbers
+// Used by project.listener on PROJECT_REVIEW APPROVE to generate system_no.
+// ---------------------------------------------------------------------------
+export const projectSystemSerial = pgTable(
+  'project_system_serial',
+  {
+    contractId: bigint('contract_id', { mode: 'number' }).notNull(),
+    yearShort: varchar('year_short', { length: 4 }).notNull(),
+    nextSeq: integer('next_seq').notNull().default(1),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.contractId, t.yearShort] })],
+);
+
+export type ProjectSystemSerialRow = typeof projectSystemSerial.$inferSelect;
+export type NewProjectSystemSerial = typeof projectSystemSerial.$inferInsert;
 
 // ---------------------------------------------------------------------------
 // project_member

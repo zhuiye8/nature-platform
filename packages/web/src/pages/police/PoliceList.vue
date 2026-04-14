@@ -83,32 +83,19 @@ function formatFileSize(bytes: number) {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
-// ── File preview dialog ──
-const previewVisible = ref(false)
-const previewUrl = ref('')
-const previewFileName = ref('')
-const previewFileId = ref(0)
-const previewType = ref<'image' | 'pdf' | 'none'>('none')
-
+// ── File preview (opens in new tab; backend applies watermark) ──
 const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp']
-function getPreviewType(fileName: string): 'image' | 'pdf' | 'none' {
+function canPreviewByName(fileName: string): boolean {
   const lower = fileName.toLowerCase()
-  if (imageExts.some((e) => lower.endsWith(e))) return 'image'
-  if (lower.endsWith('.pdf')) return 'pdf'
-  return 'none'
+  return imageExts.some((e) => lower.endsWith(e)) || lower.endsWith('.pdf')
 }
 
 function openFilePreview(fileId: number, fileName: string) {
-  const type = getPreviewType(fileName)
-  if (type === 'none') {
+  if (!canPreviewByName(fileName)) {
     openDownload(fileId)
     return
   }
-  previewType.value = type
-  previewUrl.value = getFilePreviewPath(fileId)
-  previewFileName.value = fileName
-  previewFileId.value = fileId
-  previewVisible.value = true
+  window.open(getFilePreviewPath(fileId), '_blank')
 }
 
 onMounted(() => fetchData())
@@ -230,17 +217,6 @@ onMounted(() => fetchData())
       <div v-else style="color: var(--el-text-color-placeholder); text-align: center; padding: 24px 0; font-size: 13px">
         暂无扫描件，请点击上方按钮上传
       </div>
-    </el-dialog>
-
-    <!-- 文件预览弹窗 -->
-    <el-dialog v-model="previewVisible" :title="previewFileName" width="80%" top="5vh" destroy-on-close>
-      <div v-if="previewType === 'image'" style="text-align: center">
-        <el-image :src="previewUrl" fit="contain" style="max-width: 100%; max-height: 70vh" />
-      </div>
-      <iframe v-else-if="previewType === 'pdf'" :src="previewUrl" style="width: 100%; height: 70vh; border: none" />
-      <template #footer>
-        <el-button :icon="Download" @click="openDownload(previewFileId)">下载</el-button>
-      </template>
     </el-dialog>
   </div>
 </template>

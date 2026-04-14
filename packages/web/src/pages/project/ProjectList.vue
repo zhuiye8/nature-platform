@@ -5,6 +5,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Plus } from '@element-plus/icons-vue'
 import { getProjectPage, getProjectDetail, deleteProject, submitProject } from '@/api/project'
 import type { ProjectItem } from '@/api/project'
+import { getStatusLabel, getStatusTagType } from '@/utils/status-map'
 
 const router = useRouter()
 const tableData = ref<ProjectItem[]>([])
@@ -53,7 +54,8 @@ function getDisplayStatus(row: any): string {
   if (row.status === 'REJECTED') return '已驳回'
   if (row.wfStatus === 'COMPLETED') return '已归档'
   if (row.currentNode) return nodeStatusLabel[row.currentNode] || row.currentNode
-  return row.status || '--'
+  // Fallback: workflow status codes (TECH_APPROVED, CONTENT_APPROVED, FINAL_APPROVED, ...)
+  return getStatusLabel(row.status)
 }
 
 function getDisplayTagType(row: any): 'primary' | 'success' | 'info' | 'warning' | 'danger' {
@@ -61,7 +63,7 @@ function getDisplayTagType(row: any): 'primary' | 'success' | 'info' | 'warning'
   if (row.status === 'REJECTED') return 'danger'
   if (row.wfStatus === 'COMPLETED') return 'success'
   if (row.currentNode) return nodeStatusTagType[row.currentNode] || 'info'
-  return 'info'
+  return getStatusTagType(row.status) as 'primary' | 'success' | 'info' | 'warning' | 'danger'
 }
 
 function isPoolReviewerLabel(label: string): boolean {

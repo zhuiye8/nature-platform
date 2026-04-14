@@ -53,6 +53,7 @@ export class ContractService {
     const hasSales = roleCodes.includes('sales');
     const hasCommercial = roleCodes.includes('commercial') || roleCodes.includes('archiver');
     const hasManager = roleCodes.includes('dept_manager') || roleCodes.includes('project_director');
+    const hasFinance = roleCodes.includes('finance');
 
     const conditions: SQL[] = [eq(contract.deleted, false)];
 
@@ -69,6 +70,10 @@ export class ContractService {
       if (hasManager) {
         // Managers see all non-draft contracts
         visibilityConditions.push(sql`${contract.reviewStatus} != 'DRAFT'`);
+      }
+      if (hasFinance) {
+        // Finance handles payments after the contract is approved
+        visibilityConditions.push(eq(contract.reviewStatus, 'APPROVED'));
       }
       if (visibilityConditions.length === 0) {
         return { list: [], total: 0, page, pageSize };
@@ -1026,6 +1031,7 @@ export class ContractService {
     const hasSales = roleCodes.includes('sales');
     const hasCommercial = roleCodes.includes('commercial') || roleCodes.includes('archiver');
     const hasManager = roleCodes.includes('dept_manager') || roleCodes.includes('project_director');
+    const hasFinance = roleCodes.includes('finance');
 
     // Step 1: Find matching group IDs from both group-level and contract-level filters
     // Contract-level conditions (always applied to narrow down groups)
@@ -1037,6 +1043,7 @@ export class ContractService {
       if (hasSales) visibilityConds.push(or(eq(contract.createdBy, currentUserId), eq(contract.salesPersonId, currentUserId))!);
       if (hasCommercial) visibilityConds.push(eq(contract.reviewStatus, 'APPROVED'));
       if (hasManager) visibilityConds.push(sql`${contract.reviewStatus} != 'DRAFT'`);
+      if (hasFinance) visibilityConds.push(eq(contract.reviewStatus, 'APPROVED'));
       if (visibilityConds.length === 0) {
         return { list: [], total: 0, page, pageSize };
       }
@@ -1071,7 +1078,7 @@ export class ContractService {
     }
 
     // Groups that have at least one matching contract (for contract-level filters)
-    const needsVisibilityFilter = !isSuperAdmin && (hasSales || hasCommercial || hasManager);
+    const needsVisibilityFilter = !isSuperAdmin && (hasSales || hasCommercial || hasManager || hasFinance);
     const hasContractFilter = !!query.reviewStatus || !!query.archiveStatus || !!query.salesPersonId || needsVisibilityFilter;
     let groupIdsFromContracts: Set<number> | null = null;
     if (hasContractFilter) {
@@ -1130,6 +1137,7 @@ export class ContractService {
           if (hasSales) visConds.push(or(eq(contract.createdBy, currentUserId), eq(contract.salesPersonId, currentUserId))!);
           if (hasCommercial) visConds.push(eq(contract.reviewStatus, 'APPROVED'));
           if (hasManager) visConds.push(sql`${contract.reviewStatus} != 'DRAFT'`);
+          if (hasFinance) visConds.push(eq(contract.reviewStatus, 'APPROVED'));
           if (visConds.length > 0) conds.push(visConds.length === 1 ? visConds[0] : or(...visConds)!);
         }
         // Apply contract-level filters to child contracts too
