@@ -2,7 +2,6 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { UserInfo, LoginResponse } from '@nature/shared'
 import request from '@/api/request'
-import router from '@/router'
 
 export const useAuthStore = defineStore('auth', () => {
   const token = ref<string | null>(localStorage.getItem('token'))
@@ -27,10 +26,13 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function logout() {
-    token.value = null
-    user.value = null
+    // Clear storage first so any in-flight requests fail cleanly
     localStorage.removeItem('token')
-    router.push('/login')
+    // Use a hard navigation to /login so all in-memory state (Pinia stores,
+    // SSE connections, watchers) is fully reset. This avoids the Suspense
+    // "stuck on old view" issue that happens when token/user refs are
+    // nulled while the current route's component tree still depends on them.
+    window.location.href = '/login'
   }
 
   return {

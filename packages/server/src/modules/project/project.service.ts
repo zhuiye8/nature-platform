@@ -767,7 +767,9 @@ export class ProjectService {
   // Available years for a contract
   // -----------------------------------------------------------------------
   async getAvailableYears(contractId: number) {
-    // Get contract's serviceYears
+    // Return all service years for the contract — no longer filter out
+    // "already used" years because multiple project registrations per
+    // contract per year are now allowed (batch registration scenario).
     const contracts = await this.db
       .select({ serviceYears: contract.serviceYears })
       .from(contract)
@@ -778,22 +780,7 @@ export class ProjectService {
       throw new NotFoundException(`Contract #${contractId} not found`);
     }
 
-    const allYears = (contracts[0].serviceYears as number[]) ?? [];
-
-    // Get already-used years
-    const usedProjects = await this.db
-      .select({ contractYear: projectRegister.contractYear })
-      .from(projectRegister)
-      .where(
-        and(
-          eq(projectRegister.contractId, contractId),
-          eq(projectRegister.deleted, false),
-        ),
-      );
-
-    const usedYears = new Set(usedProjects.map((p) => p.contractYear));
-
-    return allYears.filter((y) => !usedYears.has(y));
+    return (contracts[0].serviceYears as number[]) ?? [];
   }
 
   // -----------------------------------------------------------------------

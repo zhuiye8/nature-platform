@@ -5,6 +5,7 @@ import {
   integer,
   timestamp,
   jsonb,
+  unique,
 } from 'drizzle-orm/pg-core';
 
 // ---------------------------------------------------------------------------
@@ -102,15 +103,29 @@ export type NewWfTask = typeof wfTask.$inferInsert;
 // ---------------------------------------------------------------------------
 // wf_assignment_rule
 // ---------------------------------------------------------------------------
-export const wfAssignmentRule = pgTable('wf_assignment_rule', {
-  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
-  nodeKey: varchar('node_key', { length: 64 }).notNull(),
-  slotKey: varchar('slot_key', { length: 64 }).notNull(),
-  slotLabel: varchar('slot_label', { length: 128 }).notNull(),
-  roleCode: varchar('role_code', { length: 64 }).notNull(),
-  avoidanceRule: varchar('avoidance_rule', { length: 32 }).notNull().default('NONE'),
-  priority: integer('priority').notNull().default(0),
-});
+export const wfAssignmentRule = pgTable(
+  'wf_assignment_rule',
+  {
+    id: bigint('id', { mode: 'number' })
+      .primaryKey()
+      .generatedAlwaysAsIdentity(),
+    nodeKey: varchar('node_key', { length: 64 }).notNull(),
+    slotKey: varchar('slot_key', { length: 64 }).notNull(),
+    slotLabel: varchar('slot_label', { length: 128 }).notNull(),
+    roleCode: varchar('role_code', { length: 64 }).notNull(),
+    avoidanceRule: varchar('avoidance_rule', { length: 32 })
+      .notNull()
+      .default('NONE'),
+    priority: integer('priority').notNull().default(0),
+  },
+  (t) => [
+    unique('wf_assignment_rule_node_slot_role_uq').on(
+      t.nodeKey,
+      t.slotKey,
+      t.roleCode,
+    ),
+  ],
+);
 
 export type WfAssignmentRuleRow = typeof wfAssignmentRule.$inferSelect;
 export type NewWfAssignmentRule = typeof wfAssignmentRule.$inferInsert;

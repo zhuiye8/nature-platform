@@ -501,6 +501,7 @@ export class WorkflowService {
         instanceId: wfTask.instanceId,
         nodeKey: wfTask.nodeKey,
         slotKey: wfTask.slotKey,
+        assigneeId: wfTask.assigneeId,
         status: wfTask.status,
         result: wfTask.result,
         remark: wfTask.remark,
@@ -508,15 +509,45 @@ export class WorkflowService {
         bizType: wfInstance.bizType,
         bizId: wfInstance.bizId,
         currentNode: wfInstance.currentNode,
+        variables: wfInstance.variables,
       })
       .from(wfTask)
       .innerJoin(wfInstance, eq(wfTask.instanceId, wfInstance.id))
       .where(and(...conditions))
       .orderBy(wfTask.createdAt);
 
+    // ── Pool role filter ──────────────────────────────────────────────
+    // For variable-driven pool nodes (PROJECT_REVIEW, CONTRACT_REVIEW)
+    // the same nodeKey is shared by multiple roles (e.g. project_director
+    // AND dept_manager). The SQL above returns ALL pool tasks where the
+    // user's role appears in wf_assignment_rule for that nodeKey, but we
+    // must further narrow: only show pool tasks whose
+    // variables.reviewerRoleCode matches one of the current user's roles.
+    const POOL_FILTERED_NODES = new Set(['PROJECT_REVIEW', 'CONTRACT_REVIEW']);
+
+    const filteredRows = isSuperAdmin
+      ? rows
+      : rows.filter((row) => {
+          // Single-assign tasks (assigneeId set) always pass — the SQL
+          // already ensured assigneeId === userId.
+          if (row.assigneeId !== null) return true;
+
+          // Only filter pool tasks on variable-driven nodes
+          if (!POOL_FILTERED_NODES.has(row.nodeKey)) return true;
+
+          const vars = (row.variables as Record<string, any>) || {};
+          const targetRole = vars.reviewerRoleCode as string | undefined;
+
+          // No target role in variables → legacy task, let it through
+          if (!targetRole) return true;
+
+          // Check if the current user actually has the target role
+          return roleCodes.includes(targetRole);
+        });
+
     // Enrich with node display name, node type, and business name
     const enriched = await Promise.all(
-      rows
+      filteredRows
         .filter((row) => !this.HIDDEN_NODES.has(row.nodeKey))
         .map(async (row) => {
           // Get node display name + node type
