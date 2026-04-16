@@ -388,42 +388,13 @@ export class ProjectService {
           sortOrder: item.sortOrder ?? index,
         })),
       );
-    } else {
-      // Copy from contract system items
-      const contractItems = await this.db
-        .select()
-        .from(contractSystemItem)
-        .where(
-          and(
-            eq(contractSystemItem.contractId, dto.contractId),
-            eq(contractSystemItem.deleted, false),
-          ),
-        )
-        .orderBy(contractSystemItem.sortOrder);
-
-      if (contractItems.length > 0) {
-        await this.db.insert(projectSystemItem).values(
-          contractItems.map((ci, index) => ({
-            projectRegisterId: created.id,
-            systemName: ci.systemName,
-            filingAgency: null,
-            securityLevel: null,
-            isReassessment: false,
-            requiredEntryDate: null,
-            requiredReportDeliveryDate: null,
-            assessedUnitName: null,
-            assessedUnitIndustry: null,
-            assessedUnitContact: null,
-            assessedUnitMobile: null,
-            assessedUnitAddress: null,
-            hasFilingCertificate: false,
-            hasFilingForm: false,
-            hasClassificationReport: false,
-            sortOrder: index,
-          })),
-        );
-      }
     }
+    // No longer auto-copy contract system items — users add systems
+    // one by one via "新增系统" button, which inherits customer info
+    // and offers contract system names as dropdown suggestions.
+
+    // Refresh quota flag after bulk system item creation
+    await this.refreshSystemQuotaFull(dto.contractId);
 
     return this.findById(created.id);
   }
@@ -552,6 +523,10 @@ export class ProjectService {
       }
     }
 
+    // Refresh quota flag after system items changed
+    const contractIdForQuota = dto.contractId ?? existing.contractId!;
+    await this.refreshSystemQuotaFull(contractIdForQuota);
+
     // Audit trail — log changed fields
     await this.logFieldChanges(
       'project_register',
@@ -606,6 +581,9 @@ export class ProjectService {
       .update(projectSystemItem)
       .set({ deleted: true })
       .where(eq(projectSystemItem.projectRegisterId, id));
+
+    // Refresh quota flag (re-opens contract for new registrations)
+    await this.refreshSystemQuotaFull(existing.contractId!);
   }
 
   // -----------------------------------------------------------------------
@@ -784,6 +762,95 @@ export class ProjectService {
   }
 
   // -----------------------------------------------------------------------
+  // System quota for a contract
+  //
+  // Returns { total, used, remaining, systemNames } where:
+  //   total = number of contract_system_item rows (approved with contract)
+  //   used  = sum of project_system_item across ALL project_registers
+  //           linked to this contract (excluding excludeProjectId if given)
+  //   remaining = total - used
+  //   systemNames = contract system item names for dropdown selection
+  // -----------------------------------------------------------------------
+  async getContractSystemQuota(
+    contractId: number,
+    excludeProjectId?: number,
+  ) {
+    // Total: contract system items
+    const totalResult = await this.db
+      .select({ total: count() })
+      .from(contractSystemItem)
+      .where(
+        and(
+          eq(contractSystemItem.contractId, contractId),
+          eq(contractSystemItem.deleted, false),
+        ),
+      );
+    const total = totalResult[0]?.total ?? 0;
+
+    // System names for dropdown
+    const nameRows = await this.db
+      .select({ systemName: contractSystemItem.systemName })
+      .from(contractSystemItem)
+      .where(
+        and(
+          eq(contractSystemItem.contractId, contractId),
+          eq(contractSystemItem.deleted, false),
+        ),
+      )
+      .orderBy(contractSystemItem.sortOrder);
+    const systemNames = nameRows.map((r) => r.systemName);
+
+    // Used: project system items across all projects for this contract
+    const projectIds = await this.db
+      .select({ id: projectRegister.id })
+      .from(projectRegister)
+      .where(
+        and(
+          eq(projectRegister.contractId, contractId),
+          eq(projectRegister.deleted, false),
+        ),
+      );
+
+    let usedProjectIds = projectIds.map((p) => p.id);
+    if (excludeProjectId) {
+      usedProjectIds = usedProjectIds.filter((id) => id !== excludeProjectId);
+    }
+
+    let used = 0;
+    if (usedProjectIds.length > 0) {
+      const usedResult = await this.db
+        .select({ total: count() })
+        .from(projectSystemItem)
+        .where(
+          and(
+            or(
+              ...usedProjectIds.map((pid) =>
+                eq(projectSystemItem.projectRegisterId, pid),
+              ),
+            ),
+            eq(projectSystemItem.deleted, false),
+          ),
+        );
+      used = usedResult[0]?.total ?? 0;
+    }
+
+    return { total, used, remaining: total - used, systemNames };
+  }
+
+  // -----------------------------------------------------------------------
+  // Recalculate and update contract.system_quota_full flag
+  // -----------------------------------------------------------------------
+  async refreshSystemQuotaFull(contractId: number): Promise<void> {
+    const { total, used } = await this.getContractSystemQuota(contractId);
+    const isFull = used >= total;
+
+    await this.db
+      .update(contract)
+      .set({ systemQuotaFull: isFull, updatedAt: new Date() })
+      .where(eq(contract.id, contractId));
+  }
+
+  // -----------------------------------------------------------------------
   // Auto-generate application number
   // -----------------------------------------------------------------------
   private async generateApplicationNo(year: number): Promise<string> {
@@ -952,6 +1019,14 @@ export class ProjectService {
       .limit(1);
     if (proj.length === 0) throw new NotFoundException('Project not found');
 
+    // Check system quota
+    const quota = await this.getContractSystemQuota(proj[0].contractId);
+    if (quota.remaining <= 0) {
+      throw new BadRequestException(
+        `合同系统名额已用完（${quota.used}/${quota.total}），不可新增`,
+      );
+    }
+
     const maxSort = await this.db
       .select({ max: count() })
       .from(projectSystemItem)
@@ -980,6 +1055,10 @@ export class ProjectService {
         sortOrder: dto.sortOrder ?? (maxSort[0]?.max ?? 0),
       })
       .returning();
+
+    // Refresh quota flag
+    await this.refreshSystemQuotaFull(proj[0].contractId);
+
     return created;
   }
 
@@ -1046,5 +1125,37 @@ export class ProjectService {
       .update(projectSystemItem)
       .set({ deleted: true, updatedAt: new Date() })
       .where(eq(projectSystemItem.id, itemId));
+
+    // Refresh quota flag (may re-open the contract for new project registrations)
+    const proj = await this.db
+      .select({ contractId: projectRegister.contractId })
+      .from(projectRegister)
+      .where(eq(projectRegister.id, projectId))
+      .limit(1);
+    if (proj[0]) {
+      await this.refreshSystemQuotaFull(proj[0].contractId);
+    }
+  }
+
+  /**
+   * Generate filing agency name from customer region string ("省/市/区").
+   * Always resolves to city-level 公安局 regardless of district.
+   */
+  private generateFilingAgency(region: string | null | undefined): string | null {
+    if (!region) return null;
+    const parts = region.split('/').filter(Boolean);
+    if (parts.length === 0) return null;
+
+    const province = parts[0];
+    const city = parts[1];
+    const directMunicipalities = ['北京市', '上海市', '天津市', '重庆市'];
+
+    if (directMunicipalities.includes(province)) {
+      return `${province}公安局`;
+    }
+    if (city) {
+      return `${city}公安局`;
+    }
+    return `${province}公安厅`;
   }
 }

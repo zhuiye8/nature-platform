@@ -321,6 +321,10 @@ export class QueryContractDto {
 
   @IsString()
   @IsOptional()
+  systemQuotaFull?: string;
+
+  @IsString()
+  @IsOptional()
   onlyMine?: string;
 
   @Type(() => Number)

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Plus } from '@element-plus/icons-vue'
 import { getCustomerPage, deleteCustomer } from '@/api/customer'
 import type { CustomerItem } from '@/api/customer'
@@ -57,11 +57,12 @@ function handleEdit(row: CustomerItem) {
 
 async function handleDelete(row: CustomerItem) {
   try {
+    await ElMessageBox.confirm('确定要删除该客户吗？', '确认', { type: 'warning' })
     await deleteCustomer(row.id)
     ElMessage.success('删除成功')
     fetchData()
   } catch {
-    // error handled by request interceptor
+    // cancelled or error handled by request interceptor
   }
 }
 
@@ -184,23 +185,15 @@ onMounted(() => {
             >
               编辑
             </el-button>
-            <el-popconfirm
-              title="确定要删除该客户吗？"
-              confirm-button-text="确定"
-              cancel-button-text="取消"
-              @confirm="handleDelete(row)"
+            <el-button
+              v-permission="'customer:delete'"
+              type="danger"
+              link
+              size="small"
+              @click="handleDelete(row)"
             >
-              <template #reference>
-                <el-button
-                  v-permission="'customer:delete'"
-                  type="danger"
-                  link
-                  size="small"
-                >
-                  删除
-                </el-button>
-              </template>
-            </el-popconfirm>
+              删除
+            </el-button>
           </template>
         </el-table-column>
       </el-table>

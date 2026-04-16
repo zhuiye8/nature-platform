@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { CascaderValue, FormInstance, FormRules } from 'element-plus'
@@ -229,11 +229,11 @@ function removeSystemItem(index: number) {
 }
 
 const systemLevelOptions = [
-  { label: '第一级', value: 1 },
-  { label: '第二级', value: 2 },
-  { label: '第三级', value: 3 },
-  { label: '第四级', value: 4 },
-  { label: '第五级', value: 5 },
+  { label: '一级', value: 1 },
+  { label: '二级', value: 2 },
+  { label: '三级', value: 3 },
+  { label: '四级', value: 4 },
+  { label: '五级', value: 5 },
 ]
 
 // ── 预设选项 ──
@@ -374,7 +374,15 @@ function formatFileSize(size: number) {
 
 async function handleSubmit() {
   const valid = await formRef.value?.validate().catch(() => false)
-  if (!valid) return
+  if (!valid) {
+    await nextTick()
+    const firstError = document.querySelector('.el-form-item.is-error')
+    if (firstError) {
+      firstError.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+    ElMessage.warning('请完善必填字段')
+    return
+  }
 
   if (formData.value.systemItems.length === 0) {
     ElMessage.warning('请至少添加一条系统明细')

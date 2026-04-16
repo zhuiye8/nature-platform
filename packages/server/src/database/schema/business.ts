@@ -129,6 +129,7 @@ export const contract = pgTable('contract', {
   scanFileUrl: varchar('scan_file_url', { length: 512 }),
 
   reviewStatus: varchar('review_status', { length: 32 }).notNull().default('DRAFT'),
+  systemQuotaFull: boolean('system_quota_full').notNull().default(false),
 
   remark: text('remark'),
 

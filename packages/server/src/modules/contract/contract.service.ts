@@ -96,6 +96,10 @@ export class ContractService {
       conditions.push(eq(contract.archiveStatus, query.archiveStatus));
     }
 
+    if (query.systemQuotaFull === 'false') {
+      conditions.push(eq(contract.systemQuotaFull, false));
+    }
+
     if (query.paymentStatus) {
       conditions.push(eq(contract.paymentStatus, query.paymentStatus));
     }

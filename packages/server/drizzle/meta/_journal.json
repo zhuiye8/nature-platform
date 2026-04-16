@@ -36,6 +36,13 @@
       "when": 1776307216845,
       "tag": "0004_greedy_manta",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1776328291768,
+      "tag": "0005_simple_aaron_stack",
+      "breakpoints": true
     }
   ]
 }

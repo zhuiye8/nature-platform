@@ -38,8 +38,17 @@ export class NotificationListener {
     private readonly notificationService: NotificationService,
   ) {}
 
+  // Nodes that represent the initiator's own action — no need to notify them
+  // about a task they just created themselves.
+  private static readonly SILENT_NODES = new Set([
+    'CONTRACT_CREATE',
+    'PROJECT_REGISTER',
+  ]);
+
   @OnEvent('workflow.task.created')
   async handleTaskCreated(payload: WorkflowTaskCreatedEvent) {
+    if (NotificationListener.SILENT_NODES.has(payload.nodeKey)) return;
+
     if (payload.assigneeId) {
       // Direct assignment — notify the assignee
       this.logger.log(

@@ -1,0 +1,1 @@
+ALTER TABLE "contract" ADD COLUMN "system_quota_full" boolean DEFAULT false NOT NULL;

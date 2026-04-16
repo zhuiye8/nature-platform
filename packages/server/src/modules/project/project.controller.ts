@@ -45,6 +45,16 @@ export class ProjectController {
     return this.projectService.getAvailableYears(contractId);
   }
 
+  @Get('contract-system-quota/:contractId')
+  @RequirePermission('project:create')
+  async getContractSystemQuota(
+    @Param('contractId', ParseIntPipe) contractId: number,
+    @Query('excludeProjectId') excludeProjectId?: string,
+  ) {
+    const excl = excludeProjectId ? parseInt(excludeProjectId, 10) : undefined;
+    return this.projectService.getContractSystemQuota(contractId, excl);
+  }
+
   @Get(':id')
   @RequirePermission('project:list')
   async findById(@Param('id', ParseIntPipe) id: number) {

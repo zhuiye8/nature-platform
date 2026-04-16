@@ -12,6 +12,7 @@ import * as bcrypt from 'bcrypt';
 import { eq, inArray, ilike } from 'drizzle-orm';
 import { DRIZZLE, DrizzleDB } from '../../database/database.module';
 import { userAccount, userRole, iamRole, iamRolePermission } from '../../database/schema';
+import { DingtalkNotifyService } from '../dingtalk/dingtalk-notify.service';
 
 interface DingtalkTokenResponse {
   accessToken?: string;
@@ -33,6 +34,7 @@ export class AuthService {
     @Inject(DRIZZLE) private readonly db: DrizzleDB,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly dingtalkNotifyService: DingtalkNotifyService,
   ) {}
 
   // ===================================================================
@@ -141,12 +143,27 @@ export class AuthService {
     }
 
     this.logger.log(`DingTalk user: ${dtUser.nick} (unionId: ${dtUser.unionId})`);
+
+    // Get corp-internal userId for work notifications
+    let corpUserId: string | null = null;
+    try {
+      corpUserId = await this.dingtalkNotifyService.getCorpUserIdByUnionId(
+        dtUser.unionId as string,
+      );
+      if (corpUserId) {
+        this.logger.log(`DingTalk corp userId: ${corpUserId}`);
+      }
+    } catch (e) {
+      this.logger.warn(`Failed to get DingTalk corp userId: ${(e as Error).message}`);
+    }
+
     return {
       unionId: dtUser.unionId as string,
       openId: dtUser.openId as string,
       nick: (dtUser.nick || '') as string,
       mobile: (dtUser.mobile || '') as string,
       avatarUrl: (dtUser.avatarUrl || '') as string,
+      corpUserId,
     };
   }
 
@@ -166,6 +183,18 @@ export class AuthService {
     if (boundUser[0]) {
       const user = boundUser[0];
       if (!user.enabled) throw new UnauthorizedException('账号已被禁用');
+
+      // Auto-correct ding_user_id if we now have a corpUserId
+      if (dtUser.corpUserId && user.dingUserId !== dtUser.corpUserId) {
+        await this.db
+          .update(userAccount)
+          .set({ dingUserId: dtUser.corpUserId, updatedAt: new Date() })
+          .where(eq(userAccount.id, user.id));
+        this.logger.log(
+          `Updated ding_user_id for user #${user.id}: ${user.dingUserId} → ${dtUser.corpUserId}`,
+        );
+      }
+
       return this.buildLoginResult(user);
     }
 
@@ -210,7 +239,7 @@ export class AuthService {
   /**
    * Bind DingTalk to existing user after password verification (multi-match scenario)
    */
-  async dingtalkBindWithPassword(userId: number, password: string, dingtalkInfo: { unionId: string; openId: string; nick: string; mobile: string }) {
+  async dingtalkBindWithPassword(userId: number, password: string, dingtalkInfo: { unionId: string; openId: string; nick: string; mobile: string; corpUserId?: string | null }) {
     const users = await this.db.select().from(userAccount).where(eq(userAccount.id, userId)).limit(1);
     const user = users[0];
     if (!user) throw new BadRequestException('用户不存在');
@@ -227,7 +256,7 @@ export class AuthService {
   /**
    * Create new user from DingTalk info and bind
    */
-  async dingtalkCreateUser(dingtalkInfo: { unionId: string; openId: string; nick: string; mobile: string }) {
+  async dingtalkCreateUser(dingtalkInfo: { unionId: string; openId: string; nick: string; mobile: string; corpUserId?: string | null }) {
     // Generate username from nick (use unionId suffix to avoid conflicts)
     const baseUsername = `dt_${dingtalkInfo.unionId.substring(0, 8)}`;
     let username = baseUsername;
@@ -250,7 +279,7 @@ export class AuthService {
         sourceType: 'DINGTALK',
         mustChangePwd: true,
         dingUnionId: dingtalkInfo.unionId,
-        dingUserId: dingtalkInfo.openId,
+        dingUserId: dingtalkInfo.corpUserId ?? dingtalkInfo.openId,
       })
       .returning();
 
@@ -267,12 +296,12 @@ export class AuthService {
   // Helpers
   // ===================================================================
 
-  private async bindDingtalk(userId: number, dtUser: { unionId: string; openId: string; nick?: string; mobile?: string }) {
+  private async bindDingtalk(userId: number, dtUser: { unionId: string; openId: string; corpUserId?: string | null; nick?: string; mobile?: string }) {
     await this.db
       .update(userAccount)
       .set({
         dingUnionId: dtUser.unionId,
-        dingUserId: dtUser.openId,
+        dingUserId: dtUser.corpUserId ?? dtUser.openId,
         updatedAt: new Date(),
       })
       .where(eq(userAccount.id, userId));

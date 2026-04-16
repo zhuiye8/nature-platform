@@ -117,7 +117,8 @@ export class ProjectListener {
       return;
     }
 
-    const yearShort = String(proj.contractYear).slice(-2);
+    // Use current calendar year (not the selected service year)
+    const yearShort = String(new Date().getFullYear()).slice(-2);
 
     // 2. Fetch all system items (by sort_order) that don't yet have a system_no
     const items = await this.db

@@ -154,11 +154,12 @@ async function handleSubmit(row: ProjectItem) {
 
 async function handleDelete(row: ProjectItem) {
   try {
+    await ElMessageBox.confirm('确定要删除该项目吗？', '确认', { type: 'warning' })
     await deleteProject(row.id)
     ElMessage.success('删除成功')
     fetchData()
   } catch {
-    // error handled by request interceptor
+    // cancelled or error handled by request interceptor
   }
 }
 
@@ -331,24 +332,16 @@ onMounted(() => {
             >
               提交
             </el-button>
-            <el-popconfirm
+            <el-button
               v-if="isDraft(row)"
-              title="确定要删除该项目吗？"
-              confirm-button-text="确定"
-              cancel-button-text="取消"
-              @confirm="handleDelete(row)"
+              v-permission="'project:delete'"
+              type="danger"
+              link
+              size="small"
+              @click="handleDelete(row)"
             >
-              <template #reference>
-                <el-button
-                  v-permission="'project:delete'"
-                  type="danger"
-                  link
-                  size="small"
-                >
-                  删除
-                </el-button>
-              </template>
-            </el-popconfirm>
+              删除
+            </el-button>
           </template>
         </el-table-column>
       </el-table>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Top, Bottom, Delete } from '@element-plus/icons-vue'
 import { getRoleList, getRoleDetail, deleteRole, assignRolePermissions, getAllPermissions, getRoleUsers, updateRoleUsers } from '@/api/role'
 import type { RoleItem, PermissionItem, RoleMember } from '@/api/role'
@@ -44,10 +44,11 @@ function handleEdit(row: RoleItem) { editRoleId.value = row.id; formVisible.valu
 
 async function handleDelete(row: RoleItem) {
   try {
+    await ElMessageBox.confirm('确定要删除该角色吗？', '确认', { type: 'warning' })
     await deleteRole(row.id)
     ElMessage.success('删除成功')
     fetchData()
-  } catch { /* handled */ }
+  } catch { /* cancelled or handled */ }
 }
 
 // Permission dialog
@@ -180,11 +181,7 @@ onMounted(() => fetchData())
             <el-button v-permission="'role:update'" type="primary" link size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button v-permission="'role:update'" link size="small" @click="openPermDialog(row)">权限</el-button>
             <el-button v-permission="'role:manage'" type="warning" link size="small" @click="openMemberDialog(row)">成员</el-button>
-            <el-popconfirm v-if="!row.systemFlag" title="确定要删除该角色吗？" @confirm="handleDelete(row)">
-              <template #reference>
-                <el-button v-permission="'role:delete'" type="danger" link size="small">删除</el-button>
-              </template>
-            </el-popconfirm>
+            <el-button v-if="!row.systemFlag" v-permission="'role:delete'" type="danger" link size="small" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>

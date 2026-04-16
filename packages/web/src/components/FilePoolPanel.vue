@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Download, Delete, Upload } from '@element-plus/icons-vue'
 import {
   getAssessmentFiles,
@@ -121,6 +121,7 @@ function handleDownload(fileId: number) {
 
 async function handleDelete(fileId: number) {
   try {
+    await ElMessageBox.confirm('确定删除？', '确认', { type: 'warning' })
     if (props.apiType === 'assessment') {
       await deleteAssessmentFile(fileId)
     } else {
@@ -128,7 +129,7 @@ async function handleDelete(fileId: number) {
     }
     ElMessage.success('已删除')
     fetchFiles()
-  } catch { /* interceptor */ }
+  } catch { /* cancelled or interceptor */ }
 }
 
 function formatFileSize(bytes: number) {
@@ -167,11 +168,7 @@ defineExpose({ refresh: fetchFiles })
       <el-table-column label="操作" width="140" align="center">
         <template #default="{ row }">
           <el-button type="primary" link :icon="Download" @click="handleDownload(row.id)">下载</el-button>
-          <el-popconfirm v-if="!readonly && getUploaderId(row) === authStore.user?.id" title="确定删除？" @confirm="handleDelete(row.id)">
-            <template #reference>
-              <el-button type="danger" link :icon="Delete">删除</el-button>
-            </template>
-          </el-popconfirm>
+          <el-button v-if="!readonly && getUploaderId(row) === authStore.user?.id" type="danger" link :icon="Delete" @click="handleDelete(row.id)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>

@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElLoading } from 'element-plus'
+import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import type { CascaderValue, FormInstance, FormRules } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
-import { createProject, updateProject, getProjectDetail, getAvailableYears, getSystemItems } from '@/api/project'
-import type { ProjectForm as ProjectFormData, ProjectSystemItem } from '@/api/project'
+import { createProject, updateProject, getProjectDetail, getAvailableYears, getSystemItems, getContractSystemQuota } from '@/api/project'
+import type { ProjectForm as ProjectFormData, ProjectSystemItem, ContractSystemQuota } from '@/api/project'
 import { useAuthStore } from '@/stores/auth'
 import { getContractPage, getContractDetail } from '@/api/contract'
 import { regionData } from '@/utils/region-data'
@@ -169,6 +169,31 @@ const selectedContractName = ref('')
 // auto-fill defaults when adding a new system item.
 const selectedContractDetail = ref<ContractItem | null>(null)
 
+// System quota
+const systemQuota = ref<ContractSystemQuota | null>(null)
+const quotaUsed = computed(() => {
+  if (!systemQuota.value) return 0
+  // In edit mode: used = quota.used (already excludes this project) + current items
+  // In create mode: used = quota.used + current items
+  return systemQuota.value.used + formData.value.systemItems.length
+})
+const quotaTotal = computed(() => systemQuota.value?.total ?? 0)
+const canAddSystemItem = computed(() => {
+  if (!systemQuota.value) return true
+  return quotaUsed.value < quotaTotal.value
+})
+
+async function fetchSystemQuota(contractId: number) {
+  try {
+    systemQuota.value = (await getContractSystemQuota(
+      contractId,
+      isEdit.value ? projectId.value ?? undefined : undefined,
+    )) as unknown as ContractSystemQuota
+  } catch {
+    systemQuota.value = null
+  }
+}
+
 async function searchContracts(query: string) {
   contractLoading.value = true
   try {
@@ -177,6 +202,7 @@ async function searchContracts(query: string) {
       pageSize: 20,
       keyword: query || undefined,
       reviewStatus: 'APPROVED',
+      systemQuotaFull: 'false',
       onlyMine: 'true',
     } as any)) as unknown as import('@nature/shared').PageResult<ContractItem>
     contractOptions.value = data.list
@@ -252,9 +278,7 @@ const securityLevelOptions = [
   { label: '五级', value: '五级' },
 ]
 
-// No system count limit — users can freely add systems
-
-// Watch contract selection to load years and system items
+// Watch contract selection to load years, detail, and quota
 watch(
   () => formData.value.contractId,
   async (newVal) => {
@@ -273,6 +297,9 @@ watch(
     } catch {
       selectedContractDetail.value = null
     }
+
+    // Load quota
+    await fetchSystemQuota(newVal)
 
     await fetchAvailableYears(newVal)
   },
@@ -335,6 +362,8 @@ async function fetchDetail() {
     } catch {
       selectedContractDetail.value = null
     }
+    // Load quota (excludes this project's own items)
+    await fetchSystemQuota(data.contractId)
     // Load year options
     await fetchAvailableYears(data.contractId)
     // Ensure current year is in options
@@ -348,6 +377,11 @@ async function fetchDetail() {
 }
 
 function addSystemItem() {
+  if (!canAddSystemItem.value) {
+    ElMessage.warning(`合同系统名额已用完（${quotaUsed.value}/${quotaTotal.value}）`)
+    return
+  }
+
   // Inherit fields from the currently selected contract's customer info so
   // reviewers don't have to retype them for every system item.
   const detail = selectedContractDetail.value
@@ -389,8 +423,11 @@ function addSystemItem() {
   }
 }
 
-function removeSystemItem(index: number) {
-  formData.value.systemItems.splice(index, 1)
+async function removeSystemItem(index: number) {
+  try {
+    await ElMessageBox.confirm('确定要删除此系统吗？', '确认', { type: 'warning' })
+    formData.value.systemItems.splice(index, 1)
+  } catch { /* cancelled */ }
 }
 
 function handleBack() {
@@ -399,7 +436,16 @@ function handleBack() {
 
 async function handleSubmit() {
   const valid = await formRef.value?.validate().catch(() => false)
-  if (!valid) return
+  if (!valid) {
+    // Scroll to first error field and show toast
+    await nextTick()
+    const firstError = document.querySelector('.el-form-item.is-error')
+    if (firstError) {
+      firstError.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+    ElMessage.warning('请完善必填字段')
+    return
+  }
 
   // Edit mode: validate system items
   if (isEdit.value) {
@@ -583,8 +629,13 @@ onMounted(async () => {
         <!-- 系统明细（仅编辑模式） -->
         <div v-if="isEdit" id="system-items-section" class="n-form-section">
         <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px">
-          <h4 class="n-section-title" style="margin: 0">系统明细</h4>
-          <el-button type="primary" size="small" @click="addSystemItem">+ 新增系统</el-button>
+          <h4 class="n-section-title" style="margin: 0">
+            系统明细
+            <el-tag v-if="systemQuota" size="small" :type="canAddSystemItem ? 'info' : 'danger'" style="margin-left: 8px">
+              可登记系统数量（{{ quotaUsed }}/{{ quotaTotal }}）
+            </el-tag>
+          </h4>
+          <el-button type="primary" size="small" :disabled="!canAddSystemItem" @click="addSystemItem">+ 新增系统</el-button>
         </div>
         <el-empty
           v-if="formData.systemItems.length === 0"
@@ -596,18 +647,20 @@ onMounted(async () => {
             <template #header>
               <div style="display: flex; align-items: center; justify-content: space-between">
                 <span style="font-weight: 600">{{ item.systemName || `系统 ${index + 1}` }}</span>
-                <el-popconfirm title="确定要删除此系统吗？" @confirm="removeSystemItem(index)">
-                  <template #reference>
-                    <el-button type="danger" link size="small">删除</el-button>
-                  </template>
-                </el-popconfirm>
+                <el-button type="danger" link size="small" @click="removeSystemItem(index)">删除</el-button>
               </div>
             </template>
 
             <el-row :gutter="16">
               <el-col :span="12">
                 <el-form-item label="系统名称" required>
-                  <el-input v-model="item.systemName" placeholder="请输入系统名称" />
+                  <el-autocomplete
+                    v-model="item.systemName"
+                    :fetch-suggestions="(q: string, cb: any) => cb((systemQuota?.systemNames || []).filter(n => n.includes(q)).map(n => ({ value: n })))"
+                    placeholder="选择或输入系统名称"
+                    style="width: 100%"
+                    clearable
+                  />
                 </el-form-item>
               </el-col>
               <el-col :span="12">

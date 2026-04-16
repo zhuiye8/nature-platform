@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { NotificationController } from './notification.controller';
 import { NotificationService } from './notification.service';
 import { NotificationListener } from './notification.listener';
+import { DingtalkModule } from '../dingtalk/dingtalk.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { NotificationListener } from './notification.listener';
         secret: configService.getOrThrow<string>('JWT_SECRET'),
       }),
     }),
+    DingtalkModule,
   ],
   controllers: [NotificationController],
   providers: [NotificationService, NotificationListener],

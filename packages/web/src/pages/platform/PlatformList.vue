@@ -222,18 +222,20 @@ onMounted(fetchData)
         <div style="display: flex; align-items: center; justify-content: space-between">
           <span style="font-weight: 600; font-size: 16px">注册平台管理</span>
           <div style="display: flex; gap: 8px">
-            <el-upload
-              action="/api/platform/import"
-              :headers="uploadHeaders"
-              :show-file-list="false"
-              accept=".xlsx,.xls"
-              :on-success="handleImportSuccess"
-              :on-error="handleImportError"
-            >
-              <el-button :icon="Upload">导入</el-button>
-            </el-upload>
-            <el-button :icon="Download" @click="handleExport">导出</el-button>
-            <el-button type="primary" :icon="Plus" @click="openCreate">新增</el-button>
+            <div v-permission="'platform:create'" style="display: inline-block">
+              <el-upload
+                action="/api/platform/import"
+                :headers="uploadHeaders"
+                :show-file-list="false"
+                accept=".xlsx,.xls"
+                :on-success="handleImportSuccess"
+                :on-error="handleImportError"
+              >
+                <el-button :icon="Upload">导入</el-button>
+              </el-upload>
+            </div>
+            <el-button v-permission="'platform:export'" :icon="Download" @click="handleExport">导出</el-button>
+            <el-button v-permission="'platform:create'" type="primary" :icon="Plus" @click="openCreate">新增</el-button>
           </div>
         </div>
       </template>
@@ -336,8 +338,8 @@ onMounted(fetchData)
         </el-table-column>
         <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" link size="small" @click="openEdit(row)">编辑</el-button>
-            <el-button type="danger" link size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button v-permission="'platform:update'" type="primary" link size="small" @click="openEdit(row)">编辑</el-button>
+            <el-button v-permission="'platform:delete'" type="danger" link size="small" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>

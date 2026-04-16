@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { getRecyclePage, restoreRecord, permanentDeleteRecord } from '@/api/recycle'
 import type { RecycleItem } from '@/api/recycle'
 
@@ -24,18 +24,20 @@ async function fetchData() {
 
 async function handleRestore(row: RecycleItem) {
   try {
+    await ElMessageBox.confirm('确定要恢复吗？', '确认', { type: 'warning' })
     await restoreRecord(row.id)
     ElMessage.success('恢复成功')
     fetchData()
-  } catch { /* handled */ }
+  } catch { /* cancelled or handled */ }
 }
 
 async function handlePermanentDelete(row: RecycleItem) {
   try {
+    await ElMessageBox.confirm('永久删除后不可恢复，确定吗？', '确认', { type: 'warning' })
     await permanentDeleteRecord(row.id)
     ElMessage.success('已永久删除')
     fetchData()
-  } catch { /* handled */ }
+  } catch { /* cancelled or handled */ }
 }
 
 function handleTabChange() { currentPage.value = 1; fetchData() }
@@ -62,16 +64,8 @@ onMounted(() => fetchData())
         <el-table-column prop="remark" label="备注" min-width="150" show-overflow-tooltip />
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
-            <el-popconfirm title="确定要恢复吗？" @confirm="handleRestore(row)">
-              <template #reference>
-                <el-button v-permission="'recycle:restore'" type="primary" link size="small">恢复</el-button>
-              </template>
-            </el-popconfirm>
-            <el-popconfirm title="永久删除后不可恢复，确定吗？" confirm-button-type="danger" @confirm="handlePermanentDelete(row)">
-              <template #reference>
-                <el-button v-permission="'recycle:delete'" type="danger" link size="small">永久删除</el-button>
-              </template>
-            </el-popconfirm>
+            <el-button v-permission="'recycle:restore'" type="primary" link size="small" @click="handleRestore(row)">恢复</el-button>
+            <el-button v-permission="'recycle:delete'" type="danger" link size="small" @click="handlePermanentDelete(row)">永久删除</el-button>
           </template>
         </el-table-column>
       </el-table>

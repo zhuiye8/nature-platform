@@ -98,6 +98,19 @@ export function getAvailableYears(contractId: number) {
   return request.get<number[]>(`/project/available-years/${contractId}`)
 }
 
+export interface ContractSystemQuota {
+  total: number
+  used: number
+  remaining: number
+  systemNames: string[]
+}
+
+export function getContractSystemQuota(contractId: number, excludeProjectId?: number) {
+  return request.get<ContractSystemQuota>(`/project/contract-system-quota/${contractId}`, {
+    params: excludeProjectId ? { excludeProjectId } : undefined,
+  })
+}
+
 // System item CRUD
 export function getSystemItems(projectId: number) {
   return request.get<ProjectSystemItem[]>(`/project/${projectId}/system-items`)

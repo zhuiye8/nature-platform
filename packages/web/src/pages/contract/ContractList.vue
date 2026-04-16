@@ -235,10 +235,11 @@ async function handleSubmit(row: ContractItem) {
 
 async function handleDelete(row: ContractItem) {
   try {
+    await ElMessageBox.confirm('确定删除？', '确认', { type: 'warning' })
     await deleteContract(row.id)
     ElMessage.success('删除成功')
     fetchData()
-  } catch {}
+  } catch { /* cancelled */ }
 }
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
@@ -397,15 +398,11 @@ onMounted(() => {
                       type="success" link size="small"
                       @click="router.push(`/contract/${row.id}?action=archive`)"
                     >归档</el-button>
-                    <el-popconfirm
+                    <el-button
                       v-if="row.reviewStatus === 'DRAFT' && isMyContract(row)"
-                      title="确定删除？"
-                      @confirm="handleDelete(row)"
-                    >
-                      <template #reference>
-                        <el-button type="danger" link size="small">删除</el-button>
-                      </template>
-                    </el-popconfirm>
+                      type="danger" link size="small"
+                      @click="handleDelete(row)"
+                    >删除</el-button>
                   </template>
                 </el-table-column>
               </el-table>

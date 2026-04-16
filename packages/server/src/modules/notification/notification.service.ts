@@ -3,6 +3,7 @@ import { Observable, Subject } from 'rxjs';
 import { eq, and, count, desc } from 'drizzle-orm';
 import { DRIZZLE, DrizzleDB } from '../../database/database.module';
 import { systemNotification } from '../../database/schema/common';
+import { DingtalkNotifyService } from '../dingtalk/dingtalk-notify.service';
 
 interface MessageEvent {
   data: string | object;
@@ -16,7 +17,10 @@ export class NotificationService {
   private readonly logger = new Logger(NotificationService.name);
   private readonly streams = new Map<number, Subject<MessageEvent>>();
 
-  constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: DrizzleDB,
+    private readonly dingtalkNotifyService: DingtalkNotifyService,
+  ) {}
 
   // -----------------------------------------------------------------------
   // SSE stream management
@@ -75,6 +79,15 @@ export class NotificationService {
       type: 'NOTIFICATION',
       notification,
     });
+
+    // DingTalk work notification (async, non-blocking)
+    this.dingtalkNotifyService
+      .sendIfBound(receiverId, title, content, refType, refId)
+      .catch((e) =>
+        this.logger.warn(
+          `DingTalk notify failed for user #${receiverId}: ${(e as Error).message}`,
+        ),
+      );
 
     return notification;
   }
