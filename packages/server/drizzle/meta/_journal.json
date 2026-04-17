@@ -43,6 +43,13 @@
       "when": 1776328291768,
       "tag": "0005_simple_aaron_stack",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1776419024061,
+      "tag": "0006_tranquil_edwin_jarvis",
+      "breakpoints": true
     }
   ]
 }

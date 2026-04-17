@@ -34,6 +34,7 @@ export class FileController {
     @Query('bizType') bizType: string,
     @Query('bizId', ParseIntPipe) bizId: number,
     @Query('nodeKey') nodeKey: string | undefined,
+    @Query('remark') remark: string | undefined,
     @CurrentUser() user: { id: number },
   ) {
     if (!file) {
@@ -42,7 +43,7 @@ export class FileController {
     if (!bizType) {
       throw new BadRequestException('缺少文件类型参数');
     }
-    return this.fileService.upload(file, bizType, bizId, user.id, nodeKey);
+    return this.fileService.upload(file, bizType, bizId, user.id, nodeKey, remark);
   }
 
   @Get('list')

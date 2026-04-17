@@ -73,6 +73,7 @@ export class FileService implements OnModuleInit {
     bizId: number,
     userId: number,
     nodeKey?: string,
+    remark?: string,
   ) {
     // Fix: multer encodes originalname as latin1, decode to UTF-8
     const originalName = Buffer.from(file.originalname, 'latin1').toString('utf-8');
@@ -125,6 +126,7 @@ export class FileService implements OnModuleInit {
         storagePath,
         checksumSha256: checksum,
         uploaderId: userId,
+        remark: remark || null,
       })
       .returning();
 
@@ -151,6 +153,7 @@ export class FileService implements OnModuleInit {
         nodeKey: fileAttachment.nodeKey,
         uploaderId: fileAttachment.uploaderId,
         uploaderName: userAccount.displayName,
+        remark: fileAttachment.remark,
         uploadedAt: fileAttachment.uploadedAt,
       })
       .from(fileAttachment)

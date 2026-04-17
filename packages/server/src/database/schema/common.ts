@@ -76,6 +76,7 @@ export const fileAttachment = pgTable('file_attachment', {
   storagePath: varchar('storage_path', { length: 512 }).notNull(),
   checksumSha256: varchar('checksum_sha256', { length: 64 }),
   uploaderId: bigint('uploader_id', { mode: 'number' }).notNull(),
+  remark: varchar('remark', { length: 255 }),
   uploadedAt: timestamp('uploaded_at', { withTimezone: true }).defaultNow().notNull(),
   deleted: boolean('deleted').default(false).notNull(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),

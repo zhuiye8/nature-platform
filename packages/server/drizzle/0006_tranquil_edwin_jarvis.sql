@@ -1,0 +1,1 @@
+ALTER TABLE "file_attachment" ADD COLUMN "remark" varchar(255);

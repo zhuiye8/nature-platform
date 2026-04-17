@@ -5,6 +5,8 @@ export interface FileItem {
   fileName: string
   fileSize: number
   contentType: string
+  nodeKey?: string | null
+  remark?: string | null
   uploaderId: number
   uploaderName: string
   uploadedAt: string
@@ -39,10 +41,22 @@ export function getUploadUrl(bizType: string, bizId: number, nodeKey?: string) {
   return url
 }
 
-export async function uploadFileRaw(bizType: string, bizId: number, nodeKey: string, file: File) {
+export async function uploadFileRaw(bizType: string, bizId: number, nodeKey: string, file: File, remark?: string) {
   const formData = new FormData()
   formData.append('file', file)
-  return request.post(`/file/upload?bizType=${bizType}&bizId=${bizId}&nodeKey=${nodeKey}`, formData, {
+  let url = `/file/upload?bizType=${bizType}&bizId=${bizId}&nodeKey=${nodeKey}`
+  if (remark) url += `&remark=${encodeURIComponent(remark)}`
+  return request.post(url, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+}
+
+export async function uploadFileToPool(bizType: string, bizId: number, file: File, remark?: string) {
+  const formData = new FormData()
+  formData.append('file', file)
+  let url = `/file/upload?bizType=${bizType}&bizId=${bizId}`
+  if (remark) url += `&remark=${encodeURIComponent(remark)}`
+  return request.post(url, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   })
 }
