@@ -28,11 +28,8 @@ export class CustomerController {
 
   @Get('page')
   @RequirePermission('customer:list')
-  async findPage(
-    @Query() query: QueryCustomerDto,
-    @CurrentUser() user: { id: number },
-  ) {
-    return this.customerService.findPage(query, user.id);
+  async findPage(@Query() query: QueryCustomerDto) {
+    return this.customerService.findPage(query);
   }
 
   @Get(':id/contacts')

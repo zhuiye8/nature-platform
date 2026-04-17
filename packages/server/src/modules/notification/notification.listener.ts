@@ -263,9 +263,6 @@ export class NotificationListener {
     );
     if (!creatorId) return;
 
-    // Get node display name from instance
-    const nodeName = payload.nodeKey;
-
     // For CONTRACT, also notify salesPerson (treated same as creator)
     const notifyIds = [creatorId];
     if (payload.bizType === 'CONTRACT') {
@@ -423,7 +420,7 @@ export class NotificationListener {
   ): Promise<number | null> {
     if (bizType === 'CONTRACT') {
       const rows = await this.db
-        .select({ createdBy: contract.createdBy, salesPersonId: contract.salesPersonId })
+        .select({ createdBy: contract.createdBy })
         .from(contract)
         .where(eq(contract.id, bizId))
         .limit(1);

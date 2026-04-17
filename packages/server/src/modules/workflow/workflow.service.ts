@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { eq, and, or, ne, desc, isNull, inArray } from 'drizzle-orm';
+import { eq, and, or, ne, desc, isNull, inArray, count } from 'drizzle-orm';
 import { DRIZZLE, DrizzleDB } from '../../database/database.module';
 import {
   wfDefinition,
@@ -622,11 +622,11 @@ export class WorkflowService {
   }
 
   async getMyTaskCount(userId: number) {
-    const rows = await this.db
-      .select({ id: wfTask.id })
+    const result = await this.db
+      .select({ total: count() })
       .from(wfTask)
       .where(and(eq(wfTask.assigneeId, userId), eq(wfTask.status, 'PENDING')));
-    return rows.length;
+    return result[0]?.total ?? 0;
   }
 
   async getInstanceByBiz(bizType: string, bizId: number) {

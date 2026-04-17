@@ -21,7 +21,7 @@ export class CustomerService {
   // -----------------------------------------------------------------------
   // Paginated list
   // -----------------------------------------------------------------------
-  async findPage(query: QueryCustomerDto, _currentUserId: number) {
+  async findPage(query: QueryCustomerDto) {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
 

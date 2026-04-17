@@ -102,9 +102,12 @@ export class UserController {
 
   @Delete(':id')
   @RequirePermission('user:delete')
-  async remove(@Param('id', ParseIntPipe) id: number) {
+  async remove(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: { id: number },
+  ) {
     // Soft delete not implemented for users — just disable instead
-    return this.userService.toggleEnabled(id, id);
+    return this.userService.toggleEnabled(id, user.id);
   }
 
   @Put(':id/assign-roles')

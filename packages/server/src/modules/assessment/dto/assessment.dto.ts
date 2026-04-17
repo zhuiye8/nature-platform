@@ -38,10 +38,6 @@ export class QueryAssessmentDto {
   @IsOptional()
   keyword?: string;
 
-  @IsString()
-  @IsOptional()
-  securityLevel?: string;
-
   @Type(() => Number)
   @IsInt()
   @IsOptional()

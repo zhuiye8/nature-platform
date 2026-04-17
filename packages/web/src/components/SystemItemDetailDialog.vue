@@ -77,11 +77,6 @@ function handleDownload(fileId: number, _fileName: string) {
   window.open(getFileDownloadPath(fileId), '_blank')
 }
 
-function renderFileStatus(hasFlag: boolean, file: FileInfo | null | undefined) {
-  if (!hasFlag) return { text: '无', type: 'info' as const, file: null }
-  if (!file) return { text: '有（未上传）', type: 'warning' as const, file: null }
-  return { text: '有', type: 'success' as const, file }
-}
 </script>
 
 <template>

@@ -35,14 +35,6 @@ const businessTasks = computed(() =>
   allTasks.value.filter((t) => t.nodeType !== 'REVIEW' && t.nodeType !== 'PARALLEL_REVIEW'),
 )
 
-function getReviewActionLabel(_task: TaskItem): string {
-  return '审核'
-}
-
-function getReviewActionType(_task: TaskItem): 'primary' {
-  return 'primary'
-}
-
 // Route mapping for business reminders — nodeKey → target route
 const businessRouteMap: Record<string, (task: TaskItem) => string> = {
   CONTRACT_ARCHIVE: () => '/contract',
@@ -198,8 +190,8 @@ onMounted(() => {
             </el-table-column>
             <el-table-column label="操作" width="120" align="center" fixed="right">
               <template #default="{ row }">
-                <el-button :type="getReviewActionType(row)" size="small" @click="handleReviewAction(row)">
-                  {{ getReviewActionLabel(row) }}
+                <el-button type="primary" size="small" @click="handleReviewAction(row)">
+                  审核
                 </el-button>
               </template>
             </el-table-column>

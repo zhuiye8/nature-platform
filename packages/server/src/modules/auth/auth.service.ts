@@ -9,7 +9,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import * as bcrypt from 'bcrypt';
-import { eq, inArray, ilike } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { DRIZZLE, DrizzleDB } from '../../database/database.module';
 import { userAccount, userRole, iamRole, iamRolePermission } from '../../database/schema';
 import { DingtalkNotifyService } from '../dingtalk/dingtalk-notify.service';

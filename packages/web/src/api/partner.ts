@@ -19,9 +19,6 @@ export interface PartnerForm {
 export const getPartnerList = () =>
   request.get<PartnerItem[]>('/partner/list')
 
-export const getPartnerDetail = (id: number) =>
-  request.get<PartnerItem>(`/partner/${id}`)
-
 export const createPartner = (data: PartnerForm) =>
   request.post<PartnerItem>('/partner', data)
 

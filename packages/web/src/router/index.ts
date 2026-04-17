@@ -97,13 +97,13 @@ const routes: RouteRecordRaw[] = [
         path: 'assessment',
         name: 'AssessmentList',
         component: () => import('@/pages/assessment/AssessmentList.vue'),
-        meta: { title: '测评实施', permission: 'assessment:list' },
+        meta: { title: '测评实施', permission: 'assessment:view' },
       },
       {
         path: 'assessment/:projectRegisterId',
         name: 'AssessmentDetail',
         component: () => import('@/pages/assessment/AssessmentDetail.vue'),
-        meta: { title: '测评详情', permission: 'assessment:list' },
+        meta: { title: '测评详情', permission: 'assessment:view' },
       },
       // --- 公安登记 ---
       {

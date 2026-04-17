@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { eq, and, or, ilike, count, desc, SQL } from 'drizzle-orm';
+import { eq, and, or, ilike, count, desc, inArray, SQL } from 'drizzle-orm';
 import { DRIZZLE, DrizzleDB } from '../../database/database.module';
 import {
   projectRegister,
@@ -50,11 +50,12 @@ export class ProjectService {
     const isSuperAdmin = roleCodes.includes('super_admin');
     const isCommercial = roleCodes.includes('commercial');
     const isManager = roleCodes.includes('project_manager') || roleCodes.includes('dept_manager');
+    const isDirector = roleCodes.includes('project_director');
 
     const conditions: SQL[] = [eq(projectRegister.deleted, false)];
 
-    // Row-level: sales only sees own projects; PM/commercial/super_admin/dept_manager see all
-    if (!isSuperAdmin && !isCommercial && !isManager) {
+    // Row-level: sales only sees own projects; PM/commercial/super_admin/dept_manager/project_director see all
+    if (!isSuperAdmin && !isCommercial && !isManager && !isDirector) {
       conditions.push(eq(projectRegister.createdBy, currentUserId));
     }
 
@@ -107,101 +108,110 @@ export class ProjectService {
         .offset((page - 1) * pageSize),
     ]);
 
-    // Pool role labels for the reviewer column
     const POOL_LABELS: Record<string, string> = {
       project_director: '项目主管',
       dept_manager: '部门经理',
     };
 
-    // Enrich with sales person name (签单销售 from contract)
-    const enriched = await Promise.all(
-      rows.map(async (row) => {
-        let salesPersonName: string | null = null;
-        if (row.salesPersonId) {
-          const users = await this.db
-            .select({ displayName: userAccount.displayName })
-            .from(userAccount)
-            .where(eq(userAccount.id, row.salesPersonId))
-            .limit(1);
-          salesPersonName = users[0]?.displayName ?? null;
+    const rowIds = rows.map((r) => r.id!);
+
+    // Batch: sales person names
+    const salesIds = [...new Set(rows.map((r) => r.salesPersonId).filter(Boolean))] as number[];
+    const userNameMap = new Map<number, string>();
+    if (salesIds.length > 0) {
+      const users = await this.db
+        .select({ id: userAccount.id, displayName: userAccount.displayName })
+        .from(userAccount)
+        .where(inArray(userAccount.id, salesIds));
+      for (const u of users) userNameMap.set(u.id, u.displayName);
+    }
+
+    // Batch: reject remarks (only for REJECTED rows)
+    const rejectedIds = rows.filter((r) => r.status === 'REJECTED').map((r) => r.id!);
+    const rejectRemarkMap = new Map<number, string>();
+    if (rejectedIds.length > 0) {
+      // Get the latest REJECT remark per bizId
+      for (const bizId of rejectedIds) {
+        const logs = await this.db
+          .select({ remark: wfActionLog.remark })
+          .from(wfActionLog)
+          .innerJoin(wfInstance, eq(wfActionLog.instanceId, wfInstance.id))
+          .where(
+            and(
+              eq(wfInstance.bizType, 'PROJECT_REGISTER'),
+              eq(wfInstance.bizId, bizId),
+              eq(wfActionLog.action, 'REJECT'),
+            ),
+          )
+          .orderBy(desc(wfActionLog.createdAt))
+          .limit(1);
+        if (logs[0]?.remark) rejectRemarkMap.set(bizId, logs[0].remark);
+      }
+    }
+
+    // Batch: system item counts
+    const siCountMap = new Map<number, number>();
+    if (rowIds.length > 0) {
+      const siCounts = await this.db
+        .select({ projectRegisterId: projectSystemItem.projectRegisterId, total: count() })
+        .from(projectSystemItem)
+        .where(and(inArray(projectSystemItem.projectRegisterId, rowIds), eq(projectSystemItem.deleted, false)))
+        .groupBy(projectSystemItem.projectRegisterId);
+      for (const s of siCounts) siCountMap.set(s.projectRegisterId, s.total);
+    }
+
+    // Batch: reviewer labels (only for rows at PROJECT_REVIEW)
+    const reviewRowIds = rows
+      .filter((r) => r.status === 'SUBMITTED' && r.currentNode === 'PROJECT_REVIEW')
+      .map((r) => r.id!);
+    const reviewerLabelMap = new Map<number, string>();
+    if (reviewRowIds.length > 0) {
+      const instRows = await this.db
+        .select({ bizId: wfInstance.bizId, variables: wfInstance.variables, instanceId: wfInstance.id })
+        .from(wfInstance)
+        .where(
+          and(
+            eq(wfInstance.bizType, 'PROJECT_REGISTER'),
+            inArray(wfInstance.bizId, reviewRowIds),
+          ),
+        );
+      // Collect instance IDs needing single-assignee name lookup
+      const needNameLookup: { bizId: number; instanceId: number }[] = [];
+      for (const inst of instRows) {
+        const vars = (inst.variables as Record<string, any> | null) ?? {};
+        if (vars.isPoolReview && POOL_LABELS[vars.reviewerRoleCode]) {
+          reviewerLabelMap.set(inst.bizId, POOL_LABELS[vars.reviewerRoleCode]);
+        } else {
+          needNameLookup.push({ bizId: inst.bizId, instanceId: inst.instanceId });
         }
-        // For rejected projects, get the last rejection remark
-        let rejectRemark: string | null = null;
-        if (row.status === 'REJECTED') {
-          const logs = await this.db
-            .select({ remark: wfActionLog.remark })
-            .from(wfActionLog)
-            .innerJoin(wfInstance, eq(wfActionLog.instanceId, wfInstance.id))
-            .where(
-              and(
-                eq(wfInstance.bizType, 'PROJECT_REGISTER'),
-                eq(wfInstance.bizId, row.id!),
-                eq(wfActionLog.action, 'REJECT'),
-              ),
-            )
-            .orderBy(desc(wfActionLog.createdAt))
-            .limit(1);
-          rejectRemark = logs[0]?.remark ?? null;
+      }
+      if (needNameLookup.length > 0) {
+        const reviewers = await this.db
+          .select({ instanceId: wfTask.instanceId, name: userAccount.displayName })
+          .from(wfTask)
+          .innerJoin(userAccount, eq(wfTask.assigneeId, userAccount.id))
+          .where(
+            and(
+              inArray(wfTask.instanceId, needNameLookup.map((n) => n.instanceId)),
+              eq(wfTask.nodeKey, 'PROJECT_REVIEW'),
+              eq(wfTask.status, 'PENDING'),
+            ),
+          );
+        const instIdToName = new Map(reviewers.map((r) => [r.instanceId, r.name]));
+        for (const nl of needNameLookup) {
+          const name = instIdToName.get(nl.instanceId);
+          if (name) reviewerLabelMap.set(nl.bizId, name);
         }
-        // Count system items
-        const siCount = await this.db
-          .select({ total: count() })
-          .from(projectSystemItem)
-          .where(and(eq(projectSystemItem.projectRegisterId, row.id!), eq(projectSystemItem.deleted, false)));
-        const systemItemCount = siCount[0]?.total ?? 0;
+      }
+    }
 
-        // Current reviewer label (only when waiting at PROJECT_REVIEW)
-        let currentReviewerLabel: string | null = null;
-        if (
-          row.status === 'SUBMITTED' &&
-          row.currentNode === 'PROJECT_REVIEW'
-        ) {
-          const instRows = await this.db
-            .select({ variables: wfInstance.variables, instanceId: wfInstance.id })
-            .from(wfInstance)
-            .where(
-              and(
-                eq(wfInstance.bizType, 'PROJECT_REGISTER'),
-                eq(wfInstance.bizId, row.id!),
-              ),
-            )
-            .limit(1);
-
-          const vars =
-            (instRows[0]?.variables as Record<string, any> | null) ?? {};
-
-          if (vars.isPoolReview && POOL_LABELS[vars.reviewerRoleCode]) {
-            currentReviewerLabel = POOL_LABELS[vars.reviewerRoleCode];
-          } else if (instRows[0]) {
-            // Single-assign (fallback to super_admin or legacy) → show name
-            const reviewer = await this.db
-              .select({ name: userAccount.displayName })
-              .from(wfTask)
-              .innerJoin(
-                userAccount,
-                eq(wfTask.assigneeId, userAccount.id),
-              )
-              .where(
-                and(
-                  eq(wfTask.instanceId, instRows[0].instanceId),
-                  eq(wfTask.nodeKey, 'PROJECT_REVIEW'),
-                  eq(wfTask.status, 'PENDING'),
-                ),
-              )
-              .limit(1);
-            currentReviewerLabel = reviewer[0]?.name ?? null;
-          }
-        }
-
-        return {
-          ...row,
-          salesPersonName,
-          rejectRemark,
-          systemItemCount,
-          currentReviewerLabel,
-        };
-      }),
-    );
+    const enriched = rows.map((row) => ({
+      ...row,
+      salesPersonName: (row.salesPersonId && userNameMap.get(row.salesPersonId)) ?? null,
+      rejectRemark: rejectRemarkMap.get(row.id!) ?? null,
+      systemItemCount: siCountMap.get(row.id!) ?? 0,
+      currentReviewerLabel: reviewerLabelMap.get(row.id!) ?? null,
+    }));
 
     return {
       list: enriched,
@@ -416,118 +426,128 @@ export class ProjectService {
     const { systemItems, ...projectFields } = dto;
     const oldRecord = existing as unknown as Record<string, unknown>;
 
-    await this.db
-      .update(projectRegister)
-      .set({
-        ...(projectFields.contractId !== undefined && {
-          contractId: projectFields.contractId,
-        }),
-        ...(projectFields.contractYear !== undefined && {
-          contractYear: projectFields.contractYear,
-        }),
-        ...(projectFields.applicationName !== undefined && {
-          applicationName: projectFields.applicationName,
-        }),
-        ...(projectFields.remark !== undefined && {
-          remark: projectFields.remark,
-        }),
-        updatedBy: userId,
-        updatedAt: new Date(),
-      })
-      .where(eq(projectRegister.id, id));
+    const itemMapping = await this.db.transaction(async (tx) => {
+      await tx
+        .update(projectRegister)
+        .set({
+          ...(projectFields.contractId !== undefined && {
+            contractId: projectFields.contractId,
+          }),
+          ...(projectFields.contractYear !== undefined && {
+            contractYear: projectFields.contractYear,
+          }),
+          ...(projectFields.applicationName !== undefined && {
+            applicationName: projectFields.applicationName,
+          }),
+          ...(projectFields.remark !== undefined && {
+            remark: projectFields.remark,
+          }),
+          updatedBy: userId,
+          updatedAt: new Date(),
+        })
+        .where(eq(projectRegister.id, id));
 
-    // Upsert system items if provided
-    const itemMapping: { clientKey: string; id: number }[] = [];
-    if (systemItems !== undefined) {
-      // Get current item IDs for this project
-      const existingItems = await this.db
-        .select({ id: projectSystemItem.id })
-        .from(projectSystemItem)
-        .where(
-          and(
-            eq(projectSystemItem.projectRegisterId, id),
-            eq(projectSystemItem.deleted, false),
-          ),
+      // Upsert system items if provided
+      const mapping: { clientKey: string; id: number }[] = [];
+      if (systemItems !== undefined) {
+        const existingItems = await tx
+          .select({ id: projectSystemItem.id })
+          .from(projectSystemItem)
+          .where(
+            and(
+              eq(projectSystemItem.projectRegisterId, id),
+              eq(projectSystemItem.deleted, false),
+            ),
+          );
+        const existingIds = new Set(existingItems.map((e) => e.id));
+        const submittedIds = new Set(
+          systemItems.filter((i) => i.id).map((i) => i.id!),
         );
-      const existingIds = new Set(existingItems.map((e) => e.id));
-      const submittedIds = new Set(
-        systemItems.filter((i) => i.id).map((i) => i.id!),
+
+        // Soft-delete items that were removed + their file attachments
+        for (const eid of existingIds) {
+          if (!submittedIds.has(eid)) {
+            await tx
+              .update(projectSystemItem)
+              .set({ deleted: true })
+              .where(eq(projectSystemItem.id, eid));
+            await tx
+              .update(fileAttachment)
+              .set({ deleted: true, deletedAt: new Date() })
+              .where(
+                and(
+                  eq(fileAttachment.bizType, 'PROJECT_SYSTEM_ITEM'),
+                  eq(fileAttachment.bizId, eid),
+                ),
+              );
+          }
+        }
+
+        // Upsert each item
+        for (let index = 0; index < systemItems.length; index++) {
+          const item = systemItems[index];
+          const itemData = {
+            systemName: item.systemName,
+            filingAgency: item.filingAgency || null,
+            securityLevel: item.securityLevel || null,
+            isReassessment: item.isReassessment ?? false,
+            requiredEntryDate: item.requiredEntryDate || null,
+            requiredReportDeliveryDate:
+              item.requiredReportDeliveryDate || null,
+            assessedUnitName: item.assessedUnitName || null,
+            assessedUnitIndustry: item.assessedUnitIndustry || null,
+            assessedUnitContact: item.assessedUnitContact || null,
+            assessedUnitMobile: item.assessedUnitMobile || null,
+            assessedUnitAddress: item.assessedUnitAddress || null,
+            hasFilingCertificate: item.hasFilingCertificate ?? false,
+            filingCertificateNo: item.filingCertificateNo || null,
+            filingCertificateIssuedAt:
+              item.filingCertificateIssuedAt || null,
+            hasFilingForm: item.hasFilingForm ?? false,
+            hasClassificationReport: item.hasClassificationReport ?? false,
+            sortOrder: item.sortOrder ?? index,
+          };
+
+          if (item.id && existingIds.has(item.id)) {
+            await tx
+              .update(projectSystemItem)
+              .set({ ...itemData, updatedAt: new Date() })
+              .where(eq(projectSystemItem.id, item.id));
+            mapping.push({
+              clientKey: item.clientKey || String(item.id),
+              id: item.id,
+            });
+          } else {
+            const inserted = await tx
+              .insert(projectSystemItem)
+              .values({ projectRegisterId: id, ...itemData })
+              .returning({ id: projectSystemItem.id });
+            mapping.push({
+              clientKey: item.clientKey || `new_${index}`,
+              id: inserted[0].id,
+            });
+          }
+        }
+      }
+
+      // Regenerate applicationName based on current data
+      const contractId = dto.contractId ?? existing.contractId!;
+      const regeneratedName = await this.buildApplicationName(
+        existing.createdBy!,
+        contractId,
+        existing.createdAt ? new Date(existing.createdAt) : new Date(),
       );
+      await tx
+        .update(projectRegister)
+        .set({ applicationName: regeneratedName, updatedBy: userId, updatedAt: new Date() })
+        .where(eq(projectRegister.id, id));
 
-      // Soft-delete items that were removed + their file attachments
-      for (const eid of existingIds) {
-        if (!submittedIds.has(eid)) {
-          await this.db
-            .update(projectSystemItem)
-            .set({ deleted: true })
-            .where(eq(projectSystemItem.id, eid));
-          // Soft-delete associated files
-          await this.db
-            .update(fileAttachment)
-            .set({ deleted: true, deletedAt: new Date() })
-            .where(
-              and(
-                eq(fileAttachment.bizType, 'PROJECT_SYSTEM_ITEM'),
-                eq(fileAttachment.bizId, eid),
-              ),
-            );
-        }
-      }
+      return mapping;
+    });
 
-      // Upsert each item
-      for (let index = 0; index < systemItems.length; index++) {
-        const item = systemItems[index];
-        const itemData = {
-          systemName: item.systemName,
-          filingAgency: item.filingAgency || null,
-          securityLevel: item.securityLevel || null,
-          isReassessment: item.isReassessment ?? false,
-          requiredEntryDate: item.requiredEntryDate || null,
-          requiredReportDeliveryDate:
-            item.requiredReportDeliveryDate || null,
-          assessedUnitName: item.assessedUnitName || null,
-          assessedUnitIndustry: item.assessedUnitIndustry || null,
-          assessedUnitContact: item.assessedUnitContact || null,
-          assessedUnitMobile: item.assessedUnitMobile || null,
-          assessedUnitAddress: item.assessedUnitAddress || null,
-          hasFilingCertificate: item.hasFilingCertificate ?? false,
-          filingCertificateNo: item.filingCertificateNo || null,
-          filingCertificateIssuedAt:
-            item.filingCertificateIssuedAt || null,
-          hasFilingForm: item.hasFilingForm ?? false,
-          hasClassificationReport: item.hasClassificationReport ?? false,
-          sortOrder: item.sortOrder ?? index,
-        };
-
-        if (item.id && existingIds.has(item.id)) {
-          // UPDATE existing item (id preserved, file associations safe)
-          await this.db
-            .update(projectSystemItem)
-            .set({ ...itemData, updatedAt: new Date() })
-            .where(eq(projectSystemItem.id, item.id));
-          itemMapping.push({
-            clientKey: item.clientKey || String(item.id),
-            id: item.id,
-          });
-        } else {
-          // INSERT new item
-          const inserted = await this.db
-            .insert(projectSystemItem)
-            .values({ projectRegisterId: id, ...itemData })
-            .returning({ id: projectSystemItem.id });
-          itemMapping.push({
-            clientKey: item.clientKey || `new_${index}`,
-            id: inserted[0].id,
-          });
-        }
-      }
-    }
-
-    // Refresh quota flag after system items changed
+    // Post-transaction: refresh quota + audit trail (non-critical, OK outside tx)
     const contractIdForQuota = dto.contractId ?? existing.contractId!;
     await this.refreshSystemQuotaFull(contractIdForQuota);
-
-    // Audit trail — log changed fields
     await this.logFieldChanges(
       'project_register',
       id,
@@ -535,18 +555,6 @@ export class ProjectService {
       projectFields as unknown as Record<string, unknown>,
       userId,
     );
-
-    // Regenerate applicationName based on current data
-    const contractId = dto.contractId ?? existing.contractId!;
-    const regeneratedName = await this.buildApplicationName(
-      existing.createdBy!,
-      contractId,
-      existing.createdAt ? new Date(existing.createdAt) : new Date(),
-    );
-    await this.db
-      .update(projectRegister)
-      .set({ applicationName: regeneratedName, updatedBy: userId, updatedAt: new Date() })
-      .where(eq(projectRegister.id, id));
 
     const result = await this.findById(id);
     return { ...result, itemMapping };
@@ -1137,25 +1145,4 @@ export class ProjectService {
     }
   }
 
-  /**
-   * Generate filing agency name from customer region string ("省/市/区").
-   * Always resolves to city-level 公安局 regardless of district.
-   */
-  private generateFilingAgency(region: string | null | undefined): string | null {
-    if (!region) return null;
-    const parts = region.split('/').filter(Boolean);
-    if (parts.length === 0) return null;
-
-    const province = parts[0];
-    const city = parts[1];
-    const directMunicipalities = ['北京市', '上海市', '天津市', '重庆市'];
-
-    if (directMunicipalities.includes(province)) {
-      return `${province}公安局`;
-    }
-    if (city) {
-      return `${city}公安局`;
-    }
-    return `${province}公安厅`;
-  }
 }

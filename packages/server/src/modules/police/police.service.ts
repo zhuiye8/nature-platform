@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { eq, and, or, ilike, count, desc, SQL } from 'drizzle-orm';
+import { eq, and, or, ilike, count, desc, inArray, SQL } from 'drizzle-orm';
 import * as ExcelJS from 'exceljs';
 import * as path from 'path';
 import { DRIZZLE, DrizzleDB } from '../../database/database.module';
@@ -105,66 +105,70 @@ export class PoliceService {
         .offset((page - 1) * pageSize),
     ]);
 
-    const enriched = await Promise.all(
-      rows.map(async (row) => {
-        // System item count
-        const siCount = await this.db
-          .select({ total: count() })
-          .from(projectSystemItem)
-          .where(
-            and(
-              eq(projectSystemItem.projectRegisterId, row.projectRegisterId),
-              eq(projectSystemItem.deleted, false),
-            ),
-          );
-        const systemItemCount = siCount[0]?.total ?? 0;
+    // Batch: system item counts
+    const projectIds = [...new Set(rows.map((r) => r.projectRegisterId).filter(Boolean))] as number[];
+    const siCountMap = new Map<number, number>();
+    if (projectIds.length > 0) {
+      const siCounts = await this.db
+        .select({
+          projectRegisterId: projectSystemItem.projectRegisterId,
+          total: count(),
+        })
+        .from(projectSystemItem)
+        .where(and(inArray(projectSystemItem.projectRegisterId, projectIds), eq(projectSystemItem.deleted, false)))
+        .groupBy(projectSystemItem.projectRegisterId);
+      for (const s of siCounts) siCountMap.set(s.projectRegisterId, s.total);
+    }
 
-        // PM name + mobile
-        let pmName: string | null = null;
-        let pmMobile: string | null = null;
-        if (row.projectRegisterId) {
-          const pmRows = await this.db
-            .select({
-              displayName: userAccount.displayName,
-              mobile: userAccount.mobile,
-            })
-            .from(projectMember)
-            .innerJoin(userAccount, eq(projectMember.userId, userAccount.id))
-            .where(
-              and(
-                eq(projectMember.projectId, row.projectRegisterId),
-                eq(projectMember.roleType, 'PM'),
-                eq(projectMember.status, 'ACTIVE'),
-              ),
-            )
-            .limit(1);
-          pmName = pmRows[0]?.displayName ?? null;
-          pmMobile = pmRows[0]?.mobile ?? null;
-        }
+    // Batch: PM name + mobile
+    const pmMap = new Map<number, { displayName: string; mobile: string | null }>();
+    if (projectIds.length > 0) {
+      const pmRows = await this.db
+        .select({
+          projectId: projectMember.projectId,
+          displayName: userAccount.displayName,
+          mobile: userAccount.mobile,
+        })
+        .from(projectMember)
+        .innerJoin(userAccount, eq(projectMember.userId, userAccount.id))
+        .where(
+          and(
+            inArray(projectMember.projectId, projectIds),
+            eq(projectMember.roleType, 'PM'),
+            eq(projectMember.status, 'ACTIVE'),
+          ),
+        );
+      for (const pm of pmRows) pmMap.set(pm.projectId, { displayName: pm.displayName, mobile: pm.mobile });
+    }
 
-        // Has file
-        const files = await this.db
-          .select({ id: fileAttachment.id })
-          .from(fileAttachment)
-          .where(
-            and(
-              eq(fileAttachment.bizType, 'POLICE'),
-              eq(fileAttachment.bizId, row.id!),
-              eq(fileAttachment.deleted, false),
-            ),
-          )
-          .limit(1);
-        const hasFile = files.length > 0;
+    // Batch: has file
+    const policeIds = rows.map((r) => r.id!);
+    const hasFileSet = new Set<number>();
+    if (policeIds.length > 0) {
+      const fileRows = await this.db
+        .select({ bizId: fileAttachment.bizId })
+        .from(fileAttachment)
+        .where(
+          and(
+            eq(fileAttachment.bizType, 'POLICE'),
+            inArray(fileAttachment.bizId, policeIds),
+            eq(fileAttachment.deleted, false),
+          ),
+        )
+        .groupBy(fileAttachment.bizId);
+      for (const f of fileRows) hasFileSet.add(f.bizId);
+    }
 
-        return {
-          ...row,
-          systemItemCount,
-          pmName,
-          pmMobile,
-          hasFile,
-        };
-      }),
-    );
+    const enriched = rows.map((row) => {
+      const pm = row.projectRegisterId ? pmMap.get(row.projectRegisterId) : undefined;
+      return {
+        ...row,
+        systemItemCount: siCountMap.get(row.projectRegisterId) ?? 0,
+        pmName: pm?.displayName ?? null,
+        pmMobile: pm?.mobile ?? null,
+        hasFile: hasFileSet.has(row.id!),
+      };
+    });
 
     return {
       list: enriched,

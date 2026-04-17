@@ -22,13 +22,8 @@ export function usePermission() {
     return isSuperAdmin() || codes.some((code) => authStore.permissions.includes(code))
   }
 
-  function hasAllPermissions(codes: string[]): boolean {
-    return isSuperAdmin() || codes.every((code) => authStore.permissions.includes(code))
-  }
-
   return {
     hasPermission,
     hasAnyPermission,
-    hasAllPermissions,
   }
 }

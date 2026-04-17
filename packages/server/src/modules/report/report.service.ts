@@ -4,7 +4,7 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
-import { eq, and, or, desc, inArray, isNull } from 'drizzle-orm';
+import { eq, and, or, desc, inArray, isNull, count } from 'drizzle-orm';
 import { DRIZZLE, DrizzleDB } from '../../database/database.module';
 import { projectRegister } from '../../database/schema/business';
 import { userAccount } from '../../database/schema/user';
@@ -71,17 +71,11 @@ export class ReportService {
       return { list: [], total: 0, page, pageSize };
     }
 
-    // Visibility filter: report_writer only sees projects where they are the compiler
-    // or where compiledBy is NULL (not yet assigned)
+    // Visibility filter: report_writer only sees projects assigned to them
     // dept_manager and super_admin see all
     const visibilityConditions = [inArray(projectRegister.id, reportBizIds)];
     if (isReportWriter && !isSuperAdmin && !isDeptManager) {
-      visibilityConditions.push(
-        or(
-          eq(projectRegister.compiledBy, userId),
-          isNull(projectRegister.compiledBy),
-        )!,
-      );
+      visibilityConditions.push(eq(projectRegister.compiledBy, userId));
     }
 
     const rows = await this.db
@@ -193,12 +187,12 @@ export class ReportService {
     );
 
     // Count visible projects for pagination
-    const totalRows = await this.db
-      .select({ id: projectRegister.id })
+    const totalResult = await this.db
+      .select({ total: count() })
       .from(projectRegister)
       .where(and(...visibilityConditions));
 
-    return { list: enriched, total: totalRows.length, page, pageSize };
+    return { list: enriched, total: totalResult[0]?.total ?? 0, page, pageSize };
   }
 
   // -----------------------------------------------------------------------

@@ -72,14 +72,6 @@ function formatFileSize(bytes: number) {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
-const imageTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
-function isImage(file: FileItem) {
-  return imageTypes.includes((file as any).contentType || '')
-}
-function isPdf(file: FileItem) {
-  return (file as any).contentType === 'application/pdf'
-}
-
 // ── File preview (opens in new tab; backend applies watermark) ──
 const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp']
 function canPreviewByName(fileName: string): boolean {

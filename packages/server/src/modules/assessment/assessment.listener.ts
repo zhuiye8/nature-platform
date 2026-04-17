@@ -3,7 +3,6 @@ import { OnEvent } from '@nestjs/event-emitter';
 import { eq, and } from 'drizzle-orm';
 import { DRIZZLE, DrizzleDB } from '../../database/database.module';
 import { projectRegister } from '../../database/schema/business';
-import { wfInstance } from '../../database/schema/workflow';
 import { WorkflowService } from '../workflow/workflow.service';
 
 @Injectable()

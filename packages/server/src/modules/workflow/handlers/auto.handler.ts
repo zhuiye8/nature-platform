@@ -166,15 +166,6 @@ export class AutoHandler implements NodeHandler {
 
     const sorted = [...years].sort((a, b) => a - b);
 
-    // Check if consecutive
-    let isConsecutive = true;
-    for (let i = 1; i < sorted.length; i++) {
-      if (sorted[i] !== sorted[i - 1] + 1) {
-        isConsecutive = false;
-        break;
-      }
-    }
-
     return sorted.join('、');
   }
 }

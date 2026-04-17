@@ -2,17 +2,18 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, Download } from '@element-plus/icons-vue'
+import { ArrowLeft, Download, Paperclip } from '@element-plus/icons-vue'
 import { getTaskDetail, signalTask, resubmitTask, getUsersByRole } from '@/api/workflow'
 import { getContractDetail } from '@/api/contract'
 import { getProjectDetail, getSystemItems } from '@/api/project'
-import { getFileList, getFileDownloadPath, type FileItem } from '@/api/file'
+import { getFileList, getFileDownloadPath, getFilePreviewPath, type FileItem } from '@/api/file'
 import { getStatusLabel, getStatusTagType } from '@/utils/status-map'
 import { formatTime } from '@/utils/format'
 import { useAuthStore } from '@/stores/auth'
 import ReviewOpinionDialog from '@/components/ReviewOpinionDialog.vue'
 import ReviewOpinionHistory from '@/components/ReviewOpinionHistory.vue'
 import FilePoolPanel from '@/components/FilePoolPanel.vue'
+import SystemItemDetailDialog from '@/components/SystemItemDetailDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -100,6 +101,29 @@ function formatFileSize(bytes: number) {
   if (bytes < 1024) return bytes + ' B'
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+}
+
+// ── System item detail dialog ──
+const siDialogVisible = ref(false)
+const siDialogItem = ref<any>(null)
+function showSystemItemDetail(row: any) {
+  siDialogItem.value = row
+  siDialogVisible.value = true
+}
+
+// ── File preview (opens in new tab; backend applies watermark) ──
+const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp']
+function canPreviewByName(fileName: string): boolean {
+  const lower = fileName.toLowerCase()
+  return imageExts.some((e) => lower.endsWith(e)) || lower.endsWith('.pdf')
+}
+
+function openFilePreview(fileId: number, fileName: string) {
+  if (!canPreviewByName(fileName)) {
+    handleFileDownload(fileId)
+    return
+  }
+  window.open(getFilePreviewPath(fileId), '_blank')
 }
 
 // getTaskDetail returns: { ...task, instance: { instance: {...}, tasks: [...], logs: [...] } }
@@ -468,57 +492,62 @@ onMounted(() => {
         <el-descriptions-item label="备注" :span="2">{{ bizData.remark || '--' }}</el-descriptions-item>
       </el-descriptions>
 
-      <!-- 系统明细（card 布局） -->
+      <!-- 系统明细（表格） -->
       <div v-if="systemItemsEnriched.length > 0" style="margin-top: 16px">
         <h4 style="margin: 0 0 8px; font-size: 14px; color: #606266">系统明细（{{ systemItemsEnriched.length }} 个）</h4>
-        <el-card
-          v-for="(si, idx) in systemItemsEnriched"
-          :key="si.id || idx"
-          shadow="never"
-          style="margin-bottom: 10px; border: 1px solid var(--el-border-color-lighter)"
-        >
-          <template #header>
-            <span style="font-weight: 600; font-size: 13px">{{ si.systemName }}{{ si.securityLevel ? '（' + si.securityLevel + '）' : '' }}</span>
-          </template>
-          <el-descriptions :column="2" border size="small">
-            <el-descriptions-item label="备案机关">{{ si.filingAgency || '--' }}</el-descriptions-item>
-            <el-descriptions-item label="安全等级">{{ si.securityLevel || '--' }}</el-descriptions-item>
-            <el-descriptions-item label="是否复评">{{ si.isReassessment ? '是' : '否' }}</el-descriptions-item>
-            <el-descriptions-item label="要求录入日期">{{ si.requiredEntryDate || '--' }}</el-descriptions-item>
-            <el-descriptions-item label="要求出报告日期">{{ si.requiredReportDeliveryDate || '--' }}</el-descriptions-item>
-          </el-descriptions>
-          <el-descriptions :column="2" border size="small" style="margin-top: 8px">
-            <el-descriptions-item label="被测单位">{{ si.assessedUnitName || '--' }}</el-descriptions-item>
-            <el-descriptions-item label="所属行业">{{ si.assessedUnitIndustry || '--' }}</el-descriptions-item>
-            <el-descriptions-item label="联系人">{{ si.assessedUnitContact || '--' }}</el-descriptions-item>
-            <el-descriptions-item label="联系电话">{{ si.assessedUnitMobile || '--' }}</el-descriptions-item>
-            <el-descriptions-item label="地址" :span="2">{{ si.assessedUnitAddress || '--' }}</el-descriptions-item>
-          </el-descriptions>
-          <el-descriptions :column="2" border size="small" style="margin-top: 8px">
-            <el-descriptions-item label="备案证明">
-              <template v-if="si.filingCertificateFile">
-                <el-link type="primary" underline="never" @click="handleFileDownload(si.filingCertificateFile.id)">{{ si.filingCertificateFile.fileName }}</el-link>
-              </template>
-              <span v-else style="color: #999">未上传</span>
-            </el-descriptions-item>
-            <el-descriptions-item label="证明编号">{{ si.filingCertificateNo || '--' }}</el-descriptions-item>
-            <el-descriptions-item label="出具时间">{{ si.filingCertificateIssuedAt || '--' }}</el-descriptions-item>
-            <el-descriptions-item label="备案表">
-              <template v-if="si.hasFilingForm && si.filingFormFile">
-                <el-link type="primary" underline="never" @click="handleFileDownload(si.filingFormFile.id)">{{ si.filingFormFile.fileName }}</el-link>
-              </template>
-              <span v-else-if="si.hasFilingForm" style="color: #e6a23c">有（未上传）</span>
-              <span v-else style="color: #999">无</span>
-            </el-descriptions-item>
-            <el-descriptions-item label="定级报告">
-              <template v-if="si.hasClassificationReport && si.classificationReportFile">
-                <el-link type="primary" underline="never" @click="handleFileDownload(si.classificationReportFile.id)">{{ si.classificationReportFile.fileName }}</el-link>
-              </template>
-              <span v-else-if="si.hasClassificationReport" style="color: #e6a23c">有（未上传）</span>
-              <span v-else style="color: #999">无</span>
-            </el-descriptions-item>
-          </el-descriptions>
-        </el-card>
+        <el-table :data="systemItemsEnriched" stripe border size="small" style="width: 100%">
+          <el-table-column prop="systemNo" label="项目编号" min-width="200" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.systemNo || '--' }}</template>
+          </el-table-column>
+          <el-table-column prop="systemName" label="被测评系统名称" min-width="200" show-overflow-tooltip>
+            <template #default="{ row }">
+              <el-link type="primary" underline="never" @click="showSystemItemDetail(row)">{{ row.systemName }}</el-link>
+            </template>
+          </el-table-column>
+          <el-table-column prop="filingCertificateNo" label="备案证明编号" min-width="180" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.filingCertificateNo || '--' }}</template>
+          </el-table-column>
+          <el-table-column prop="securityLevel" label="安全保护等级" min-width="110" align="center">
+            <template #default="{ row }">{{ row.securityLevel || '--' }}</template>
+          </el-table-column>
+          <el-table-column prop="filingAgency" label="备案机关" min-width="150" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.filingAgency || '--' }}</template>
+          </el-table-column>
+          <el-table-column prop="assessedUnitName" label="被测评系统单位名称" min-width="180" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.assessedUnitName || '--' }}</template>
+          </el-table-column>
+          <el-table-column label="备案证明" width="100" align="center">
+            <template #default="{ row }">
+              <el-link v-if="row.filingCertificateFile" type="primary" :underline="false" @click="openFilePreview(row.filingCertificateFile.id, row.filingCertificateFile.fileName)">
+                <el-icon><Paperclip /></el-icon>
+              </el-link>
+              <span v-else style="color: #999">--</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="备案表" width="80" align="center">
+            <template #default="{ row }">
+              <el-link v-if="row.hasFilingForm && row.filingFormFile" type="primary" :underline="false" @click="openFilePreview(row.filingFormFile.id, row.filingFormFile.fileName)">
+                <el-icon><Paperclip /></el-icon>
+              </el-link>
+              <span v-else-if="row.hasFilingForm" style="color: #e6a23c">有</span>
+              <span v-else style="color: #999">--</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="定级报告" width="80" align="center">
+            <template #default="{ row }">
+              <el-link v-if="row.hasClassificationReport && row.classificationReportFile" type="primary" :underline="false" @click="openFilePreview(row.classificationReportFile.id, row.classificationReportFile.fileName)">
+                <el-icon><Paperclip /></el-icon>
+              </el-link>
+              <span v-else-if="row.hasClassificationReport" style="color: #e6a23c">有</span>
+              <span v-else style="color: #999">--</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="80" fixed="right" align="center">
+            <template #default="{ row }">
+              <el-button type="primary" link size="small" @click="showSystemItemDetail(row)">详情</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
       </div>
 
       <!-- 项目成员 -->
@@ -751,5 +780,6 @@ onMounted(() => {
       @completed="onOpinionCompleted"
     />
 
+    <SystemItemDetailDialog v-model:visible="siDialogVisible" :item="siDialogItem" />
   </div>
 </template>

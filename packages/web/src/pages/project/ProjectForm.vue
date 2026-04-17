@@ -11,7 +11,7 @@ import { getContractPage, getContractDetail } from '@/api/contract'
 import { regionData } from '@/utils/region-data'
 import type { ContractItem } from '@/api/contract'
 import RejectReasonPanel from '@/components/RejectReasonPanel.vue'
-import { getUploadUrl, deleteFile, uploadFileRaw } from '@/api/file'
+import { deleteFile, uploadFileRaw } from '@/api/file'
 
 const route = useRoute()
 const router = useRouter()

@@ -156,10 +156,6 @@ export interface PayerOption {
   type: 'CUSTOMER' | 'PARTNER'
 }
 
-export function getPayerOptions(keyword?: string) {
-  return request.get<PayerOption[]>('/contract/payer-options', { params: { keyword } })
-}
-
 // ── Contract Group API ──
 
 export function createContractGroup(data: { groupName: string; remark?: string }) {

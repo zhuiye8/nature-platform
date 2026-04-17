@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
-import { eq, and, ilike, count, desc, gte, lte, SQL } from 'drizzle-orm';
+import { eq, and, ilike, count, desc, gte, lte, inArray, SQL } from 'drizzle-orm';
 import { DRIZZLE, DrizzleDB } from '../../database/database.module';
 import { registrationPlatform } from '../../database/schema/business';
 import { userAccount } from '../../database/schema/user';
@@ -9,12 +9,8 @@ import { CreatePlatformDto, UpdatePlatformDto, QueryPlatformDto } from './dto/pl
 export class PlatformService {
   constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
 
-  async findPage(query: QueryPlatformDto) {
-    const page = query.page ?? 1;
-    const pageSize = query.pageSize ?? 20;
-
+  private buildConditions(query: QueryPlatformDto): SQL[] {
     const conditions: SQL[] = [eq(registrationPlatform.deleted, false)];
-
     if (query.platformName) {
       conditions.push(ilike(registrationPlatform.platformName, `%${query.platformName}%`));
     }
@@ -35,8 +31,24 @@ export class PlatformService {
     if (query.createdByUserId) {
       conditions.push(eq(registrationPlatform.createdBy, query.createdByUserId));
     }
+    return conditions;
+  }
 
-    const whereClause = and(...conditions)!;
+  private async batchResolveUserNames(ids: number[]): Promise<Map<number, string>> {
+    const map = new Map<number, string>();
+    if (ids.length === 0) return map;
+    const users = await this.db
+      .select({ id: userAccount.id, displayName: userAccount.displayName })
+      .from(userAccount)
+      .where(inArray(userAccount.id, ids));
+    for (const u of users) map.set(u.id, u.displayName);
+    return map;
+  }
+
+  async findPage(query: QueryPlatformDto) {
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 20;
+    const whereClause = and(...this.buildConditions(query))!;
 
     const [totalResult, rows] = await Promise.all([
       this.db.select({ total: count() }).from(registrationPlatform).where(whereClause),
@@ -49,72 +61,30 @@ export class PlatformService {
         .offset((page - 1) * pageSize),
     ]);
 
-    // Enrich with creator name
-    const enriched = await Promise.all(
-      rows.map(async (row) => {
-        let creatorName: string | null = null;
-        if (row.createdBy) {
-          const users = await this.db
-            .select({ displayName: userAccount.displayName })
-            .from(userAccount)
-            .where(eq(userAccount.id, row.createdBy))
-            .limit(1);
-          creatorName = users[0]?.displayName ?? null;
-        }
-        return { ...row, creatorName };
-      }),
-    );
+    const creatorIds = [...new Set(rows.map((r) => r.createdBy).filter(Boolean))] as number[];
+    const nameMap = await this.batchResolveUserNames(creatorIds);
+    const enriched = rows.map((row) => ({
+      ...row,
+      creatorName: (row.createdBy && nameMap.get(row.createdBy)) ?? null,
+    }));
 
     return { list: enriched, total: totalResult[0]?.total ?? 0, page, pageSize };
   }
 
   // Export: same as findPage but no pagination
   async findAll(query: QueryPlatformDto) {
-    const conditions: SQL[] = [eq(registrationPlatform.deleted, false)];
-
-    if (query.platformName) {
-      conditions.push(ilike(registrationPlatform.platformName, `%${query.platformName}%`));
-    }
-    if (query.websiteUrl) {
-      conditions.push(ilike(registrationPlatform.websiteUrl, `%${query.websiteUrl}%`));
-    }
-    if (query.hasCa === 'true') {
-      conditions.push(eq(registrationPlatform.hasCa, true));
-    } else if (query.hasCa === 'false') {
-      conditions.push(eq(registrationPlatform.hasCa, false));
-    }
-    if (query.caExpireDateFrom) {
-      conditions.push(gte(registrationPlatform.caExpireDate, query.caExpireDateFrom));
-    }
-    if (query.caExpireDateTo) {
-      conditions.push(lte(registrationPlatform.caExpireDate, query.caExpireDateTo));
-    }
-    if (query.createdByUserId) {
-      conditions.push(eq(registrationPlatform.createdBy, query.createdByUserId));
-    }
-
     const rows = await this.db
       .select()
       .from(registrationPlatform)
-      .where(and(...conditions)!)
+      .where(and(...this.buildConditions(query))!)
       .orderBy(desc(registrationPlatform.createdAt), desc(registrationPlatform.id));
 
-    const enriched = await Promise.all(
-      rows.map(async (row) => {
-        let creatorName: string | null = null;
-        if (row.createdBy) {
-          const users = await this.db
-            .select({ displayName: userAccount.displayName })
-            .from(userAccount)
-            .where(eq(userAccount.id, row.createdBy))
-            .limit(1);
-          creatorName = users[0]?.displayName ?? null;
-        }
-        return { ...row, creatorName };
-      }),
-    );
-
-    return enriched;
+    const creatorIds = [...new Set(rows.map((r) => r.createdBy).filter(Boolean))] as number[];
+    const nameMap = await this.batchResolveUserNames(creatorIds);
+    return rows.map((row) => ({
+      ...row,
+      creatorName: (row.createdBy && nameMap.get(row.createdBy)) ?? null,
+    }));
   }
 
   async findById(id: number) {
@@ -157,7 +127,7 @@ export class PlatformService {
         account: dto.account ?? null,
         password: dto.password ?? null,
         hasCa: dto.hasCa ?? false,
-        caExpireDate: dto.caExpireDate || null,
+        caExpireDate: dto.caExpireDate ?? null,
         caPassword: dto.caPassword ?? null,
         contactName: dto.contactName ?? null,
         contactPhone: dto.contactPhone ?? null,

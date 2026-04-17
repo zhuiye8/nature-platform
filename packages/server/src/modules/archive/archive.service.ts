@@ -4,7 +4,7 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
-import { eq, and, or, desc, count, inArray } from 'drizzle-orm';
+import { eq, and, or, desc, inArray, SQL } from 'drizzle-orm';
 import { DRIZZLE, DrizzleDB } from '../../database/database.module';
 import {
   materialArchive,
@@ -83,12 +83,18 @@ export class ArchiveService {
         pmProjects.forEach((p) => visibleIds.add(p.projectId));
       }
 
-      // Sales: see projects they created
+      // Sales: see projects they created or where they are the sales person on the contract
       if (isSales) {
         const salesProjects = await this.db
           .select({ id: projectRegister.id })
           .from(projectRegister)
-          .where(eq(projectRegister.createdBy, userId));
+          .leftJoin(contract, eq(projectRegister.contractId, contract.id))
+          .where(
+            or(
+              eq(projectRegister.createdBy, userId),
+              eq(contract.salesPersonId, userId),
+            ),
+          );
         salesProjects.forEach((p) => visibleIds.add(p.id));
       }
 
@@ -111,22 +117,6 @@ export class ArchiveService {
       .where(and(eq(projectMember.roleType, 'PM'), eq(projectMember.status, 'ACTIVE')))
       .as('pm');
 
-    const rows = await this.db
-      .select({
-        id: projectRegister.id,
-        applicationName: projectRegister.applicationName,
-        contractYear: projectRegister.contractYear,
-        compiledBy: projectRegister.compiledBy,
-        createdBy: projectRegister.createdBy,
-        projectManagerName: pmAlias.pmName,
-      })
-      .from(projectRegister)
-      .leftJoin(pmAlias, eq(projectRegister.id, pmAlias.projectId))
-      .where(inArray(projectRegister.id, bizIds))
-      .orderBy(desc(projectRegister.createdAt))
-      .limit(pageSize)
-      .offset((page - 1) * pageSize);
-
     // Full 18-item material checklist (卷内清单)
     const ALL_MATERIAL_CODES = [
       'CX18-01', 'CX18-02', 'CX18-03', 'CX18-05', 'CX18-06',
@@ -147,90 +137,100 @@ export class ArchiveService {
     };
     const TOTAL_MATERIALS = ALL_MATERIAL_CODES.length;
 
-    // Enrich with names + archive status
-    const enriched = await Promise.all(
-      rows.map(async (row) => {
-        // Compiler name
-        let compilerName: string | null = null;
-        if (row.compiledBy) {
-          const users = await this.db
-            .select({ displayName: userAccount.displayName })
-            .from(userAccount)
-            .where(eq(userAccount.id, row.compiledBy))
-            .limit(1);
-          compilerName = users[0]?.displayName ?? null;
-        }
+    // Query ALL matching rows (archiveStatus is computed, so paginate in memory)
+    const rows = await this.db
+      .select({
+        id: projectRegister.id,
+        applicationName: projectRegister.applicationName,
+        contractYear: projectRegister.contractYear,
+        compiledBy: projectRegister.compiledBy,
+        createdBy: projectRegister.createdBy,
+        projectManagerName: pmAlias.pmName,
+      })
+      .from(projectRegister)
+      .leftJoin(pmAlias, eq(projectRegister.id, pmAlias.projectId))
+      .where(inArray(projectRegister.id, bizIds))
+      .orderBy(desc(projectRegister.createdAt));
 
-        // Sales name (createdBy)
-        let salesName: string | null = null;
-        if (row.createdBy) {
-          const users = await this.db
-            .select({ displayName: userAccount.displayName })
-            .from(userAccount)
-            .where(eq(userAccount.id, row.createdBy))
-            .limit(1);
-          salesName = users[0]?.displayName ?? null;
-        }
+    // Batch: resolve user names
+    const allUserIds = [...new Set(rows.flatMap((r) => [r.compiledBy, r.createdBy]).filter(Boolean))] as number[];
+    const userNameMap = new Map<number, string>();
+    if (allUserIds.length > 0) {
+      const users = await this.db
+        .select({ id: userAccount.id, displayName: userAccount.displayName })
+        .from(userAccount)
+        .where(inArray(userAccount.id, allUserIds));
+      for (const u of users) userNameMap.set(u.id, u.displayName);
+    }
 
-        // Archive record
-        const archiveRows = await this.db
-          .select()
-          .from(materialArchive)
-          .where(eq(materialArchive.projectRegisterId, row.id!))
-          .limit(1);
-        const archiveRecord = archiveRows[0] ?? null;
+    // Batch: load all archive records
+    const rowIds = rows.map((r) => r.id!);
+    const archiveMap = new Map<number, typeof materialArchive.$inferSelect>();
+    if (rowIds.length > 0) {
+      const archives = await this.db
+        .select()
+        .from(materialArchive)
+        .where(inArray(materialArchive.projectRegisterId, rowIds));
+      for (const a of archives) archiveMap.set(a.projectRegisterId, a);
+    }
 
-        // Archive status: 待归档 / 未完全归档 / 已归档
-        let archiveStatus = '待归档';
-        if (archiveRecord?.status === 'SUBMITTED') {
-          const items = (archiveRecord.materialStatusCodes ?? []) as any[];
-          // Support both old format (string[]) and new format (object[])
-          const checkedItems = items.filter((item) =>
-            typeof item === 'string' ? true : item?.checked === true,
-          );
-          archiveStatus = checkedItems.length >= TOTAL_MATERIALS ? '已归档' : '未完全归档';
-        }
+    // Batch: resolve archiver names (submittedBy)
+    const archiverIds = [...new Set(
+      [...archiveMap.values()].map((a) => a.submittedBy).filter(Boolean),
+    )] as number[];
+    if (archiverIds.length > 0) {
+      const archivers = await this.db
+        .select({ id: userAccount.id, displayName: userAccount.displayName })
+        .from(userAccount)
+        .where(inArray(userAccount.id, archiverIds));
+      for (const u of archivers) userNameMap.set(u.id, u.displayName);
+    }
 
-        // Archiver name
-        let archiverName: string | null = null;
-        if (archiveRecord?.submittedBy) {
-          const users = await this.db
-            .select({ displayName: userAccount.displayName })
-            .from(userAccount)
-            .where(eq(userAccount.id, archiveRecord.submittedBy))
-            .limit(1);
-          archiverName = users[0]?.displayName ?? null;
-        }
+    // Enrich with names + archive status (no more N+1)
+    const enriched = rows.map((row) => {
+      const compilerName = (row.compiledBy && userNameMap.get(row.compiledBy)) ?? null;
+      const salesName = (row.createdBy && userNameMap.get(row.createdBy)) ?? null;
+      const archiveRecord = archiveMap.get(row.id!) ?? null;
 
-        const submittedAt = archiveRecord?.submittedAt ?? null;
-        const wfInfo = bizNodeMap.get(row.id!) || { currentNode: '', wfStatus: '' };
-
-        // Missing materials for quick view (support both old/new format)
-        const rawItems = (archiveRecord?.materialStatusCodes ?? []) as any[];
-        const checkedCodesSet = new Set(
-          rawItems
-            .filter((item) => typeof item === 'string' ? true : item?.checked === true)
-            .map((item) => typeof item === 'string' ? item : item?.code),
+      let archiveStatus = '待归档';
+      if (archiveRecord?.status === 'SUBMITTED') {
+        const items = (archiveRecord.materialStatusCodes ?? []) as any[];
+        const checkedItems = items.filter((item) =>
+          typeof item === 'string' ? true : item?.checked === true,
         );
-        const missingMaterials = ALL_MATERIAL_CODES
-          .filter((code) => !checkedCodesSet.has(code))
-          .map((code) => MATERIAL_LABELS[code] || code);
-        const checkedCount = checkedCodesSet.size;
+        archiveStatus = checkedItems.length >= TOTAL_MATERIALS ? '已归档' : '未完全归档';
+      }
 
-        return {
-          ...row, compilerName, salesName, archiverName,
-          archiveStatus, checkedCount, totalMaterials: TOTAL_MATERIALS,
-          missingMaterials, submittedAt, ...wfInfo,
-        };
-      }),
-    );
+      const archiverName = (archiveRecord?.submittedBy && userNameMap.get(archiveRecord.submittedBy)) ?? null;
+      const submittedAt = archiveRecord?.submittedAt ?? null;
+      const wfInfo = bizNodeMap.get(row.id!) || { currentNode: '', wfStatus: '' };
 
-    // Filter by archive status if requested
+      const rawItems = (archiveRecord?.materialStatusCodes ?? []) as any[];
+      const checkedCodesSet = new Set(
+        rawItems
+          .filter((item) => typeof item === 'string' ? true : item?.checked === true)
+          .map((item) => typeof item === 'string' ? item : item?.code),
+      );
+      const missingMaterials = ALL_MATERIAL_CODES
+        .filter((code) => !checkedCodesSet.has(code))
+        .map((code) => MATERIAL_LABELS[code] || code);
+      const checkedCount = checkedCodesSet.size;
+
+      return {
+        ...row, compilerName, salesName, archiverName,
+        archiveStatus, checkedCount, totalMaterials: TOTAL_MATERIALS,
+        missingMaterials, submittedAt, ...wfInfo,
+      };
+    });
+
+    // Filter by archive status then paginate in memory
     const filtered = query.archiveStatus
       ? enriched.filter((row) => row.archiveStatus === query.archiveStatus)
       : enriched;
+    const total = filtered.length;
+    const paginatedList = filtered.slice((page - 1) * pageSize, page * pageSize);
 
-    return { list: filtered, total: filtered.length, page, pageSize };
+    return { list: paginatedList, total, page, pageSize };
   }
 
   // -----------------------------------------------------------------------

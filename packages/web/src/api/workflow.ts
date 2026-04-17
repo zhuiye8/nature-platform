@@ -36,10 +36,6 @@ export function getMyTasks() {
   return request.get<TaskItem[]>('/workflow/my-tasks')
 }
 
-export function getMyTaskCount() {
-  return request.get<number>('/workflow/my-tasks/count')
-}
-
 export function signalTask(data: {
   instanceId: number
   taskId: number
@@ -62,10 +58,6 @@ export function getUsersByRole(roleCode: string) {
 
 export function getTaskDetail(taskId: number) {
   return request.get<any>(`/workflow/task/${taskId}`)
-}
-
-export function getInstanceDetail(id: number) {
-  return request.get<InstanceDetail>(`/workflow/instance/${id}`)
 }
 
 export function getInstanceByBiz(bizType: string, bizId: number) {

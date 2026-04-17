@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { eq, and, or, ilike, count, desc, sql, SQL } from 'drizzle-orm';
+import { eq, and, or, ilike, count, desc, sql, inArray, SQL } from 'drizzle-orm';
 import { DRIZZLE, DrizzleDB } from '../../database/database.module';
 import {
   contract,
@@ -168,65 +168,57 @@ export class ContractService {
         .offset((page - 1) * pageSize),
     ]);
 
-    // Enrich with sales person name and system items summary
-    const enriched = await Promise.all(
-      rows.map(async (row) => {
-        let salesPersonName: string | null = null;
-        if (row.salesPersonId) {
-          const users = await this.db
-            .select({ displayName: userAccount.displayName })
-            .from(userAccount)
-            .where(eq(userAccount.id, row.salesPersonId))
-            .limit(1);
-          salesPersonName = users[0]?.displayName ?? null;
-        }
-        let archiverName: string | null = null;
-        if (row.archivedBy) {
-          const archivers = await this.db
-            .select({ displayName: userAccount.displayName })
-            .from(userAccount)
-            .where(eq(userAccount.id, row.archivedBy))
-            .limit(1);
-          archiverName = archivers[0]?.displayName ?? null;
-        }
-        // Load system items summary
-        const items = await this.db
+    // Batch: resolve all user names at once
+    const allUserIds = [...new Set(
+      rows.flatMap((r) => [r.salesPersonId, r.archivedBy, r.financialHandlerId]).filter(Boolean),
+    )] as number[];
+    const userNameMap = new Map<number, string>();
+    if (allUserIds.length > 0) {
+      const users = await this.db
+        .select({ id: userAccount.id, displayName: userAccount.displayName })
+        .from(userAccount)
+        .where(inArray(userAccount.id, allUserIds));
+      for (const u of users) userNameMap.set(u.id, u.displayName);
+    }
+
+    // Batch: load all system items for the page
+    const contractIds = rows.map((r) => r.id);
+    const allSystemItems = contractIds.length > 0
+      ? await this.db
           .select({
+            contractId: contractSystemItem.contractId,
             systemName: contractSystemItem.systemName,
             systemLevel: contractSystemItem.systemLevel,
           })
           .from(contractSystemItem)
-          .where(
-            and(
-              eq(contractSystemItem.contractId, row.id),
-              eq(contractSystemItem.deleted, false),
-            ),
-          )
-          .orderBy(contractSystemItem.sortOrder);
-        let financialHandlerName: string | null = null;
-        if (row.financialHandlerId) {
-          const handlers = await this.db
-            .select({ displayName: userAccount.displayName })
-            .from(userAccount)
-            .where(eq(userAccount.id, row.financialHandlerId))
-            .limit(1);
-          financialHandlerName = handlers[0]?.displayName ?? null;
-        }
-        // Current reviewer label (only when waiting at CONTRACT_REVIEW)
-        const currentReviewerLabel = await this.resolveContractReviewerLabel(
-          row.id,
-          row.reviewStatus,
-        );
-        return {
-          ...row,
-          salesPersonName,
-          archiverName,
-          financialHandlerName,
-          systemItemsSummary: items,
-          currentReviewerLabel,
-        };
-      }),
-    );
+          .where(and(inArray(contractSystemItem.contractId, contractIds), eq(contractSystemItem.deleted, false)))
+          .orderBy(contractSystemItem.sortOrder)
+      : [];
+    const systemItemsMap = new Map<number, typeof allSystemItems>();
+    for (const item of allSystemItems) {
+      const list = systemItemsMap.get(item.contractId) ?? [];
+      list.push(item);
+      systemItemsMap.set(item.contractId, list);
+    }
+
+    // Batch: resolve reviewer labels
+    const submittedIds = rows.filter((r) => r.reviewStatus === 'SUBMITTED').map((r) => r.id);
+    const reviewerLabelMap = new Map<number, string>();
+    if (submittedIds.length > 0) {
+      for (const cid of submittedIds) {
+        const label = await this.resolveContractReviewerLabel(cid, 'SUBMITTED');
+        if (label) reviewerLabelMap.set(cid, label);
+      }
+    }
+
+    const enriched = rows.map((row) => ({
+      ...row,
+      salesPersonName: (row.salesPersonId && userNameMap.get(row.salesPersonId)) ?? null,
+      archiverName: (row.archivedBy && userNameMap.get(row.archivedBy)) ?? null,
+      financialHandlerName: (row.financialHandlerId && userNameMap.get(row.financialHandlerId)) ?? null,
+      systemItemsSummary: systemItemsMap.get(row.id) ?? [],
+      currentReviewerLabel: reviewerLabelMap.get(row.id) ?? null,
+    }));
 
     return {
       list: enriched,
@@ -449,60 +441,64 @@ export class ContractService {
   // Create
   // -----------------------------------------------------------------------
   async create(dto: CreateContractDto, userId: number) {
-    const result = await this.db
-      .insert(contract)
-      .values({
-        groupId: dto.groupId,
-        contractCategory: dto.contractCategory ?? null,
-        customerId: dto.customerId,
-        contactName: dto.contactName ?? null,
-        contactPhone: dto.contactPhone ?? null,
-        paymentCompany: dto.paymentCompany ?? null,
-        paymentAmount: dto.paymentAmount != null ? String(dto.paymentAmount) : null,
-        paymentMethod: dto.paymentMethod ?? null,
-        paymentInfo: dto.paymentInfo ?? null,
-        invoiceType: dto.invoiceType ?? null,
-        taxRate: dto.taxRate ?? null,
-        partnerName: dto.partnerName ?? null,
-        partnerId: dto.partnerId ?? null,
-        salesPersonId: dto.salesPersonId ?? null,
-        performanceCity: dto.performanceCity ?? null,
-        dealStatus: dto.dealStatus ?? null,
-        serviceContent: dto.serviceContent ?? null,
-        contractType: dto.contractType ?? null,
-        serviceYears: dto.serviceYears,
-        remark: dto.remark ?? null,
-        reviewStatus: 'DRAFT',
-        createdBy: userId,
-      })
-      .returning();
+    const created = await this.db.transaction(async (tx) => {
+      const result = await tx
+        .insert(contract)
+        .values({
+          groupId: dto.groupId,
+          contractCategory: dto.contractCategory ?? null,
+          customerId: dto.customerId,
+          contactName: dto.contactName ?? null,
+          contactPhone: dto.contactPhone ?? null,
+          paymentCompany: dto.paymentCompany ?? null,
+          paymentAmount: dto.paymentAmount != null ? String(dto.paymentAmount) : null,
+          paymentMethod: dto.paymentMethod ?? null,
+          paymentInfo: dto.paymentInfo ?? null,
+          invoiceType: dto.invoiceType ?? null,
+          taxRate: dto.taxRate ?? null,
+          partnerName: dto.partnerName ?? null,
+          partnerId: dto.partnerId ?? null,
+          salesPersonId: dto.salesPersonId ?? null,
+          performanceCity: dto.performanceCity ?? null,
+          dealStatus: dto.dealStatus ?? null,
+          serviceContent: dto.serviceContent ?? null,
+          contractType: dto.contractType ?? null,
+          serviceYears: dto.serviceYears,
+          remark: dto.remark ?? null,
+          reviewStatus: 'DRAFT',
+          createdBy: userId,
+        })
+        .returning();
 
-    const created = result[0];
+      const row = result[0];
 
-    // Insert system items in bulk
-    if (dto.systemItems.length > 0) {
-      await this.db.insert(contractSystemItem).values(
-        dto.systemItems.map((item, index) => ({
-          contractId: created.id,
-          systemName: item.systemName,
-          systemLevel: item.systemLevel,
-          sortOrder: item.sortOrder ?? index,
-        })),
+      // Insert system items in bulk
+      if (dto.systemItems.length > 0) {
+        await tx.insert(contractSystemItem).values(
+          dto.systemItems.map((item, index) => ({
+            contractId: row.id,
+            systemName: item.systemName,
+            systemLevel: item.systemLevel,
+            sortOrder: item.sortOrder ?? index,
+          })),
+        );
+      }
+
+      // Generate and set contractName based on customer + system items + years
+      const contractName = await this.buildContractName(
+        dto.customerId,
+        dto.systemItems,
+        (dto.serviceYears ?? []) as number[],
       );
-    }
+      if (contractName) {
+        await tx
+          .update(contract)
+          .set({ contractName })
+          .where(eq(contract.id, row.id));
+      }
 
-    // Generate and set contractName based on customer + system items + years
-    const contractName = await this.buildContractName(
-      dto.customerId,
-      dto.systemItems,
-      (dto.serviceYears ?? []) as number[],
-    );
-    if (contractName) {
-      await this.db
-        .update(contract)
-        .set({ contractName })
-        .where(eq(contract.id, created.id));
-    }
+      return row;
+    });
 
     return this.findById(created.id, userId);
   }
@@ -993,15 +989,6 @@ export class ContractService {
 
     const sorted = [...years].sort((a, b) => a - b);
 
-    // Check if consecutive
-    let isConsecutive = true;
-    for (let i = 1; i < sorted.length; i++) {
-      if (sorted[i] !== sorted[i - 1] + 1) {
-        isConsecutive = false;
-        break;
-      }
-    }
-
     return sorted.join('、');
   }
 
@@ -1171,42 +1158,28 @@ export class ContractService {
           .where(and(...conds))
           .orderBy(contract.createdAt);
 
+        // Batch: resolve user names for this group's contracts
+        const groupUserIds = [...new Set(
+          contracts.flatMap((c) => [c.salesPersonId, c.financialHandlerId, c.archivedBy]).filter(Boolean),
+        )] as number[];
+        const groupNameMap = new Map<number, string>();
+        if (groupUserIds.length > 0) {
+          const users = await this.db
+            .select({ id: userAccount.id, displayName: userAccount.displayName })
+            .from(userAccount)
+            .where(inArray(userAccount.id, groupUserIds));
+          for (const u of users) groupNameMap.set(u.id, u.displayName);
+        }
+
         const contractsWithNames = await Promise.all(
           contracts.map(async (c) => {
-            let salesPersonName: string | null = null;
-            if (c.salesPersonId) {
-              const users = await this.db
-                .select({ displayName: userAccount.displayName })
-                .from(userAccount)
-                .where(eq(userAccount.id, c.salesPersonId))
-                .limit(1);
-              salesPersonName = users[0]?.displayName ?? null;
-            }
-            let financialHandlerName: string | null = null;
-            if (c.financialHandlerId) {
-              const handlers = await this.db
-                .select({ displayName: userAccount.displayName })
-                .from(userAccount)
-                .where(eq(userAccount.id, c.financialHandlerId))
-                .limit(1);
-              financialHandlerName = handlers[0]?.displayName ?? null;
-            }
-            let archiverName: string | null = null;
-            if (c.archivedBy) {
-              const archivers = await this.db
-                .select({ displayName: userAccount.displayName })
-                .from(userAccount)
-                .where(eq(userAccount.id, c.archivedBy))
-                .limit(1);
-              archiverName = archivers[0]?.displayName ?? null;
-            }
             const currentReviewerLabel =
               await this.resolveContractReviewerLabel(c.id, c.reviewStatus);
             return {
               ...c,
-              salesPersonName,
-              financialHandlerName,
-              archiverName,
+              salesPersonName: (c.salesPersonId && groupNameMap.get(c.salesPersonId)) ?? null,
+              financialHandlerName: (c.financialHandlerId && groupNameMap.get(c.financialHandlerId)) ?? null,
+              archiverName: (c.archivedBy && groupNameMap.get(c.archivedBy)) ?? null,
               currentReviewerLabel,
             };
           }),

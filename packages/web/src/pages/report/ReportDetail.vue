@@ -6,7 +6,6 @@ import { getReportDetail, submitReport } from '@/api/report'
 import { getInstanceByBiz } from '@/api/workflow'
 import type { ReportDetail } from '@/api/report'
 import type { InstanceDetail } from '@/api/workflow'
-import TaskActionDialog from '@/components/TaskActionDialog.vue'
 import FilePoolPanel from '@/components/FilePoolPanel.vue'
 
 const route = useRoute()
@@ -15,9 +14,6 @@ const projectRegisterId = Number(route.params.projectRegisterId)
 const detail = ref<ReportDetail | null>(null)
 const workflowInstance = ref<InstanceDetail | null>(null)
 const loading = ref(true)
-const taskDialogVisible = ref(false)
-const selectedTask = ref<any>(null)
-
 const isAtCompile = computed(() => detail.value?.currentNode === 'REPORT_COMPILE')
 
 async function fetchData() {
@@ -136,10 +132,5 @@ onMounted(() => {
       </el-timeline>
     </el-card>
 
-    <TaskActionDialog
-      v-model:visible="taskDialogVisible"
-      :task="selectedTask"
-      @completed="fetchData"
-    />
   </div>
 </template>

@@ -30,6 +30,3 @@ export function markAllRead() {
   return request.put('/notification/read-all')
 }
 
-export function deleteNotification(id: number) {
-  return request.delete(`/notification/${id}`)
-}
