@@ -9,6 +9,8 @@ export interface UserItem {
   enabled: boolean
   sourceType: string
   deptId: number | null
+  certificateNo: string | null
+  roles?: string[]
   createdAt: string
 }
 
@@ -24,6 +26,7 @@ export interface UserForm {
   email?: string
   deptId?: number
   enabled?: boolean
+  certificateNo?: string
 }
 
 export interface SimpleUser {

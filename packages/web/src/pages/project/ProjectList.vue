@@ -5,7 +5,6 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Plus } from '@element-plus/icons-vue'
 import { getProjectPage, getProjectDetail, deleteProject, submitProject } from '@/api/project'
 import type { ProjectItem } from '@/api/project'
-import { getStatusLabel, getStatusTagType } from '@/utils/status-map'
 
 const router = useRouter()
 const tableData = ref<ProjectItem[]>([])
@@ -19,55 +18,35 @@ const total = ref(0)
 const statusOptions = [
   { label: '全部', value: '' },
   { label: '草稿', value: 'DRAFT' },
-  { label: '已提交', value: 'SUBMITTED' },
+  { label: '审核中', value: 'SUBMITTED' },
+  { label: '已通过', value: 'APPROVED' },
   { label: '已驳回', value: 'REJECTED' },
 ]
 
-// Display status derived from workflow current_node
-const nodeStatusLabel: Record<string, string> = {
-  PROJECT_REGISTER: '待提交',
-  PROJECT_REVIEW: '审核中',
-  POLICE_REGISTER: '公安登记中',
-  ON_SITE_ASSESSMENT: '测评中',
-  TECH_REVIEW: '技术审核中',
-  CONTENT_REVIEW: '内容审核中',
-  REPORT_ASSIGN: '报告分配中',
-  REPORT_COMPILE: '编制中',
-  FINAL_REVIEW: '最终审核中',
-  MATERIAL_ARCHIVE: '归档中',
+// SUBMITTED 状态下细分展示：部门经理确认中 / 项目主管审核中
+const submittedSubLabel: Record<string, string> = {
+  DEPT_REVIEW: '部门经理确认中',
+  DIRECTOR_REVIEW: '项目主管审核中',
+  PROJECT_REVIEW: '审核中', // 兼容旧数据
 }
 
-const nodeStatusTagType: Record<string, 'info' | 'warning' | 'success' | 'danger' | 'primary'> = {
-  PROJECT_REGISTER: 'info',
-  PROJECT_REVIEW: 'warning',
-  POLICE_REGISTER: 'info',
-  ON_SITE_ASSESSMENT: 'primary',
-  TECH_REVIEW: 'warning',
-  CONTENT_REVIEW: 'warning',
-  REPORT_COMPILE: 'info',
-  FINAL_REVIEW: 'warning',
-  MATERIAL_ARCHIVE: 'info',
-}
-
+// 项目登记列表只展示 4 种状态（SUBMITTED 下细分 2 种审核阶段）
 function getDisplayStatus(row: any): string {
   if (row.status === 'DRAFT') return '草稿'
   if (row.status === 'REJECTED') return '已驳回'
-  if (row.wfStatus === 'COMPLETED') return '已归档'
-  if (row.currentNode) return nodeStatusLabel[row.currentNode] || row.currentNode
-  // Fallback: workflow status codes (TECH_APPROVED, CONTENT_APPROVED, FINAL_APPROVED, ...)
-  return getStatusLabel(row.status)
+  if (row.status === 'APPROVED') return '已通过'
+  if (row.status === 'SUBMITTED') {
+    return submittedSubLabel[row.currentNode] || '审核中'
+  }
+  return row.status || '--'
 }
 
 function getDisplayTagType(row: any): 'primary' | 'success' | 'info' | 'warning' | 'danger' {
   if (row.status === 'DRAFT') return 'info'
   if (row.status === 'REJECTED') return 'danger'
-  if (row.wfStatus === 'COMPLETED') return 'success'
-  if (row.currentNode) return nodeStatusTagType[row.currentNode] || 'info'
-  return getStatusTagType(row.status) as 'primary' | 'success' | 'info' | 'warning' | 'danger'
-}
-
-function isPoolReviewerLabel(label: string): boolean {
-  return label === '项目主管' || label === '部门经理'
+  if (row.status === 'APPROVED') return 'success'
+  if (row.status === 'SUBMITTED') return 'warning'
+  return 'info'
 }
 
 async function fetchData() {
@@ -272,18 +251,6 @@ onMounted(() => {
         </el-table-column>
         <el-table-column prop="salesPersonName" label="签单销售" min-width="100" show-overflow-tooltip>
           <template #default="{ row }">{{ row.salesPersonName || '--' }}</template>
-        </el-table-column>
-        <el-table-column label="审批人" min-width="130" align="center">
-          <template #default="{ row }">
-            <el-tag
-              v-if="row.currentReviewerLabel"
-              size="small"
-              :type="isPoolReviewerLabel(row.currentReviewerLabel) ? 'warning' : 'info'"
-            >
-              {{ row.currentReviewerLabel }}
-            </el-tag>
-            <span v-else>--</span>
-          </template>
         </el-table-column>
         <el-table-column label="状态" min-width="120" align="center">
           <template #default="{ row }">

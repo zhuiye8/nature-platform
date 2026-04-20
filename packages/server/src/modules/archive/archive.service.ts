@@ -42,8 +42,21 @@ export class ArchiveService {
     const roleCodes = roles.map((r) => r.roleCode);
     const isSuperAdmin = roleCodes.includes('super_admin');
     const isArchiver = roleCodes.includes('archiver');
-    const isPM = roleCodes.includes('project_manager');
     const isSales = roleCodes.includes('sales');
+    // PM is determined by project_member.roleType='PM' (not by iam_role)
+    // Check if this user has any PM membership records
+    const pmCheck = await this.db
+      .select({ id: projectMember.id })
+      .from(projectMember)
+      .where(
+        and(
+          eq(projectMember.userId, userId),
+          eq(projectMember.roleType, 'PM'),
+          eq(projectMember.status, 'ACTIVE'),
+        ),
+      )
+      .limit(1);
+    const isPM = pmCheck.length > 0;
 
     // Find projects at MATERIAL_ARCHIVE or COMPLETED
     const instances = await this.db

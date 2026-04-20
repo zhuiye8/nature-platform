@@ -15,9 +15,18 @@ export class ReviewHandler implements NodeHandler {
   // REPORT_COMPILE) must use the rule-table so that SAME_PROJECT avoidance
   // and per-role sort_order selection work correctly.
   private static readonly VARIABLE_DRIVEN_NODES = new Set([
-    'PROJECT_REVIEW',
+    'DEPT_REVIEW',
+    'DIRECTOR_REVIEW',
     'CONTRACT_REVIEW',
   ]);
+
+  // Node → default pool role mapping. When variables.reviewerRoleCode is not
+  // set (new flow), the role is inferred from the node key.
+  private static readonly NODE_POOL_ROLE: Record<string, string> = {
+    DEPT_REVIEW: 'dept_manager',
+    DIRECTOR_REVIEW: 'project_director',
+    // CONTRACT_REVIEW still relies on variables.reviewerRoleCode (set by contract.submit)
+  };
 
   async onEnter(ctx: NodeContext): Promise<void> {
     // Get projectId for assignment avoidance
@@ -30,9 +39,11 @@ export class ReviewHandler implements NodeHandler {
     let assigneeId: number | null = null;
 
     if (ReviewHandler.VARIABLE_DRIVEN_NODES.has(ctx.nodeDef.nodeKey)) {
-      // ── Variable-driven assignment (PROJECT_REVIEW / CONTRACT_REVIEW) ──
+      // ── Variable-driven assignment (DEPT_REVIEW / DIRECTOR_REVIEW / CONTRACT_REVIEW) ──
       const vars = (ctx.instance.variables as Record<string, any>) || {};
-      let reviewerRoleCode: string | undefined = vars.reviewerRoleCode;
+      // Prefer node-specific default role; fall back to variables.reviewerRoleCode
+      let reviewerRoleCode: string | undefined =
+        ReviewHandler.NODE_POOL_ROLE[ctx.nodeDef.nodeKey] || vars.reviewerRoleCode;
       let isPoolReview: boolean = vars.isPoolReview === true;
 
       if (isPoolReview && reviewerRoleCode) {

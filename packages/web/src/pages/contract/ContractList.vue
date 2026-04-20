@@ -30,7 +30,7 @@ const total = ref(0)
 const reviewStatusOptions = [
   { label: '全部', value: '' },
   { label: '草稿', value: 'DRAFT' },
-  { label: '已提交', value: 'SUBMITTED' },
+  { label: '审核中', value: 'SUBMITTED' },
   { label: '已通过', value: 'APPROVED' },
   { label: '已驳回', value: 'REJECTED' },
 ]
@@ -38,6 +38,7 @@ const reviewStatusOptions = [
 const archiveStatusOptions = [
   { label: '全部', value: '' },
   { label: '待归档', value: 'PENDING_ARCHIVE' },
+  { label: '部分归档', value: 'PARTIAL_ARCHIVE' },
   { label: '已归档', value: 'ARCHIVED' },
 ]
 
@@ -46,7 +47,7 @@ async function loadSalesUsers() {
 }
 
 const reviewStatusLabel: Record<string, string> = {
-  DRAFT: '草稿', SUBMITTED: '已提交', APPROVED: '已通过', REJECTED: '已驳回',
+  DRAFT: '草稿', SUBMITTED: '审核中', APPROVED: '已通过', REJECTED: '已驳回',
 }
 const reviewStatusTagType: Record<string, 'info' | 'warning' | 'success' | 'danger'> = {
   DRAFT: 'info', SUBMITTED: 'warning', APPROVED: 'success', REJECTED: 'danger',
@@ -134,9 +135,6 @@ function isDraftOrRejected(row: any) {
   return row.reviewStatus === 'DRAFT' || row.reviewStatus === 'REJECTED'
 }
 
-function isPoolReviewerLabel(label: string): boolean {
-  return label === '部门经理' || label === '项目主管'
-}
 
 // ── 文件管理 ──
 const fileMap = ref<Record<number, boolean>>({})
@@ -334,23 +332,13 @@ onMounted(() => {
                     </el-tag>
                   </template>
                 </el-table-column>
-                <el-table-column label="审核人" min-width="120" align="center">
-                  <template #default="{ row }">
-                    <el-tag
-                      v-if="row.currentReviewerLabel"
-                      size="small"
-                      :type="isPoolReviewerLabel(row.currentReviewerLabel) ? 'warning' : 'info'"
-                    >
-                      {{ row.currentReviewerLabel }}
-                    </el-tag>
-                    <span v-else>--</span>
-                  </template>
-                </el-table-column>
                 <el-table-column label="归档状态" min-width="100" align="center">
                   <template #default="{ row }">
-                    <el-tag v-if="row.reviewStatus === 'APPROVED'" :type="row.archiveStatus === 'ARCHIVED' ? 'success' : 'info'" size="small">
-                      {{ row.archiveStatus === 'ARCHIVED' ? '已归档' : '待归档' }}
-                    </el-tag>
+                    <template v-if="row.reviewStatus === 'APPROVED'">
+                      <el-tag v-if="row.archiveStatus === 'ARCHIVED'" type="success" size="small">已归档</el-tag>
+                      <el-tag v-else-if="row.archiveStatus === 'PARTIAL_ARCHIVE'" type="warning" size="small">部分归档</el-tag>
+                      <el-tag v-else type="info" size="small">待归档</el-tag>
+                    </template>
                     <span v-else>--</span>
                   </template>
                 </el-table-column>

@@ -49,14 +49,39 @@ export class ProjectService {
     const roleCodes = roles.map((r) => r.roleCode);
     const isSuperAdmin = roleCodes.includes('super_admin');
     const isCommercial = roleCodes.includes('commercial');
-    const isManager = roleCodes.includes('project_manager') || roleCodes.includes('dept_manager');
+    const isDeptManager = roleCodes.includes('dept_manager');
     const isDirector = roleCodes.includes('project_director');
+    const isAssessor =
+      roleCodes.includes('senior_assessor') ||
+      roleCodes.includes('middle_assessor') ||
+      roleCodes.includes('junior_assessor');
 
     const conditions: SQL[] = [eq(projectRegister.deleted, false)];
 
-    // Row-level: sales only sees own projects; PM/commercial/super_admin/dept_manager/project_director see all
-    if (!isSuperAdmin && !isCommercial && !isManager && !isDirector) {
-      conditions.push(eq(projectRegister.createdBy, currentUserId));
+    // Row-level visibility:
+    //   super_admin / commercial / dept_manager / project_director → all projects
+    //   assessors (senior/middle/junior) → only projects they are a member of
+    //   others (sales, etc.) → only projects they created
+    if (!isSuperAdmin && !isCommercial && !isDeptManager && !isDirector) {
+      if (isAssessor) {
+        // Find project IDs where this user is an active member
+        const memberRows = await this.db
+          .select({ projectId: projectMember.projectId })
+          .from(projectMember)
+          .where(
+            and(
+              eq(projectMember.userId, currentUserId),
+              eq(projectMember.status, 'ACTIVE'),
+            ),
+          );
+        const memberProjectIds = [...new Set(memberRows.map((r) => r.projectId))];
+        if (memberProjectIds.length === 0) {
+          return { list: [], total: 0, page, pageSize };
+        }
+        conditions.push(inArray(projectRegister.id, memberProjectIds));
+      } else {
+        conditions.push(eq(projectRegister.createdBy, currentUserId));
+      }
     }
 
     if (query.keyword) {
@@ -65,6 +90,8 @@ export class ProjectService {
     }
 
     if (query.status) {
+      // status 仅反映登记环节自身状态（DRAFT/SUBMITTED/APPROVED/REJECTED）
+      // 后续节点流转不回写此字段，筛选直接精确匹配
       conditions.push(eq(projectRegister.status, query.status));
     }
 
@@ -607,22 +634,23 @@ export class ProjectService {
       );
     }
 
-    // Decide reviewer role based on contract's CURRENT archive status.
-    // This is re-evaluated at every submission (first + resubmit) so that a
-    // contract that got fully archived between rejection and resubmission
-    // will route the next approval to project directors instead of dept managers.
+    // Decide workflow route based on contract's CURRENT archive status.
+    //   - Archived contract → skip DEPT_REVIEW, start at DIRECTOR_REVIEW
+    //   - Non-archived contract → DEPT_REVIEW → DIRECTOR_REVIEW
+    // This is re-evaluated at every submission so that a contract that got
+    // archived between rejection and resubmission will take the shortcut path.
     const contractRow = await this.db
       .select({ archiveStatus: contract.archiveStatus })
       .from(contract)
       .where(eq(contract.id, existing.contractId))
       .limit(1);
 
-    const reviewerRoleCode =
-      contractRow[0]?.archiveStatus === 'ARCHIVED'
-        ? 'project_director'
-        : 'dept_manager';
-    const isPoolReview = true; // both modes are pool; fallback to single-assign
-    // happens inside ReviewHandler.onEnter when the target role has no users.
+    const skip_dept_review = contractRow[0]?.archiveStatus === 'ARCHIVED';
+    // variables.reviewerRoleCode is read by ReviewHandler when entering DEPT_REVIEW
+    // or DIRECTOR_REVIEW to pick the correct pool role.
+    // variables.skipDeptReview is read by WorkflowService.advanceToNextNode via
+    // the transition guard 'skip_dept_review' to route around DEPT_REVIEW.
+    const isPoolReview = true;
 
     await this.db
       .update(projectRegister)
@@ -641,11 +669,11 @@ export class ProjectService {
 
     if (existingWf && existingWf.instance.status === 'RUNNING') {
       // Resubmission: patch variables with the latest decision BEFORE signaling
-      // so that ReviewHandler.onEnter picks up the fresh reviewerRoleCode when
-      // the transition reenters the PROJECT_REVIEW node.
+      // so that ReviewHandler/transition guards pick up the fresh routing.
       await this.workflowService.updateVariables(existingWf.instance.id, {
-        reviewerRoleCode,
+        skip_dept_review,
         isPoolReview,
+        // reviewerRoleCode is set per-node dynamically by ReviewHandler
       });
 
       const pendingTask = existingWf.tasks.find(
@@ -668,7 +696,7 @@ export class ProjectService {
         'PROJECT_REGISTER',
         id,
         userId,
-        { reviewerRoleCode, isPoolReview },
+        { skip_dept_review, isPoolReview },
       );
 
       // Auto-signal the first SIMPLE node to advance to PROJECT_REVIEW

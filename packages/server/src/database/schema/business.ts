@@ -288,7 +288,7 @@ export const policeRegister = pgTable('police_register', {
   projectManagerId: bigint('project_manager_id', { mode: 'number' }),
   scanFileUrl: varchar('scan_file_url', { length: 512 }),
   remark: text('remark'),
-  status: varchar('status', { length: 32 }).notNull().default('DRAFT'),
+  status: varchar('status', { length: 32 }).notNull().default('PENDING'),
 
   createdBy: bigint('created_by', { mode: 'number' }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

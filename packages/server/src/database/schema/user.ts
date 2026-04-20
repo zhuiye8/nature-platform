@@ -21,6 +21,7 @@ export const userAccount = pgTable('user_account', {
   dingUserId: varchar('ding_user_id', { length: 64 }),
   dingUnionId: varchar('ding_union_id', { length: 128 }),
   dingJobNumber: varchar('ding_job_number', { length: 64 }),
+  certificateNo: varchar('certificate_no', { length: 64 }),
   lastSyncAt: timestamp('last_sync_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

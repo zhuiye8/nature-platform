@@ -46,6 +46,10 @@ export class CreateUserDto {
   @IsBoolean()
   @IsOptional()
   enabled?: boolean;
+
+  @IsString()
+  @IsOptional()
+  certificateNo?: string;
 }
 
 export class UpdateUserDto {
@@ -69,6 +73,10 @@ export class UpdateUserDto {
   @IsBoolean()
   @IsOptional()
   enabled?: boolean;
+
+  @IsString()
+  @IsOptional()
+  certificateNo?: string;
 }
 
 export class QueryUserDto {
@@ -92,6 +100,14 @@ export class QueryUserDto {
   @Type(() => Boolean)
   @IsBoolean()
   enabled?: boolean;
+
+  @IsString()
+  @IsOptional()
+  certificateNo?: string;
+
+  @IsString()
+  @IsOptional()
+  roleCode?: string;
 }
 
 export class AssignRolesDto {

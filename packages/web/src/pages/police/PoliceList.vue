@@ -12,7 +12,7 @@ const router = useRouter()
 const tableData = ref<PoliceItem[]>([])
 const loading = ref(false)
 const keyword = ref('')
-const statusFilter = ref('')
+const statusFilter = ref('PENDING')  // 默认筛选"待登记"
 const currentPage = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
@@ -34,7 +34,7 @@ async function fetchData() {
 }
 
 function handleSearch() { currentPage.value = 1; fetchData() }
-function handleReset() { keyword.value = ''; statusFilter.value = ''; currentPage.value = 1; fetchData() }
+function handleReset() { keyword.value = ''; statusFilter.value = 'PENDING'; currentPage.value = 1; fetchData() }
 
 // ── 文件管理弹窗 ──
 const fileDialogVisible = ref(false)
@@ -113,7 +113,7 @@ onMounted(() => fetchData())
       <div style="margin-bottom: 16px; display: flex; gap: 12px">
         <el-input v-model="keyword" placeholder="搜索项目名称" clearable style="width: 280px" :prefix-icon="Search" @keyup.enter="handleSearch" />
         <el-select v-model="statusFilter" placeholder="状态" clearable style="width: 120px" @change="handleSearch">
-          <el-option label="待登记" value="DRAFT" />
+          <el-option label="待登记" value="PENDING" />
           <el-option label="已登记" value="COMPLETED" />
         </el-select>
         <el-button :icon="Search" type="primary" @click="handleSearch">搜索</el-button>

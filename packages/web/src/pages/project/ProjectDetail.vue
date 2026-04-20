@@ -8,9 +8,8 @@ import { getProjectDetail, getSystemItems } from '@/api/project'
 import type { ProjectDetail as ProjectDetailType, ProjectMember } from '@/api/project'
 import { getInstanceByBiz } from '@/api/workflow'
 import type { InstanceDetail, TaskItem } from '@/api/workflow'
-import { getFileDownloadPath, getFilePreviewPath } from '@/api/file'
+import { getFileDownloadPath, getFilePreviewPath, getFileList, type FileItem } from '@/api/file'
 import { useAuthStore } from '@/stores/auth'
-import TaskActionDialog from '@/components/TaskActionDialog.vue'
 import RejectReasonPanel from '@/components/RejectReasonPanel.vue'
 import SystemItemDetailDialog from '@/components/SystemItemDetailDialog.vue'
 
@@ -20,8 +19,17 @@ const authStore = useAuthStore()
 const loading = ref(false)
 const project = ref<ProjectDetailType | null>(null)
 const workflowInstance = ref<InstanceDetail | null>(null)
-const dialogVisible = ref(false)
-const currentTask = ref<TaskItem | null>(null)
+
+// 合同附件（附件 + 附件说明）
+const contractFiles = ref<FileItem[]>([])
+const contractDescFiles = ref<FileItem[]>([])
+
+async function loadContractAttachments(contractId: number) {
+  try { contractFiles.value = (await getFileList('CONTRACT', contractId)) as any as FileItem[] }
+  catch { contractFiles.value = [] }
+  try { contractDescFiles.value = (await getFileList('CONTRACT_DESC', contractId)) as any as FileItem[] }
+  catch { contractDescFiles.value = [] }
+}
 
 // System items with file info
 const systemItemsEnriched = ref<any[]>([])
@@ -64,6 +72,10 @@ async function fetchDetail() {
     } catch {
       systemItemsEnriched.value = project.value.systemItems || []
     }
+    // Load contract attachments
+    if (project.value?.contractId) {
+      await loadContractAttachments(project.value.contractId)
+    }
   } finally {
     loading.value = false
   }
@@ -84,16 +96,12 @@ function getPendingTask(): TaskItem | null {
   return workflowInstance.value.tasks.find((t) => t.status === 'PENDING') || null
 }
 
+// 审批跳转到 TaskDetail 页面（统一入口）
 function handleApproveReject() {
   const task = getPendingTask()
   if (task) {
-    currentTask.value = task
-    dialogVisible.value = true
+    router.push(`/workflow/task/${task.id}`)
   }
-}
-
-function handleTaskCompleted() {
-  fetchDetail()
 }
 
 function handleBack() {
@@ -204,6 +212,31 @@ onMounted(() => {
           <el-descriptions-item label="服务年份">{{ ((project as any).serviceYears || []).map((y: number) => y + '年').join('、') || '--' }}</el-descriptions-item>
           <el-descriptions-item label="合同金额">{{ (project as any).paymentAmount ? `¥${Number((project as any).paymentAmount).toLocaleString()}` : '--' }}</el-descriptions-item>
         </el-descriptions>
+
+        <!-- 关联合同附件 -->
+        <div v-if="contractFiles.length > 0 || contractDescFiles.length > 0" style="margin-top: 16px">
+          <h4 style="margin: 0 0 8px; font-size: 14px; color: #606266">关联合同附件</h4>
+          <div v-if="contractFiles.length > 0" style="margin-bottom: 12px">
+            <div style="font-size: 12px; color: #909399; margin-bottom: 4px">合同文件</div>
+            <div style="display: flex; flex-direction: column; gap: 4px">
+              <div v-for="f in contractFiles" :key="'cf-'+f.id" style="display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: #fafafa; border-radius: 4px">
+                <el-link type="primary" :underline="false" @click="openFilePreview(f.id, f.fileName)">{{ f.fileName }}</el-link>
+                <span style="color: #909399; font-size: 12px">{{ formatFileSize(f.fileSize) }}</span>
+                <span style="color: #909399; font-size: 12px; margin-left: auto">{{ f.uploaderName || '--' }} · {{ formatTime(f.uploadedAt) }}</span>
+              </div>
+            </div>
+          </div>
+          <div v-if="contractDescFiles.length > 0">
+            <div style="font-size: 12px; color: #909399; margin-bottom: 4px">合同附件说明</div>
+            <div style="display: flex; flex-direction: column; gap: 4px">
+              <div v-for="f in contractDescFiles" :key="'cd-'+f.id" style="display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: #fafafa; border-radius: 4px">
+                <el-link type="primary" :underline="false" @click="openFilePreview(f.id, f.fileName)">{{ f.fileName }}</el-link>
+                <span style="color: #909399; font-size: 12px">{{ formatFileSize(f.fileSize) }}</span>
+                <span style="color: #909399; font-size: 12px; margin-left: auto">{{ f.uploaderName || '--' }} · {{ formatTime(f.uploadedAt) }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
 
         <!-- 系统明细 -->
         <div v-if="systemItemsEnriched.length > 0" style="margin-top: 24px">
@@ -321,7 +354,6 @@ onMounted(() => {
       </template>
     </el-card>
 
-    <TaskActionDialog v-model:visible="dialogVisible" :task="currentTask" @completed="handleTaskCompleted" />
     <SystemItemDetailDialog v-model:visible="siDialogVisible" :item="siDialogItem" />
   </div>
 </template>

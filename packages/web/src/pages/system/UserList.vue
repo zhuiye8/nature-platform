@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Refresh, Plus } from '@element-plus/icons-vue'
-import { getStatusLabel, getStatusTagType } from '@/utils/status-map'
+import { Search, Refresh, Plus, View, Hide } from '@element-plus/icons-vue'
 import { getUserPage, toggleUserEnabled, resetUserPassword, assignUserRoles } from '@/api/user'
 import { getRoleList } from '@/api/role'
+import { maskCertificateNo } from '@/utils/format'
 import type { UserItem } from '@/api/user'
 import type { RoleItem } from '@/api/role'
 import UserForm from './UserForm.vue'
@@ -12,11 +12,21 @@ import UserForm from './UserForm.vue'
 const tableData = ref<UserItem[]>([])
 const loading = ref(false)
 const keyword = ref('')
+const roleCode = ref('')   // 角色筛选
 const currentPage = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
 const formVisible = ref(false)
 const editUserId = ref<number | null>(null)
+
+// 证书编号显隐（单元格级别，点击切换）
+const revealedCerts = ref<Set<number>>(new Set())
+function toggleCertVisibility(userId: number) {
+  if (revealedCerts.value.has(userId)) revealedCerts.value.delete(userId)
+  else revealedCerts.value.add(userId)
+  // Trigger reactivity
+  revealedCerts.value = new Set(revealedCerts.value)
+}
 
 // Role assignment dialog
 const roleDialogVisible = ref(false)
@@ -24,10 +34,18 @@ const roleTargetUserId = ref(0)
 const selectedRoles = ref<string[]>([])
 const allRoles = ref<RoleItem[]>([])
 
+// 角色 code → 中文名 映射（用于显示）
+const roleLabelMap = ref<Record<string, string>>({})
+
 async function fetchData() {
   loading.value = true
   try {
-    const data = await getUserPage({ page: currentPage.value, pageSize: pageSize.value, keyword: keyword.value || undefined }) as any
+    const data = await getUserPage({
+      page: currentPage.value,
+      pageSize: pageSize.value,
+      keyword: keyword.value || undefined,
+      roleCode: roleCode.value || undefined,
+    }) as any
     tableData.value = data.list
     total.value = data.total
   } finally {
@@ -35,8 +53,17 @@ async function fetchData() {
   }
 }
 
+async function loadRoleLabels() {
+  if (Object.keys(roleLabelMap.value).length > 0) return
+  const roles = await getRoleList()
+  const map: Record<string, string> = {}
+  for (const r of roles) map[r.roleCode] = r.roleName
+  roleLabelMap.value = map
+  allRoles.value = roles
+}
+
 function handleSearch() { currentPage.value = 1; fetchData() }
-function handleReset() { keyword.value = ''; currentPage.value = 1; fetchData() }
+function handleReset() { keyword.value = ''; roleCode.value = ''; currentPage.value = 1; fetchData() }
 function handleCreate() { editUserId.value = null; formVisible.value = true }
 function handleEdit(row: UserItem) { editUserId.value = row.id; formVisible.value = true }
 
@@ -67,9 +94,7 @@ async function handleResetPassword(row: UserItem) {
 
 async function openRoleDialog(row: UserItem) {
   roleTargetUserId.value = row.id
-  if (allRoles.value.length === 0) {
-    allRoles.value = await getRoleList()
-  }
+  await loadRoleLabels()
   // Load current roles
   const { getUserDetail } = await import('@/api/user')
   const detail = await getUserDetail(row.id)
@@ -85,7 +110,10 @@ async function handleAssignRoles() {
   } catch { /* handled */ }
 }
 
-onMounted(() => fetchData())
+onMounted(() => {
+  fetchData()
+  loadRoleLabels()
+})
 </script>
 
 <template>
@@ -98,8 +126,11 @@ onMounted(() => fetchData())
         </div>
       </template>
 
-      <div style="margin-bottom: 16px; display: flex; gap: 12px">
-        <el-input v-model="keyword" placeholder="搜索用户名/姓名/手机号" clearable style="width: 300px" :prefix-icon="Search" @keyup.enter="handleSearch" />
+      <div style="margin-bottom: 16px; display: flex; gap: 12px; flex-wrap: wrap">
+        <el-input v-model="keyword" placeholder="搜索用户名/姓名/手机号" clearable style="width: 260px" :prefix-icon="Search" @keyup.enter="handleSearch" />
+        <el-select v-model="roleCode" placeholder="按角色筛选" clearable filterable style="width: 200px" @change="handleSearch">
+          <el-option v-for="role in allRoles" :key="role.roleCode" :label="role.roleName" :value="role.roleCode" />
+        </el-select>
         <el-button :icon="Search" type="primary" @click="handleSearch">搜索</el-button>
         <el-button :icon="Refresh" @click="handleReset">重置</el-button>
       </div>
@@ -114,9 +145,37 @@ onMounted(() => fetchData())
             <el-tag :type="row.enabled ? 'success' : 'danger'" size="small">{{ row.enabled ? '启用' : '禁用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="来源" min-width="90" align="center">
+        <el-table-column label="证书编号" min-width="200">
           <template #default="{ row }">
-            <el-tag :type="getStatusTagType(row.sourceType)" size="small">{{ getStatusLabel(row.sourceType) }}</el-tag>
+            <template v-if="row.certificateNo">
+              <span style="font-family: 'SF Mono', Consolas, monospace; white-space: normal; word-break: break-all">
+                {{ revealedCerts.has(row.id) ? row.certificateNo : maskCertificateNo(row.certificateNo) }}
+              </span>
+              <el-button
+                link
+                size="small"
+                :icon="revealedCerts.has(row.id) ? Hide : View"
+                @click="toggleCertVisibility(row.id)"
+                style="margin-left: 4px; padding: 0"
+                :title="revealedCerts.has(row.id) ? '隐藏' : '显示完整'"
+              />
+            </template>
+            <span v-else style="color: #c0c4cc">--</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="角色" min-width="180">
+          <template #default="{ row }">
+            <div style="display: flex; flex-wrap: wrap; gap: 4px">
+              <el-tag
+                v-for="code in (row.roles || [])"
+                :key="code"
+                size="small"
+                :type="code === 'super_admin' ? 'danger' : 'info'"
+              >
+                {{ roleLabelMap[code] || code }}
+              </el-tag>
+              <span v-if="!(row.roles && row.roles.length)" style="color: #c0c4cc">无</span>
+            </div>
           </template>
         </el-table-column>
         <el-table-column label="钉钉绑定" min-width="90" align="center">
@@ -148,7 +207,8 @@ onMounted(() => fetchData())
     <el-dialog v-model="roleDialogVisible" title="分配角色" width="500px">
       <el-checkbox-group v-model="selectedRoles">
         <el-checkbox v-for="role in allRoles" :key="role.roleCode" :label="role.roleCode" :value="role.roleCode" style="display: block; margin-bottom: 8px">
-          {{ role.roleName }} <el-tag v-if="role.systemFlag" size="small" type="warning" style="margin-left: 8px">系统</el-tag>
+          {{ role.roleName }}
+          <el-tag v-if="role.systemFlag" size="small" type="warning" style="margin-left: 8px">系统</el-tag>
         </el-checkbox>
       </el-checkbox-group>
       <template #footer>

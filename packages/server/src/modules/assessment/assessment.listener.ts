@@ -1,18 +1,23 @@
-import { Injectable, Inject, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
-import { eq, and } from 'drizzle-orm';
-import { DRIZZLE, DrizzleDB } from '../../database/database.module';
-import { projectRegister } from '../../database/schema/business';
 import { WorkflowService } from '../workflow/workflow.service';
 
+/**
+ * Assessment 阶段的工作流事件监听器。
+ *
+ * 设计原则：`project_register.status` 只反映"项目登记环节"自身的状态
+ * （DRAFT / SUBMITTED / APPROVED / REJECTED），后续节点（TECH_REVIEW /
+ * CONTENT_REVIEW / FINAL_REVIEW / MATERIAL_ARCHIVE）的流转**不**再回写项目状态。
+ * 流转历史由 wf_instance.current_node + wf_action_log 承担。
+ *
+ * 本 listener 仅保留 FINAL_REVIEW REJECT 的工作流回退动作
+ * （最终审核驳回 → 工作流回到 ON_SITE_ASSESSMENT 节点）。
+ */
 @Injectable()
 export class AssessmentListener {
   private readonly logger = new Logger(AssessmentListener.name);
 
-  constructor(
-    @Inject(DRIZZLE) private readonly db: DrizzleDB,
-    private readonly workflowService: WorkflowService,
-  ) {}
+  constructor(private readonly workflowService: WorkflowService) {}
 
   @OnEvent('workflow.node.completed')
   async handleNodeCompleted(payload: {
@@ -26,56 +31,16 @@ export class AssessmentListener {
   }) {
     if (payload.bizType !== 'PROJECT_REGISTER') return;
 
-    const { nodeKey, event, bizId } = payload;
-
-    // Tech review completed
-    if (nodeKey === 'TECH_REVIEW') {
-      if (event === 'APPROVE') {
-        await this.updateStatus(bizId, 'TECH_APPROVED');
-      } else if (event === 'REJECT') {
-        await this.updateStatus(bizId, 'TECH_REJECTED');
-      }
+    // 最终审核驳回 → 回到现场测评（PM 修改测评成果后重新发起质量审核）
+    if (payload.nodeKey === 'FINAL_REVIEW' && payload.event === 'REJECT') {
+      this.logger.log(
+        `FINAL_REVIEW rejected for project #${payload.bizId}, rolling back to ON_SITE_ASSESSMENT`,
+      );
+      await this.workflowService.rejectToAssessment(
+        payload.instanceId,
+        payload.operatorId,
+        payload.remark ?? '最终审核驳回，请修改测评成果后重新发起质量审核',
+      );
     }
-
-    // Content review completed (parallel — all approved or any rejected)
-    if (nodeKey === 'CONTENT_REVIEW') {
-      if (event === 'ALL_APPROVED') {
-        await this.updateStatus(bizId, 'CONTENT_APPROVED');
-      } else if (event === 'ANY_REJECTED') {
-        await this.updateStatus(bizId, 'CONTENT_REJECTED');
-      }
-    }
-
-    // Final review completed
-    if (nodeKey === 'FINAL_REVIEW') {
-      if (event === 'APPROVE') {
-        await this.updateStatus(bizId, 'FINAL_APPROVED');
-      } else if (event === 'ADJUST') {
-        await this.updateStatus(bizId, 'FINAL_ADJUST');
-      } else if (event === 'REJECT') {
-        // REJECT → roll back to ON_SITE_ASSESSMENT (PM sees rejection reason, fixes, re-initiates)
-        this.logger.log(
-          `FINAL_REVIEW rejected for project #${bizId}, rolling back to ON_SITE_ASSESSMENT`,
-        );
-        await this.updateStatus(bizId, 'FINAL_REJECTED');
-        await this.workflowService.rejectToAssessment(
-          payload.instanceId,
-          payload.operatorId,
-          payload.remark ?? '最终审核驳回，请修改测评成果后重新发起质量审核',
-        );
-      }
-    }
-
-    // Material archive completed — project finished
-    if (nodeKey === 'MATERIAL_ARCHIVE' && event === 'SUBMIT') {
-      await this.updateStatus(bizId, 'COMPLETED');
-    }
-  }
-
-  private async updateStatus(bizId: number, status: string) {
-    await this.db
-      .update(projectRegister)
-      .set({ status, updatedAt: new Date() })
-      .where(eq(projectRegister.id, bizId));
   }
 }

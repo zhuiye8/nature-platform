@@ -35,7 +35,11 @@ const validateUsername = async (_rule: any, value: string, callback: (err?: Erro
 const rules = {
   username: [{ required: true, validator: validateUsername, trigger: 'blur' }],
   displayName: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }, { min: 6, message: '密码至少6位', trigger: 'blur' }],
+  password: [
+    { required: true, message: '请输入密码', trigger: 'blur' },
+    { min: 8, message: '密码至少8位', trigger: 'blur' },
+    { pattern: /^(?=.*[A-Za-z])(?=.*\d).+$/, message: '密码必须同时包含英文字母和数字', trigger: 'blur' },
+  ],
 }
 
 watch(() => props.visible, async (val) => {
@@ -43,7 +47,14 @@ watch(() => props.visible, async (val) => {
   if (props.userId) {
     isEdit.value = true
     const data = await getUserDetail(props.userId)
-    form.value = { username: data.username, displayName: data.displayName, mobile: data.mobile ?? undefined, email: data.email ?? undefined, deptId: data.deptId ?? undefined }
+    form.value = {
+      username: data.username,
+      displayName: data.displayName,
+      mobile: data.mobile ?? undefined,
+      email: data.email ?? undefined,
+      deptId: data.deptId ?? undefined,
+      certificateNo: (data as any).certificateNo ?? undefined,
+    }
   } else {
     isEdit.value = false
     form.value = { username: '', password: '', displayName: '' }
@@ -86,7 +97,7 @@ async function handleSubmit() {
           <el-input v-model="form.username" :disabled="isEdit" placeholder="登录用户名" />
         </el-form-item>
         <el-form-item v-if="!isEdit" label="密码" prop="password">
-          <el-input v-model="form.password" type="password" show-password placeholder="至少6位" />
+          <el-input v-model="form.password" type="password" show-password placeholder="至少8位，英文+数字" />
         </el-form-item>
       </div>
 
@@ -100,6 +111,9 @@ async function handleSubmit() {
         </el-form-item>
         <el-form-item label="邮箱">
           <el-input v-model="form.email" placeholder="请输入邮箱" />
+        </el-form-item>
+        <el-form-item label="证书编号">
+          <el-input v-model="form.certificateNo" placeholder="选填，测评人员证书编号" maxlength="64" />
         </el-form-item>
       </div>
     </el-form>

@@ -50,6 +50,20 @@
       "when": 1776419024061,
       "tag": "0006_tranquil_edwin_jarvis",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1776672280840,
+      "tag": "0007_mean_mister_sinister",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1776679490909,
+      "tag": "0008_tearful_mole_man",
+      "breakpoints": true
     }
   ]
 }

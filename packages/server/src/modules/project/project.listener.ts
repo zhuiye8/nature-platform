@@ -29,10 +29,27 @@ export class ProjectListener {
   async handleNodeCompleted(payload: WorkflowNodeCompletedEvent) {
     if (payload.bizType !== 'PROJECT_REGISTER') return;
 
-    if (payload.nodeKey === 'PROJECT_REVIEW') {
+    // ── DEPT_REVIEW (部门经理确认) ──
+    // 部门经理通过/驳回 — 只确认，不分配人员
+    if (payload.nodeKey === 'DEPT_REVIEW') {
+      if (payload.event === 'REJECT') {
+        this.logger.log(
+          `Project #${payload.bizId} dept review rejected — updating status`,
+        );
+        await this.db
+          .update(projectRegister)
+          .set({ status: 'REJECTED', updatedAt: new Date() })
+          .where(eq(projectRegister.id, payload.bizId));
+      }
+      // APPROVE: workflow moves to DIRECTOR_REVIEW; no business state change here
+      return;
+    }
+
+    // ── DIRECTOR_REVIEW (项目主管审核并分配) ──
+    if (payload.nodeKey === 'DIRECTOR_REVIEW') {
       if (payload.event === 'APPROVE') {
         this.logger.log(
-          `Project #${payload.bizId} review approved — updating status`,
+          `Project #${payload.bizId} director review approved — updating status + assigning members`,
         );
         await this.db
           .update(projectRegister)
@@ -42,7 +59,7 @@ export class ProjectListener {
         // Generate system_no for each project_system_item
         await this.generateSystemNumbers(payload.bizId);
 
-        // Insert PM from extraData
+        // Insert PM from extraData (from senior/middle assessor pool)
         const pmUserId: number | undefined = payload.extraData?.pmUserId;
         if (pmUserId) {
           this.logger.log(`Assigning PM #${pmUserId} to project #${payload.bizId}`);
@@ -55,7 +72,7 @@ export class ProjectListener {
           });
         }
 
-        // Insert assessors from extraData
+        // Insert assessors from extraData (multi-select from all 3 levels)
         const assessorUserIds: number[] =
           payload.extraData?.assessorUserIds ?? [];
         if (assessorUserIds.length > 0) {
@@ -63,6 +80,8 @@ export class ProjectListener {
             `Assigning ${assessorUserIds.length} assessor(s) to project #${payload.bizId}`,
           );
           for (const userId of assessorUserIds) {
+            // Skip duplicate if PM is also selected as assessor
+            if (userId === pmUserId) continue;
             await this.db.insert(projectMember).values({
               projectId: payload.bizId,
               userId,
@@ -74,7 +93,7 @@ export class ProjectListener {
         }
       } else if (payload.event === 'REJECT') {
         this.logger.log(
-          `Project #${payload.bizId} review rejected — updating status`,
+          `Project #${payload.bizId} director review rejected — updating status`,
         );
         await this.db
           .update(projectRegister)

@@ -630,10 +630,13 @@ export class WorkflowService {
   }
 
   async getInstanceByBiz(bizType: string, bizId: number) {
+    // 同一业务对象理论上只应有一条实例；若历史数据出现重复，
+    // 优先返回最新创建的（id 最大）那条，避免旧的 COMPLETED 实例误导业务判断
     const instances = await this.db
       .select()
       .from(wfInstance)
       .where(and(eq(wfInstance.bizType, bizType), eq(wfInstance.bizId, bizId)))
+      .orderBy(desc(wfInstance.id))
       .limit(1);
     const instance = instances[0];
     if (!instance) return null;

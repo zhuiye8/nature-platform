@@ -33,14 +33,16 @@ export class PoliceListener {
   ) {}
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Auto-create police_register when PROJECT_REVIEW is approved.
-  // This replaces the manual "新建登记" button + PoliceForm popup.
+  // Auto-create police_register when DIRECTOR_REVIEW is approved.
+  // (Previously triggered by PROJECT_REVIEW, which has been split into
+  // DEPT_REVIEW + DIRECTOR_REVIEW. Only the latter's approval means the
+  // project has been fully reviewed and assigned members.)
   // ─────────────────────────────────────────────────────────────────────────
   @OnEvent('workflow.node.completed')
   async handleNodeCompleted(payload: WorkflowNodeCompletedEvent) {
     if (
       payload.bizType !== 'PROJECT_REGISTER' ||
-      payload.nodeKey !== 'PROJECT_REVIEW' ||
+      payload.nodeKey !== 'DIRECTOR_REVIEW' ||
       payload.event !== 'APPROVE'
     ) {
       return;
@@ -62,7 +64,7 @@ export class PoliceListener {
 
     await this.db.insert(policeRegister).values({
       projectRegisterId: payload.bizId,
-      status: 'DRAFT',
+      status: 'PENDING',
       createdBy: payload.operatorId,
     });
 
@@ -92,7 +94,7 @@ export class PoliceListener {
       .limit(1);
 
     const record = rows[0];
-    if (!record || record.status !== 'DRAFT') return;
+    if (!record || record.status !== 'PENDING') return;
 
     // Verify at least one non-deleted file exists (defensive check)
     const files = await this.db

@@ -75,8 +75,12 @@ async function handleChangePassword() {
     ElMessage.warning('请输入新密码')
     return
   }
-  if (pwdForm.value.newPassword.length < 6) {
-    ElMessage.warning('新密码长度不能少于6位')
+  if (pwdForm.value.newPassword.length < 8) {
+    ElMessage.warning('新密码长度不能少于8位')
+    return
+  }
+  if (!/^(?=.*[A-Za-z])(?=.*\d).+$/.test(pwdForm.value.newPassword)) {
+    ElMessage.warning('新密码必须同时包含英文字母和数字')
     return
   }
   if (pwdForm.value.newPassword !== pwdForm.value.confirmPassword) {
@@ -200,7 +204,7 @@ onMounted(fetchProfile)
           <el-input v-model="pwdForm.oldPassword" type="password" show-password placeholder="请输入当前密码" />
         </el-form-item>
         <el-form-item label="新密码">
-          <el-input v-model="pwdForm.newPassword" type="password" show-password placeholder="请输入新密码（至少6位）" />
+          <el-input v-model="pwdForm.newPassword" type="password" show-password placeholder="请输入新密码（至少8位，必须含英文字母和数字）" />
         </el-form-item>
         <el-form-item label="确认新密码">
           <el-input v-model="pwdForm.confirmPassword" type="password" show-password placeholder="请再次输入新密码" />

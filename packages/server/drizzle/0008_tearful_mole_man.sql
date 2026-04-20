@@ -1,0 +1,1 @@
+ALTER TABLE "police_register" ALTER COLUMN "status" SET DEFAULT 'PENDING';

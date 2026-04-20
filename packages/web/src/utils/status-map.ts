@@ -5,7 +5,7 @@ export type ActionButtonType = NonNullable<ButtonProps['type']>
 
 export const statusLabel: Record<string, string> = {
   DRAFT: '草稿',
-  SUBMITTED: '已提交',
+  SUBMITTED: '审核中',
   APPROVED: '已通过',
   REJECTED: '已驳回',
   COMPLETED: '已完成',
@@ -46,7 +46,9 @@ export const statusLabel: Record<string, string> = {
   CONTRACT_AUTO_NUMBER: '自动编号',
   CONTRACT_ARCHIVE: '合同归档',
   PROJECT_REGISTER_NODE: '项目登记申请',
-  PROJECT_REVIEW: '项目登记审核',
+  DEPT_REVIEW: '部门经理确认',
+  DIRECTOR_REVIEW: '项目主管审核并分配',
+  PROJECT_REVIEW: '项目登记审核', // 兼容旧数据
   POLICE_REGISTER: '公安登记',
   ON_SITE_ASSESSMENT: '现场测评实施',
   TECH_REVIEW: '技术审核',

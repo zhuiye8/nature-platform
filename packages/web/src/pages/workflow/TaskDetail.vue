@@ -47,7 +47,10 @@ const canOperate = computed(() => {
   return assigneeId === authStore.user?.id
 })
 const nodeKey = computed(() => taskData.value?.nodeKey ?? '')
-const isProjectReview = computed(() => nodeKey.value === 'PROJECT_REVIEW')
+// Dept review: just approve/reject, no assignment
+const isDeptReview = computed(() => nodeKey.value === 'DEPT_REVIEW')
+// Director review: approve + assign PM (single) + assessors (multi, grouped by level)
+const isDirectorReview = computed(() => nodeKey.value === 'DIRECTOR_REVIEW')
 const isReportAssign = computed(() => nodeKey.value === 'REPORT_ASSIGN')
 const isReportCompile = computed(() => nodeKey.value === 'REPORT_COMPILE')
 const isQualityReview = computed(() => ['QUALITY_REVIEW', 'TECH_REVIEW', 'CONTENT_REVIEW'].includes(nodeKey.value))
@@ -70,11 +73,38 @@ function onOpinionCompleted() {
   router.push('/dashboard')
 }
 
-// Assessor + PM selection for PROJECT_REVIEW approval
-const assessorOptions = ref<{ id: number; displayName: string }[]>([])
+// Assessor + PM selection for DIRECTOR_REVIEW approval
+// 3 assessor levels: senior / middle / junior
+// PM candidates = senior + middle (single select)
+// Assessor candidates = all 3 levels (multi select, grouped by level)
+const seniorAssessors = ref<{ id: number; displayName: string }[]>([])
+const middleAssessors = ref<{ id: number; displayName: string }[]>([])
+const juniorAssessors = ref<{ id: number; displayName: string }[]>([])
 const selectedAssessorIds = ref<number[]>([])
-const pmOptions = ref<{ id: number; displayName: string }[]>([])
 const selectedPmId = ref<number | undefined>(undefined)
+
+// 已选汇总（用于底部确认面板）
+const selectedPmInfo = computed(() => {
+  if (!selectedPmId.value) return null
+  const senior = seniorAssessors.value.find((u) => u.id === selectedPmId.value)
+  if (senior) return { ...senior, level: 'senior' as const, levelLabel: '高级' }
+  const middle = middleAssessors.value.find((u) => u.id === selectedPmId.value)
+  if (middle) return { ...middle, level: 'middle' as const, levelLabel: '中级' }
+  return null
+})
+
+const selectedAssessorsByLevel = computed(() => {
+  const idSet = new Set(selectedAssessorIds.value)
+  return {
+    senior: seniorAssessors.value.filter((u) => idSet.has(u.id)),
+    middle: middleAssessors.value.filter((u) => idSet.has(u.id)),
+    junior: juniorAssessors.value.filter((u) => idSet.has(u.id)),
+  }
+})
+
+const hasAnyAssignSelection = computed(
+  () => !!selectedPmId.value || selectedAssessorIds.value.length > 0,
+)
 
 // (File pools now handled by FilePoolPanel component)
 
@@ -90,6 +120,18 @@ async function fetchContractFile(bizId: number) {
     const descFiles = (await getFileList('CONTRACT_DESC', bizId)) as any as FileItem[]
     contractDescFileForReview.value = descFiles && descFiles.length > 0 ? descFiles[0] : null
   } catch { contractDescFileForReview.value = null }
+}
+
+// Related contract attachments for PROJECT_REGISTER review (DEPT/DIRECTOR_REVIEW)
+// These are read-only references to the contract's files
+const linkedContractFiles = ref<FileItem[]>([])
+const linkedContractDescFiles = ref<FileItem[]>([])
+
+async function fetchLinkedContractAttachments(contractId: number) {
+  try { linkedContractFiles.value = (await getFileList('CONTRACT', contractId)) as any as FileItem[] }
+  catch { linkedContractFiles.value = [] }
+  try { linkedContractDescFiles.value = (await getFileList('CONTRACT_DESC', contractId)) as any as FileItem[] }
+  catch { linkedContractDescFiles.value = [] }
 }
 
 function handleFileDownload(fileId: number) {
@@ -149,22 +191,31 @@ async function fetchData() {
     } else if (type === 'PROJECT_REGISTER' && id) {
       bizData.value = (await getProjectDetail(id)) as any
       await loadSystemItemsWithFiles(id)
-      // Load associated contract info for project review
+      // Load associated contract info + attachments for project review
       if (bizData.value?.contractId) {
         try {
           contractData.value = (await getContractDetail(bizData.value.contractId)) as any
         } catch { contractData.value = null }
+        await fetchLinkedContractAttachments(bizData.value.contractId)
       }
     }
 
-    // Load assessor + PM candidates if this is a project review task
-    if (task?.nodeKey === 'PROJECT_REVIEW') {
+    // Load assessor candidates (grouped by level) for DIRECTOR_REVIEW
+    if (task?.nodeKey === 'DIRECTOR_REVIEW') {
       try {
-        assessorOptions.value = (await getUsersByRole('assessor')) as any
-      } catch { assessorOptions.value = [] }
-      try {
-        pmOptions.value = (await getUsersByRole('project_manager')) as any
-      } catch { pmOptions.value = [] }
+        const [senior, middle, junior] = await Promise.all([
+          getUsersByRole('senior_assessor'),
+          getUsersByRole('middle_assessor'),
+          getUsersByRole('junior_assessor'),
+        ])
+        seniorAssessors.value = senior as any
+        middleAssessors.value = middle as any
+        juniorAssessors.value = junior as any
+      } catch {
+        seniorAssessors.value = []
+        middleAssessors.value = []
+        juniorAssessors.value = []
+      }
     }
 
     // Load report writer candidates if this is a report assign task
@@ -251,8 +302,8 @@ async function handleAction(action: 'APPROVE' | 'REJECT') {
     return
   }
 
-  // Project review: must select PM + at least 1 assessor when approving
-  if (isProjectReview.value && action === 'APPROVE') {
+  // Director review: must select PM + at least 1 assessor when approving
+  if (isDirectorReview.value && action === 'APPROVE') {
     if (!selectedPmId.value) {
       ElMessage.warning('请选择项目经理')
       return
@@ -266,7 +317,7 @@ async function handleAction(action: 'APPROVE' | 'REJECT') {
   submitting.value = true
   try {
     const extraData: Record<string, any> = {}
-    if (isProjectReview.value && action === 'APPROVE') {
+    if (isDirectorReview.value && action === 'APPROVE') {
       extraData.pmUserId = selectedPmId.value
       extraData.assessorUserIds = selectedAssessorIds.value
     }
@@ -471,6 +522,39 @@ onMounted(() => {
           <span v-else>--</span>
         </el-descriptions-item>
       </el-descriptions>
+
+      <!-- 关联合同附件 -->
+      <div v-if="linkedContractFiles.length > 0 || linkedContractDescFiles.length > 0" style="margin-top: 16px">
+        <h4 style="margin: 0 0 10px; font-size: 14px; color: #606266">合同附件</h4>
+        <div v-if="linkedContractFiles.length > 0" style="margin-bottom: 12px">
+          <div style="font-size: 12px; color: #909399; margin-bottom: 6px">合同文件</div>
+          <div style="display: flex; flex-direction: column; gap: 6px">
+            <div
+              v-for="f in linkedContractFiles"
+              :key="'lcf-'+f.id"
+              style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #fafafa; border-radius: 4px; border: 1px solid var(--el-border-color-extra-light)"
+            >
+              <el-link type="primary" :underline="false" @click="openFilePreview(f.id, f.fileName)">{{ f.fileName }}</el-link>
+              <span style="color: #909399; font-size: 12px">{{ formatFileSize(f.fileSize) }}</span>
+              <span style="color: #909399; font-size: 12px; margin-left: auto">{{ f.uploaderName || '--' }} · {{ formatTime(f.uploadedAt) }}</span>
+            </div>
+          </div>
+        </div>
+        <div v-if="linkedContractDescFiles.length > 0">
+          <div style="font-size: 12px; color: #909399; margin-bottom: 6px">合同附件说明</div>
+          <div style="display: flex; flex-direction: column; gap: 6px">
+            <div
+              v-for="f in linkedContractDescFiles"
+              :key="'lcd-'+f.id"
+              style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #fafafa; border-radius: 4px; border: 1px solid var(--el-border-color-extra-light)"
+            >
+              <el-link type="primary" :underline="false" @click="openFilePreview(f.id, f.fileName)">{{ f.fileName }}</el-link>
+              <span style="color: #909399; font-size: 12px">{{ formatFileSize(f.fileSize) }}</span>
+              <span style="color: #909399; font-size: 12px; margin-left: auto">{{ f.uploaderName || '--' }} · {{ formatTime(f.uploadedAt) }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
     </el-card>
 
     <!-- ── 项目业务数据 ──────────────────────────────────────────────── -->
@@ -658,47 +742,178 @@ onMounted(() => {
         <span style="font-weight: 600">审核操作</span>
       </template>
 
-      <!-- PROJECT_REVIEW: PM + assessor selection -->
-      <div v-if="isProjectReview" style="margin-bottom: 16px">
-        <div style="margin-bottom: 8px; font-weight: 600; font-size: 14px">
-          分配项目经理 <span style="color: #f56c6c">*</span>
-        </div>
-        <el-select
-          v-model="selectedPmId"
-          filterable
-          placeholder="请选择项目经理"
-          style="width: 100%; margin-bottom: 16px"
-        >
-          <el-option
-            v-for="user in pmOptions"
-            :key="user.id"
-            :label="user.displayName"
-            :value="user.id"
-          />
-        </el-select>
+      <!-- DEPT_REVIEW: 部门经理仅确认，不分配人员（无额外提示，直接走下方备注+通过/驳回） -->
 
-        <div style="margin-bottom: 8px; font-weight: 600; font-size: 14px">
-          分配测评师 <span style="color: #f56c6c">*</span>
-          <span style="color: #909399; font-weight: normal; font-size: 12px; margin-left: 8px">
-            审核通过后将自动分配为本项目的测评师
-          </span>
+
+      <!-- DIRECTOR_REVIEW: 项目主管审核+分配 PM + 测评师（分级） -->
+      <div v-if="isDirectorReview" class="assign-panel">
+        <!-- ── 项目经理（单选） ── -->
+        <div class="assign-section">
+          <div class="assign-section__head">
+            <span class="assign-section__title">
+              分配项目经理 <span class="assign-section__required">*</span>
+            </span>
+            <span class="assign-section__hint">（仅高级 / 中级测评师可担任）</span>
+          </div>
+
+          <div v-if="seniorAssessors.length === 0 && middleAssessors.length === 0" class="assign-empty">
+            暂无高/中级测评师
+          </div>
+
+          <template v-else>
+            <div v-if="seniorAssessors.length > 0" class="assign-level level--senior">
+              <div class="assign-level__head">
+                <span class="assign-level__name">高级</span>
+                <span class="assign-level__count">{{ seniorAssessors.length }}</span>
+              </div>
+              <div class="assign-level__grid">
+                <label
+                  v-for="u in seniorAssessors"
+                  :key="'pm-s-'+u.id"
+                  :class="['person-chip', { 'is-selected': selectedPmId === u.id }]"
+                >
+                  <input type="radio" name="pm" :value="u.id" v-model="selectedPmId" class="person-chip__input" />
+                  <span class="person-chip__check"></span>
+                  <span class="person-chip__name">{{ u.displayName }}</span>
+                </label>
+              </div>
+            </div>
+
+            <div v-if="middleAssessors.length > 0" class="assign-level level--middle">
+              <div class="assign-level__head">
+                <span class="assign-level__name">中级</span>
+                <span class="assign-level__count">{{ middleAssessors.length }}</span>
+              </div>
+              <div class="assign-level__grid">
+                <label
+                  v-for="u in middleAssessors"
+                  :key="'pm-m-'+u.id"
+                  :class="['person-chip', { 'is-selected': selectedPmId === u.id }]"
+                >
+                  <input type="radio" name="pm" :value="u.id" v-model="selectedPmId" class="person-chip__input" />
+                  <span class="person-chip__check"></span>
+                  <span class="person-chip__name">{{ u.displayName }}</span>
+                </label>
+              </div>
+            </div>
+          </template>
         </div>
-        <el-select
-          v-model="selectedAssessorIds"
-          multiple
-          filterable
-          placeholder="请选择测评师（可多选）"
-          style="width: 100%"
-        >
-          <el-option
-            v-for="user in assessorOptions"
-            :key="user.id"
-            :label="user.displayName"
-            :value="user.id"
-          />
-        </el-select>
-        <div v-if="selectedAssessorIds.length > 0" style="margin-top: 4px; color: #67c23a; font-size: 12px">
-          已选 {{ selectedAssessorIds.length }} 人
+
+        <!-- ── 测评师（多选） ── -->
+        <div class="assign-section">
+          <div class="assign-section__head">
+            <span class="assign-section__title">
+              分配测评师 <span class="assign-section__required">*</span>
+            </span>
+            <span v-if="selectedAssessorIds.length > 0" class="assign-section__selected">
+              已选 <strong>{{ selectedAssessorIds.length }}</strong> 人
+            </span>
+          </div>
+
+          <div v-if="seniorAssessors.length + middleAssessors.length + juniorAssessors.length === 0" class="assign-empty">
+            暂无测评师
+          </div>
+
+          <template v-else>
+            <div v-if="seniorAssessors.length > 0" class="assign-level level--senior">
+              <div class="assign-level__head">
+                <span class="assign-level__name">高级</span>
+                <span class="assign-level__count">{{ seniorAssessors.length }}</span>
+              </div>
+              <div class="assign-level__grid">
+                <label
+                  v-for="u in seniorAssessors"
+                  :key="'as-s-'+u.id"
+                  :class="['person-chip', { 'is-selected': selectedAssessorIds.includes(u.id) }]"
+                >
+                  <input type="checkbox" :value="u.id" v-model="selectedAssessorIds" class="person-chip__input" />
+                  <span class="person-chip__check"></span>
+                  <span class="person-chip__name">{{ u.displayName }}</span>
+                </label>
+              </div>
+            </div>
+
+            <div v-if="middleAssessors.length > 0" class="assign-level level--middle">
+              <div class="assign-level__head">
+                <span class="assign-level__name">中级</span>
+                <span class="assign-level__count">{{ middleAssessors.length }}</span>
+              </div>
+              <div class="assign-level__grid">
+                <label
+                  v-for="u in middleAssessors"
+                  :key="'as-m-'+u.id"
+                  :class="['person-chip', { 'is-selected': selectedAssessorIds.includes(u.id) }]"
+                >
+                  <input type="checkbox" :value="u.id" v-model="selectedAssessorIds" class="person-chip__input" />
+                  <span class="person-chip__check"></span>
+                  <span class="person-chip__name">{{ u.displayName }}</span>
+                </label>
+              </div>
+            </div>
+
+            <div v-if="juniorAssessors.length > 0" class="assign-level level--junior">
+              <div class="assign-level__head">
+                <span class="assign-level__name">初级</span>
+                <span class="assign-level__count">{{ juniorAssessors.length }}</span>
+              </div>
+              <div class="assign-level__grid">
+                <label
+                  v-for="u in juniorAssessors"
+                  :key="'as-j-'+u.id"
+                  :class="['person-chip', { 'is-selected': selectedAssessorIds.includes(u.id) }]"
+                >
+                  <input type="checkbox" :value="u.id" v-model="selectedAssessorIds" class="person-chip__input" />
+                  <span class="person-chip__check"></span>
+                  <span class="person-chip__name">{{ u.displayName }}</span>
+                </label>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <!-- ── 已选汇总（最终确认） ── -->
+        <div v-if="hasAnyAssignSelection" class="assign-summary">
+          <div class="assign-summary__title">
+            <el-icon style="margin-right: 6px"><svg viewBox="0 0 1024 1024" width="14" height="14"><path d="M432 726.4 192 486.4l45.6-45.6L432 635.2l354.4-354.4L832 326.4z" fill="currentColor"/></svg></el-icon>
+            已选分配清单
+          </div>
+
+          <div class="assign-summary__row">
+            <span class="assign-summary__label">项目经理</span>
+            <div class="assign-summary__value">
+              <template v-if="selectedPmInfo">
+                <span :class="['summary-chip', 'level--' + selectedPmInfo.level]">
+                  <span class="summary-chip__level">{{ selectedPmInfo.levelLabel }}</span>
+                  <span class="summary-chip__name">{{ selectedPmInfo.displayName }}</span>
+                </span>
+              </template>
+              <span v-else class="assign-summary__empty">未选择</span>
+            </div>
+          </div>
+
+          <div class="assign-summary__row">
+            <span class="assign-summary__label">
+              测评师
+              <span v-if="selectedAssessorIds.length > 0" class="assign-summary__count">{{ selectedAssessorIds.length }}</span>
+            </span>
+            <div class="assign-summary__value">
+              <template v-if="selectedAssessorIds.length > 0">
+                <span v-for="u in selectedAssessorsByLevel.senior" :key="'sm-s-'+u.id" class="summary-chip level--senior">
+                  <span class="summary-chip__level">高</span>
+                  <span class="summary-chip__name">{{ u.displayName }}</span>
+                </span>
+                <span v-for="u in selectedAssessorsByLevel.middle" :key="'sm-m-'+u.id" class="summary-chip level--middle">
+                  <span class="summary-chip__level">中</span>
+                  <span class="summary-chip__name">{{ u.displayName }}</span>
+                </span>
+                <span v-for="u in selectedAssessorsByLevel.junior" :key="'sm-j-'+u.id" class="summary-chip level--junior">
+                  <span class="summary-chip__level">初</span>
+                  <span class="summary-chip__name">{{ u.displayName }}</span>
+                </span>
+              </template>
+              <span v-else class="assign-summary__empty">未选择</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -783,3 +998,362 @@ onMounted(() => {
     <SystemItemDetailDialog v-model:visible="siDialogVisible" :item="siDialogItem" />
   </div>
 </template>
+
+<style scoped>
+/* ══════════════════════════════════════════════════════════════
+ * 分配面板（DIRECTOR_REVIEW）
+ * ══════════════════════════════════════════════════════════════ */
+.assign-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.assign-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.assign-section__head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed var(--el-border-color-light);
+}
+
+.assign-section__title {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--el-text-color-primary);
+}
+
+.assign-section__required {
+  color: var(--el-color-danger);
+  margin-left: 2px;
+}
+
+.assign-section__hint {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  font-weight: normal;
+}
+
+.assign-section__selected {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--el-color-success);
+}
+
+.assign-section__selected strong {
+  font-size: 14px;
+  font-weight: 700;
+  margin: 0 2px;
+}
+
+.assign-empty {
+  padding: 16px;
+  text-align: center;
+  color: var(--el-text-color-secondary);
+  background: var(--el-fill-color-lighter);
+  border-radius: 6px;
+}
+
+/* ── 级别分组 ── */
+.assign-level {
+  --level-color: #909399;
+  --level-bg: rgba(144, 147, 153, 0.08);
+  padding: 10px 12px 12px 16px;
+  border-radius: 6px;
+  border-left: 3px solid var(--level-color);
+  background: var(--level-bg);
+}
+
+.assign-level.level--senior {
+  --level-color: #e6a23c;
+  --level-bg: rgba(230, 162, 60, 0.06);
+}
+
+.assign-level.level--middle {
+  --level-color: #409eff;
+  --level-bg: rgba(64, 158, 255, 0.05);
+}
+
+.assign-level.level--junior {
+  --level-color: #909399;
+  --level-bg: rgba(144, 147, 153, 0.04);
+}
+
+.assign-level + .assign-level {
+  margin-top: 10px;
+}
+
+.assign-level__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.assign-level__name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--level-color);
+  letter-spacing: 0.5px;
+}
+
+.assign-level__count {
+  font-size: 11px;
+  color: var(--el-text-color-secondary);
+  background: var(--el-bg-color);
+  padding: 1px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--el-border-color-lighter);
+}
+
+.assign-level__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(108px, 1fr));
+  gap: 8px;
+}
+
+/* ── 人员选择卡片 ── */
+.person-chip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  min-height: 36px;
+  border: 1px solid var(--el-border-color);
+  border-radius: 6px;
+  background: var(--el-bg-color);
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s ease;
+}
+
+.person-chip:hover:not(.is-selected) {
+  border-color: var(--level-color, var(--el-color-primary-light-5));
+  background: var(--el-color-primary-light-9);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
+}
+
+.person-chip.is-selected {
+  border-color: var(--level-color, var(--el-color-primary));
+  background: var(--level-color, var(--el-color-primary));
+  color: #fff;
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--level-color, #409eff) 30%, transparent);
+}
+
+.person-chip__input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.person-chip__check {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--el-border-color-darker);
+  border-radius: 3px;
+  background: var(--el-bg-color);
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+/* radio (PM) uses circular check */
+.person-chip:has(input[type="radio"]) .person-chip__check {
+  border-radius: 50%;
+}
+
+.person-chip.is-selected .person-chip__check {
+  background: #fff;
+  border-color: #fff;
+}
+
+.person-chip.is-selected .person-chip__check::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-radius: inherit;
+  background: var(--level-color, var(--el-color-primary));
+  transform: translate(-50%, -50%);
+}
+
+/* checkbox (assessor) uses checkmark instead of dot */
+.person-chip:has(input[type="checkbox"]).is-selected .person-chip__check::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 0px;
+  width: 5px;
+  height: 9px;
+  border: solid var(--level-color, var(--el-color-primary));
+  border-width: 0 2px 2px 0;
+  background: transparent;
+  border-radius: 0;
+  transform: rotate(45deg);
+}
+
+.person-chip__name {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 移动端响应 */
+@media (max-width: 640px) {
+  .assign-level__grid {
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  }
+  .person-chip__name {
+    font-size: 12px;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+ * 已选汇总面板（底部确认）
+ * ══════════════════════════════════════════════════════════════ */
+.assign-summary {
+  margin-top: 4px;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, rgba(64, 158, 255, 0.04) 0%, rgba(103, 194, 58, 0.04) 100%);
+  border: 1px solid var(--el-color-primary-light-7);
+  border-radius: 8px;
+  position: relative;
+}
+
+.assign-summary::before {
+  content: '';
+  position: absolute;
+  left: -1px;
+  top: -1px;
+  bottom: -1px;
+  width: 3px;
+  background: linear-gradient(180deg, var(--el-color-primary) 0%, var(--el-color-success) 100%);
+  border-radius: 8px 0 0 8px;
+}
+
+.assign-summary__title {
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--el-color-primary);
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed var(--el-color-primary-light-5);
+}
+
+.assign-summary__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 6px 0;
+}
+
+.assign-summary__row + .assign-summary__row {
+  border-top: 1px dashed var(--el-border-color-extra-light);
+  margin-top: 2px;
+  padding-top: 8px;
+}
+
+.assign-summary__label {
+  flex-shrink: 0;
+  min-width: 72px;
+  padding-top: 3px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--el-text-color-regular);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.assign-summary__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--el-color-success);
+  border-radius: 10px;
+}
+
+.assign-summary__value {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 28px;
+}
+
+.assign-summary__empty {
+  color: var(--el-text-color-placeholder);
+  font-size: 12px;
+  padding: 4px 0;
+}
+
+/* 汇总中的小 chip */
+.summary-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px 4px;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color);
+  border-radius: 14px;
+  font-size: 12px;
+  line-height: 1.4;
+  transition: all 0.15s ease;
+}
+
+.summary-chip:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
+}
+
+.summary-chip__level {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  border-radius: 10px;
+  letter-spacing: 0.5px;
+}
+
+.summary-chip__name {
+  color: var(--el-text-color-primary);
+  font-weight: 500;
+}
+
+/* 级别染色 */
+.summary-chip.level--senior { border-color: #e6a23c; }
+.summary-chip.level--senior .summary-chip__level { background: #e6a23c; }
+
+.summary-chip.level--middle { border-color: #409eff; }
+.summary-chip.level--middle .summary-chip__level { background: #409eff; }
+
+.summary-chip.level--junior { border-color: #909399; }
+.summary-chip.level--junior .summary-chip__level { background: #909399; }
+</style>

@@ -5,7 +5,7 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
-import { eq, and, or, ilike, count, desc, SQL } from 'drizzle-orm';
+import { eq, and, or, ilike, count, desc, inArray, SQL } from 'drizzle-orm';
 import * as bcrypt from 'bcrypt';
 import { DRIZZLE, DrizzleDB } from '../../database/database.module';
 import { userAccount } from '../../database/schema/user';
@@ -43,6 +43,21 @@ export class UserService {
     if (query.enabled !== undefined) {
       conditions.push(eq(userAccount.enabled, query.enabled));
     }
+    if (query.certificateNo) {
+      conditions.push(ilike(userAccount.certificateNo, `%${query.certificateNo}%`));
+    }
+    // Role filter: users with a specific role
+    if (query.roleCode) {
+      const userIdsWithRole = await this.db
+        .select({ userId: userRole.userId })
+        .from(userRole)
+        .where(eq(userRole.roleCode, query.roleCode));
+      const ids = userIdsWithRole.map((r) => r.userId);
+      if (ids.length === 0) {
+        return { list: [], total: 0, page, pageSize };
+      }
+      conditions.push(inArray(userAccount.id, ids));
+    }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
@@ -58,6 +73,7 @@ export class UserService {
           enabled: userAccount.enabled,
           sourceType: userAccount.sourceType,
           deptId: userAccount.deptId,
+          certificateNo: userAccount.certificateNo,
           createdAt: userAccount.createdAt,
         })
         .from(userAccount)
@@ -67,7 +83,23 @@ export class UserService {
         .offset((page - 1) * pageSize),
     ]);
 
-    return { list: rows, total: totalResult[0]?.total ?? 0, page, pageSize };
+    // Batch-load role codes for each user
+    const userIds = rows.map((r) => r.id);
+    const roleMap = new Map<number, string[]>();
+    if (userIds.length > 0) {
+      const roleRows = await this.db
+        .select({ userId: userRole.userId, roleCode: userRole.roleCode })
+        .from(userRole)
+        .where(inArray(userRole.userId, userIds));
+      for (const r of roleRows) {
+        const list = roleMap.get(r.userId) ?? [];
+        list.push(r.roleCode);
+        roleMap.set(r.userId, list);
+      }
+    }
+    const enriched = rows.map((r) => ({ ...r, roles: roleMap.get(r.id) ?? [] }));
+
+    return { list: enriched, total: totalResult[0]?.total ?? 0, page, pageSize };
   }
 
   // -----------------------------------------------------------------------
@@ -84,6 +116,7 @@ export class UserService {
         enabled: userAccount.enabled,
         sourceType: userAccount.sourceType,
         deptId: userAccount.deptId,
+        certificateNo: userAccount.certificateNo,
         createdAt: userAccount.createdAt,
       })
       .from(userAccount)
@@ -131,6 +164,7 @@ export class UserService {
         email: dto.email ?? null,
         deptId: dto.deptId ?? null,
         enabled: dto.enabled ?? true,
+        certificateNo: dto.certificateNo ?? null,
         sourceType: 'LOCAL',
       })
       .returning({
