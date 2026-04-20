@@ -16,7 +16,6 @@ import {
   UpdateUserDto,
   QueryUserDto,
   AssignRolesDto,
-  ResetPasswordDto,
 } from './dto/user.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
@@ -130,10 +129,7 @@ export class UserController {
 
   @Put(':id/reset-password')
   @RequirePermission('user:update')
-  async resetPassword(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() dto: ResetPasswordDto,
-  ) {
-    return this.userService.resetPassword(id, dto);
+  async resetPassword(@Param('id', ParseIntPipe) id: number) {
+    return this.userService.resetPassword(id);
   }
 }

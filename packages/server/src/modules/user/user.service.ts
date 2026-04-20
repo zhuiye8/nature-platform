@@ -16,7 +16,6 @@ import {
   UpdateUserDto,
   QueryUserDto,
   AssignRolesDto,
-  ResetPasswordDto,
 } from './dto/user.dto';
 
 @Injectable()
@@ -199,16 +198,26 @@ export class UserService {
   }
 
   // -----------------------------------------------------------------------
-  // Reset password
+  // Reset password — admin operation
+  // Resets to a fixed temporary password and forces the user to change it
+  // on next login. The temporary password itself complies with the new
+  // strength rules (8+ chars, letters + digits) so the DTO validator is
+  // bypassed (no user input accepted here).
   // -----------------------------------------------------------------------
-  async resetPassword(id: number, dto: ResetPasswordDto) {
+  private static readonly TEMP_PASSWORD = 'Nature@2026';
+
+  async resetPassword(id: number) {
     await this.findById(id);
-    const hash = await bcrypt.hash(dto.newPassword, 10);
+    const hash = await bcrypt.hash(UserService.TEMP_PASSWORD, 10);
     await this.db
       .update(userAccount)
-      .set({ passwordHash: hash, updatedAt: new Date() })
+      .set({
+        passwordHash: hash,
+        mustChangePwd: true,
+        updatedAt: new Date(),
+      })
       .where(eq(userAccount.id, id));
-    return { success: true };
+    return { success: true, tempPassword: UserService.TEMP_PASSWORD };
   }
 
   // -----------------------------------------------------------------------

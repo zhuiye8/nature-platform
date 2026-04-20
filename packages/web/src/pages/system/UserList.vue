@@ -50,9 +50,18 @@ async function handleToggleEnabled(row: UserItem) {
 
 async function handleResetPassword(row: UserItem) {
   try {
-    await ElMessageBox.confirm(`确定要重置 ${row.displayName} 的密码为 123456 吗？`, '重置密码')
-    await resetUserPassword(row.id, '123456')
-    ElMessage.success('密码已重置为 123456')
+    await ElMessageBox.confirm(
+      `确定要重置 ${row.displayName} 的密码吗？重置后用户首次登录时必须修改密码。`,
+      '重置密码',
+      { type: 'warning' },
+    )
+    const res = (await resetUserPassword(row.id)) as any
+    const tempPwd = res?.tempPassword || 'Nature@2026'
+    await ElMessageBox.alert(
+      `临时密码：<strong style="color:#f56c6c;font-size:16px">${tempPwd}</strong><br/><br/>请将此临时密码告知 <strong>${row.displayName}</strong>，用户首次登录后将被强制修改密码。`,
+      '重置成功',
+      { dangerouslyUseHTMLString: true, confirmButtonText: '我已记录' },
+    )
   } catch { /* cancelled or error */ }
 }
 

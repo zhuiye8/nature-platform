@@ -100,11 +100,3 @@ export class AssignRolesDto {
   roleCodes!: string[];
 }
 
-export class ResetPasswordDto {
-  @IsString()
-  @MinLength(8, { message: '密码长度不能少于8位' })
-  @Matches(/^(?=.*[A-Za-z])(?=.*\d).+$/, {
-    message: '密码必须同时包含英文字母和数字',
-  })
-  newPassword!: string;
-}

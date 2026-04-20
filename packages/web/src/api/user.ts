@@ -50,8 +50,8 @@ export const assignUserRoles = (id: number, roleCodes: string[]) =>
 export const toggleUserEnabled = (id: number) =>
   request.put(`/user/${id}/toggle-enabled`)
 
-export const resetUserPassword = (id: number, newPassword: string) =>
-  request.put(`/user/${id}/reset-password`, { newPassword })
+export const resetUserPassword = (id: number) =>
+  request.put<{ success: boolean; tempPassword: string }>(`/user/${id}/reset-password`)
 
 export const getSimpleUserList = (): Promise<SimpleUser[]> =>
   request.get('/user/simple-list') as any
