@@ -521,6 +521,15 @@ onMounted(() => {
           </template>
           <span v-else>--</span>
         </el-descriptions-item>
+        <template v-if="contractData.archiveStatus === 'ARCHIVED' || contractData.archiveStatus === 'PARTIAL_ARCHIVE'">
+          <el-descriptions-item label="归档状态">
+            <el-tag :type="contractData.archiveStatus === 'ARCHIVED' ? 'success' : 'warning'" size="small">
+              {{ contractData.archiveStatus === 'ARCHIVED' ? '已归档' : '部分归档' }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="归档人">{{ contractData.archivedByName || '--' }}</el-descriptions-item>
+          <el-descriptions-item label="归档时间" :span="2">{{ contractData.archivedAt ? formatTime(contractData.archivedAt) : '--' }}</el-descriptions-item>
+        </template>
       </el-descriptions>
 
       <!-- 关联合同附件 -->

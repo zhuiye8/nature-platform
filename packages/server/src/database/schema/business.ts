@@ -126,6 +126,7 @@ export const contract = pgTable('contract', {
   storageLocation: varchar('storage_location', { length: 255 }),
   archiveRemark: text('archive_remark'),
   archivedBy: bigint('archived_by', { mode: 'number' }),
+  archivedAt: timestamp('archived_at', { withTimezone: true }),
   scanFileUrl: varchar('scan_file_url', { length: 512 }),
 
   reviewStatus: varchar('review_status', { length: 32 }).notNull().default('DRAFT'),

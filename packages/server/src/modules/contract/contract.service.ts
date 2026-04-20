@@ -323,6 +323,7 @@ export class ContractService {
         storageLocation: contract.storageLocation,
         archiveRemark: contract.archiveRemark,
         archivedBy: contract.archivedBy,
+        archivedAt: contract.archivedAt,
         reviewStatus: contract.reviewStatus,
         remark: contract.remark,
         createdBy: contract.createdBy,
@@ -820,6 +821,7 @@ export class ContractService {
 
     const newArchiveStatus = dto.isComplete ? 'ARCHIVED' : 'PARTIAL_ARCHIVE';
 
+    const now = new Date();
     await this.db
       .update(contract)
       .set({
@@ -829,8 +831,10 @@ export class ContractService {
         fileCount: dto.fileCount ?? null,
         archiveRemark: dto.archiveRemark ?? null,
         archivedBy: userId,
+        // 首次归档时记录时间；补充归档时不覆盖原时间
+        archivedAt: existing.archivedAt ?? now,
         updatedBy: userId,
-        updatedAt: new Date(),
+        updatedAt: now,
       })
       .where(eq(contract.id, id));
 

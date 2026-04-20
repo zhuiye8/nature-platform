@@ -1,0 +1,1 @@
+ALTER TABLE "contract" ADD COLUMN "archived_at" timestamp with time zone;

@@ -282,6 +282,9 @@ export class ProjectService {
         partnerName: contract.partnerName,
         contactName: contract.contactName,
         contactPhone: contract.contactPhone,
+        contractArchiveStatus: contract.archiveStatus,
+        contractArchivedBy: contract.archivedBy,
+        contractArchivedAt: contract.archivedAt,
       })
       .from(projectRegister)
       .leftJoin(contract, eq(projectRegister.contractId, contract.id))
@@ -339,9 +342,21 @@ export class ProjectService {
       salesPersonName = users[0]?.displayName ?? null;
     }
 
+    // Resolve contract archiver name (if archived)
+    let contractArchivedByName: string | null = null;
+    if (rows[0].contractArchivedBy) {
+      const users = await this.db
+        .select({ displayName: userAccount.displayName })
+        .from(userAccount)
+        .where(eq(userAccount.id, rows[0].contractArchivedBy))
+        .limit(1);
+      contractArchivedByName = users[0]?.displayName ?? null;
+    }
+
     return {
       ...rows[0],
       salesPersonName,
+      contractArchivedByName,
       systemItems: items,
       members,
     };
