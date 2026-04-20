@@ -3,8 +3,8 @@ import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { ElMessage } from 'element-plus'
-import { User, Lock, Right } from '@element-plus/icons-vue'
-import { getDingtalkAuthUrl } from '@/api/auth'
+import { User, Lock, Right, Refresh } from '@element-plus/icons-vue'
+import { getDingtalkAuthUrl, getCaptcha } from '@/api/auth'
 
 const router = useRouter()
 const route = useRoute()
@@ -13,24 +13,70 @@ const loading = ref(false)
 const particleCanvas = ref<HTMLCanvasElement | null>(null)
 const year = new Date().getFullYear()
 
-const form = reactive({ username: '', password: '' })
+const form = reactive({ username: '', password: '', captchaAnswer: '' })
+
+// ── Captcha state ──
+const captchaEnabled = ref(false)
+const captchaId = ref('')
+const captchaSvg = ref('')
+const captchaLoading = ref(false)
+const captchaCooldown = ref(false)
+
+async function refreshCaptcha() {
+  // Debounce: 1s cooldown between refreshes
+  if (captchaCooldown.value || captchaLoading.value) return
+  captchaLoading.value = true
+  try {
+    const res = (await getCaptcha()) as any
+    captchaEnabled.value = !!res.enabled
+    if (res.enabled) {
+      captchaId.value = res.captchaId || ''
+      captchaSvg.value = res.svg || ''
+      form.captchaAnswer = ''
+    }
+  } catch {
+    captchaEnabled.value = false
+  } finally {
+    captchaLoading.value = false
+    if (captchaEnabled.value) {
+      captchaCooldown.value = true
+      setTimeout(() => { captchaCooldown.value = false }, 1000)
+    }
+  }
+}
 
 let animationFrame = 0
 let detachResize: (() => void) | null = null
 
 async function handleLogin() {
+  if (loading.value) return // 防重复提交
   if (!form.username || !form.password) {
     ElMessage.warning('请输入用户名和密码')
     return
   }
+  if (captchaEnabled.value && !form.captchaAnswer.trim()) {
+    ElMessage.warning('请输入验证码')
+    return
+  }
   loading.value = true
   try {
-    await authStore.login(form.username, form.password)
+    await authStore.login(
+      form.username,
+      form.password,
+      captchaEnabled.value ? captchaId.value : undefined,
+      captchaEnabled.value ? form.captchaAnswer.trim() : undefined,
+    )
     ElMessage.success('登录成功')
     const redirect = (route.query.redirect as string) || '/'
     router.push(redirect)
-  } catch { /* handled by interceptor */ }
-  finally { loading.value = false }
+  } catch {
+    // Login failed — refresh captcha automatically (old one was consumed)
+    if (captchaEnabled.value) {
+      await refreshCaptcha()
+    }
+  } finally {
+    loading.value = false
+  }
 }
 
 const dingtalkLoading = ref(false)
@@ -100,7 +146,10 @@ function initParticles() {
   tick()
 }
 
-onMounted(() => initParticles())
+onMounted(() => {
+  initParticles()
+  refreshCaptcha()
+})
 onUnmounted(() => {
   if (animationFrame) cancelAnimationFrame(animationFrame)
   if (detachResize) detachResize()
@@ -161,6 +210,26 @@ onUnmounted(() => {
             <el-input v-model="form.password" type="password" show-password placeholder="请输入密码" size="large">
               <template #prefix><el-icon><Lock /></el-icon></template>
             </el-input>
+          </div>
+
+          <div v-if="captchaEnabled" class="lp-field">
+            <label>验证码</label>
+            <div class="lp-captcha">
+              <el-input
+                v-model="form.captchaAnswer"
+                placeholder="请输入验证码"
+                size="large"
+                maxlength="8"
+                @keyup.enter="handleLogin"
+              />
+              <div
+                class="lp-captcha__img"
+                :class="{ 'is-disabled': captchaCooldown || captchaLoading }"
+                :title="captchaCooldown ? '请稍候再刷新' : '点击刷新验证码'"
+                @click="refreshCaptcha"
+                v-html="captchaSvg"
+              />
+            </div>
           </div>
 
           <button type="submit" class="lp-btn" :disabled="loading">
@@ -320,6 +389,22 @@ onUnmounted(() => {
 .lp-field :deep(.el-input__inner) { color: #dce8f5; }
 .lp-field :deep(.el-input__inner::placeholder) { color: rgba(180,210,240,0.5); }
 .lp-field :deep(.el-input__prefix-inner .el-icon) { color: rgba(160,200,240,0.6); }
+
+/* Captcha */
+.lp-captcha { display: flex; gap: 10px; align-items: stretch; }
+.lp-captcha .el-input { flex: 1; }
+.lp-captcha__img {
+  width: 140px; height: 46px; border-radius: 6px; overflow: hidden;
+  cursor: pointer; background: #f5f7fa;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid rgba(100,160,220,0.3); transition: all 0.2s;
+  flex-shrink: 0;
+}
+.lp-captcha__img:hover:not(.is-disabled) {
+  border-color: #409eff; box-shadow: 0 0 0 3px rgba(64,158,255,0.15);
+}
+.lp-captcha__img.is-disabled { cursor: not-allowed; opacity: 0.6; }
+.lp-captcha__img :deep(svg) { width: 100%; height: 100%; }
 
 .lp-btn {
   width: 100%; height: 48px; border: none; border-radius: 12px;

@@ -1,5 +1,15 @@
 import request from './request'
 
+export interface CaptchaResponse {
+  enabled: boolean
+  captchaId?: string
+  svg?: string
+}
+
+export function getCaptcha() {
+  return request.get<CaptchaResponse>('/auth/captcha')
+}
+
 export function getDingtalkAuthUrl() {
   return request.get<{ url: string; state: string }>('/auth/dingtalk/auth-url')
 }

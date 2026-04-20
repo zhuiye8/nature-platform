@@ -340,8 +340,11 @@ export class UserService {
     if (!oldPassword || !newPassword) {
       throw new BadRequestException('请填写旧密码和新密码');
     }
-    if (newPassword.length < 6) {
-      throw new BadRequestException('新密码长度不能少于6位');
+    if (newPassword.length < 8) {
+      throw new BadRequestException('新密码长度不能少于8位');
+    }
+    if (!/^(?=.*[A-Za-z])(?=.*\d).+$/.test(newPassword)) {
+      throw new BadRequestException('新密码必须同时包含英文字母和数字');
     }
 
     const rows = await this.db

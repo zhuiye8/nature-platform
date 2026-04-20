@@ -1,16 +1,29 @@
 import { Controller, Post, Get, Body, UseGuards, Delete } from '@nestjs/common';
 import { AuthService } from './auth.service';
+import { CaptchaService } from './captcha.service';
 import { LoginDto } from './dto/login.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly captchaService: CaptchaService,
+  ) {}
+
+  @Get('captcha')
+  async getCaptcha() {
+    if (!this.captchaService.isEnabled()) {
+      return { enabled: false };
+    }
+    const { captchaId, svg } = await this.captchaService.generate();
+    return { enabled: true, captchaId, svg };
+  }
 
   @Post('login')
   async login(@Body() dto: LoginDto) {
-    return this.authService.login(dto.username, dto.password);
+    return this.authService.login(dto);
   }
 
   @UseGuards(JwtAuthGuard)

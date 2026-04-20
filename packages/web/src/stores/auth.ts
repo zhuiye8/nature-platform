@@ -10,10 +10,17 @@ export const useAuthStore = defineStore('auth', () => {
   const isLoggedIn = computed(() => !!token.value)
   const permissions = computed(() => user.value?.permissions ?? [])
 
-  async function login(username: string, password: string) {
+  async function login(
+    username: string,
+    password: string,
+    captchaId?: string,
+    captchaAnswer?: string,
+  ) {
     const data = (await request.post('/auth/login', {
       username,
       password,
+      captchaId,
+      captchaAnswer,
     })) as unknown as LoginResponse
     token.value = data.accessToken
     user.value = data.user

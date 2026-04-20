@@ -13,6 +13,9 @@ import { eq, inArray } from 'drizzle-orm';
 import { DRIZZLE, DrizzleDB } from '../../database/database.module';
 import { userAccount, userRole, iamRole, iamRolePermission } from '../../database/schema';
 import { DingtalkNotifyService } from '../dingtalk/dingtalk-notify.service';
+import { CaptchaService } from './captcha.service';
+import { LoginThrottleService } from './login-throttle.service';
+import { LoginDto } from './dto/login.dto';
 
 interface DingtalkTokenResponse {
   accessToken?: string;
@@ -35,14 +38,36 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly dingtalkNotifyService: DingtalkNotifyService,
+    private readonly captchaService: CaptchaService,
+    private readonly throttleService: LoginThrottleService,
   ) {}
 
   // ===================================================================
   // Password Login
   // ===================================================================
 
-  async login(username: string, password: string) {
-    // Support login by username or mobile
+  async login(dto: LoginDto) {
+    const { username, password, captchaId, captchaAnswer } = dto;
+
+    // 1. Captcha check (if enabled)
+    if (this.captchaService.isEnabled()) {
+      const ok = await this.captchaService.validate(
+        captchaId || '',
+        captchaAnswer || '',
+      );
+      if (!ok) {
+        throw new UnauthorizedException('验证码错误或已过期');
+      }
+    }
+
+    // 2. Lockout check (account-based, not IP)
+    const lockRemaining = await this.throttleService.getLockRemaining(username);
+    if (lockRemaining > 0) {
+      const minutes = Math.ceil(lockRemaining / 60);
+      throw new UnauthorizedException(`账号已锁定，请 ${minutes} 分钟后重试`);
+    }
+
+    // 3. Find user by username or mobile
     let rows = await this.db
       .select()
       .from(userAccount)
@@ -59,6 +84,7 @@ export class AuthService {
 
     const user = rows[0];
     if (!user) {
+      await this.throttleService.recordFailure(username);
       throw new UnauthorizedException('用户名/手机号或密码错误');
     }
 
@@ -68,8 +94,19 @@ export class AuthService {
 
     const passwordValid = await bcrypt.compare(password, user.passwordHash);
     if (!passwordValid) {
-      throw new UnauthorizedException('用户名或密码错误');
+      const result = await this.throttleService.recordFailure(username);
+      if (result.locked) {
+        throw new UnauthorizedException(
+          `密码错误次数过多，账号已锁定 ${this.configService.get('LOGIN_LOCKOUT_MINUTES') || 15} 分钟`,
+        );
+      }
+      throw new UnauthorizedException(
+        `用户名或密码错误（剩余 ${result.attemptsLeft} 次尝试）`,
+      );
     }
+
+    // 4. Success — reset failure counter
+    await this.throttleService.reset(username);
 
     const { roles, roleNames, permissions } = await this.loadUserPermissions(user.id);
     const payload = { sub: user.id, username: user.username };

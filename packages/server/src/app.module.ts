@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { DatabaseModule } from './database/database.module';
+import { RedisModule } from './redis/redis.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CustomerModule } from './modules/customer/customer.module';
 import { ContractModule } from './modules/contract/contract.module';
@@ -30,6 +31,7 @@ import { CompileFileModule } from './modules/compile-file/compile-file.module';
     }),
     EventEmitterModule.forRoot(),
     DatabaseModule,
+    RedisModule,
     AuthModule,
     CustomerModule,
     ContractModule,

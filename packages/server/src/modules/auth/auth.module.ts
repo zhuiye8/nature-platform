@@ -5,6 +5,8 @@ import { ConfigService } from '@nestjs/config';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
+import { CaptchaService } from './captcha.service';
+import { LoginThrottleService } from './login-throttle.service';
 import { DingtalkModule } from '../dingtalk/dingtalk.module';
 
 @Module({
@@ -22,7 +24,7 @@ import { DingtalkModule } from '../dingtalk/dingtalk.module';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
+  providers: [AuthService, JwtStrategy, CaptchaService, LoginThrottleService],
   exports: [AuthService],
 })
 export class AuthModule {}
