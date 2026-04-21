@@ -51,46 +51,53 @@ export class ProjectListener {
         this.logger.log(
           `Project #${payload.bizId} director review approved — updating status + assigning members`,
         );
-        await this.db
-          .update(projectRegister)
-          .set({ status: 'APPROVED', updatedAt: new Date() })
-          .where(eq(projectRegister.id, payload.bizId));
-
-        // Generate system_no for each project_system_item
-        await this.generateSystemNumbers(payload.bizId);
-
-        // Insert PM from extraData (from senior/middle assessor pool)
         const pmUserId: number | undefined = payload.extraData?.pmUserId;
-        if (pmUserId) {
-          this.logger.log(`Assigning PM #${pmUserId} to project #${payload.bizId}`);
-          await this.db.insert(projectMember).values({
-            projectId: payload.bizId,
-            userId: pmUserId,
-            roleType: 'PM',
-            assignedBy: payload.operatorId,
-            assignedAt: new Date(),
-          });
-        }
-
-        // Insert assessors from extraData (multi-select from all 3 levels)
         const assessorUserIds: number[] =
           payload.extraData?.assessorUserIds ?? [];
-        if (assessorUserIds.length > 0) {
-          this.logger.log(
-            `Assigning ${assessorUserIds.length} assessor(s) to project #${payload.bizId}`,
-          );
-          for (const userId of assessorUserIds) {
-            // Skip duplicate if PM is also selected as assessor
-            if (userId === pmUserId) continue;
-            await this.db.insert(projectMember).values({
+
+        // Atomicity: status flip + system_no generation + PM/assessor
+        // insertion MUST succeed together. Without this transaction a
+        // partial failure (e.g. serial increment race, unique conflict)
+        // would leave the project as APPROVED but with no members
+        // assigned — undetectable from the UI.
+        await this.db.transaction(async (tx) => {
+          await tx
+            .update(projectRegister)
+            .set({ status: 'APPROVED', updatedAt: new Date() })
+            .where(eq(projectRegister.id, payload.bizId));
+
+          await this.generateSystemNumbers(tx, payload.bizId);
+
+          // Insert PM from extraData (from senior/middle assessor pool)
+          if (pmUserId) {
+            this.logger.log(`Assigning PM #${pmUserId} to project #${payload.bizId}`);
+            await tx.insert(projectMember).values({
               projectId: payload.bizId,
-              userId,
-              roleType: 'ASSESSOR',
+              userId: pmUserId,
+              roleType: 'PM',
               assignedBy: payload.operatorId,
               assignedAt: new Date(),
             });
           }
-        }
+
+          // Insert assessors from extraData (multi-select from all 3 levels)
+          if (assessorUserIds.length > 0) {
+            this.logger.log(
+              `Assigning ${assessorUserIds.length} assessor(s) to project #${payload.bizId}`,
+            );
+            for (const userId of assessorUserIds) {
+              // Skip duplicate if PM is also selected as assessor
+              if (userId === pmUserId) continue;
+              await tx.insert(projectMember).values({
+                projectId: payload.bizId,
+                userId,
+                roleType: 'ASSESSOR',
+                assignedBy: payload.operatorId,
+                assignedAt: new Date(),
+              });
+            }
+          }
+        });
       } else if (payload.event === 'REJECT') {
         this.logger.log(
           `Project #${payload.bizId} director review rejected — updating status`,
@@ -109,10 +116,16 @@ export class ProjectListener {
    * Counter scope: (contract_id, year_short) — multiple project registrations
    * on the same contract/year share the same counter (no.02, 03, 04…).
    * Different years start from 01 again.
+   *
+   * Runs inside the caller's transaction (tx) so serial increments and
+   * system_no writes either all commit or all roll back together.
    */
-  private async generateSystemNumbers(projectRegisterId: number): Promise<void> {
+  private async generateSystemNumbers(
+    tx: DrizzleDB,
+    projectRegisterId: number,
+  ): Promise<void> {
     // 1. Fetch contract info + contract year
-    const projRows = await this.db
+    const projRows = await tx
       .select({
         contractId: projectRegister.contractId,
         contractYear: projectRegister.contractYear,
@@ -123,7 +136,7 @@ export class ProjectListener {
     const proj = projRows[0];
     if (!proj) return;
 
-    const contractRows = await this.db
+    const contractRows = await tx
       .select({ contractNo: contract.contractNo })
       .from(contract)
       .where(eq(contract.id, proj.contractId))
@@ -140,7 +153,7 @@ export class ProjectListener {
     const yearShort = String(new Date().getFullYear()).slice(-2);
 
     // 2. Fetch all system items (by sort_order) that don't yet have a system_no
-    const items = await this.db
+    const items = await tx
       .select({
         id: projectSystemItem.id,
         sortOrder: projectSystemItem.sortOrder,
@@ -159,7 +172,7 @@ export class ProjectListener {
     // 3. For each item, atomically bump counter and assign system_no
     for (const item of items) {
       // Atomic UPSERT increment (same pattern as contract_serial)
-      const seqResult = await this.db.execute(sql`
+      const seqResult = await tx.execute(sql`
         INSERT INTO project_system_serial (contract_id, year_short, next_seq)
         VALUES (${proj.contractId}, ${yearShort}, 1)
         ON CONFLICT (contract_id, year_short)
@@ -171,7 +184,7 @@ export class ProjectListener {
       const seq = (seqResult as any)[0]?.next_seq as number;
       const systemNo = `${contractNo}-${yearShort}${String(seq).padStart(2, '0')}`;
 
-      await this.db
+      await tx
         .update(projectSystemItem)
         .set({ systemNo, updatedAt: new Date() })
         .where(eq(projectSystemItem.id, item.id));

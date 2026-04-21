@@ -11,7 +11,9 @@ import {
   decimal,
   date,
   primaryKey,
+  check,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 
 // ---------------------------------------------------------------------------
 // customer
@@ -279,23 +281,36 @@ export type NewProjectMember = typeof projectMember.$inferInsert;
 // ---------------------------------------------------------------------------
 // police_register
 // ---------------------------------------------------------------------------
-export const policeRegister = pgTable('police_register', {
-  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
-  projectRegisterId: bigint('project_register_id', { mode: 'number' }).notNull(),
-  registerNo: varchar('register_no', { length: 128 }),
-  filingAgency: varchar('filing_agency', { length: 255 }),
-  contactName: varchar('contact_name', { length: 64 }),
-  contactPhone: varchar('contact_phone', { length: 32 }),
-  projectManagerId: bigint('project_manager_id', { mode: 'number' }),
-  scanFileUrl: varchar('scan_file_url', { length: 512 }),
-  remark: text('remark'),
-  status: varchar('status', { length: 32 }).notNull().default('PENDING'),
+export const policeRegister = pgTable(
+  'police_register',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    projectRegisterId: bigint('project_register_id', { mode: 'number' }).notNull(),
+    registerNo: varchar('register_no', { length: 128 }),
+    filingAgency: varchar('filing_agency', { length: 255 }),
+    contactName: varchar('contact_name', { length: 64 }),
+    contactPhone: varchar('contact_phone', { length: 32 }),
+    projectManagerId: bigint('project_manager_id', { mode: 'number' }),
+    scanFileUrl: varchar('scan_file_url', { length: 512 }),
+    remark: text('remark'),
+    status: varchar('status', { length: 32 }).notNull().default('PENDING'),
 
-  createdBy: bigint('created_by', { mode: 'number' }).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedBy: bigint('updated_by', { mode: 'number' }),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-});
+    createdBy: bigint('created_by', { mode: 'number' }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedBy: bigint('updated_by', { mode: 'number' }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    // DB-level enforcement: status must be PENDING (待登记) or COMPLETED (已登记).
+    // Legacy 'DRAFT' value from pre-0008 data has been backfilled by
+    // scripts/backfill-police-status.sql; application code only writes
+    // PENDING/COMPLETED (see police.listener.ts).
+    check(
+      'police_register_status_check',
+      sql`${t.status} IN ('PENDING', 'COMPLETED')`,
+    ),
+  ],
+);
 
 export type PoliceRegisterRow = typeof policeRegister.$inferSelect;
 export type NewPoliceRegister = typeof policeRegister.$inferInsert;

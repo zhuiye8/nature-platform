@@ -1,0 +1,1 @@
+ALTER TABLE "police_register" ADD CONSTRAINT "police_register_status_check" CHECK ("police_register"."status" IN ('PENDING', 'COMPLETED'));

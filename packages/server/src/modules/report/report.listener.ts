@@ -4,6 +4,8 @@ import { eq, and } from 'drizzle-orm';
 import { DRIZZLE, DrizzleDB } from '../../database/database.module';
 import { projectRegister, projectMember } from '../../database/schema/business';
 import { wfTask } from '../../database/schema/workflow';
+import { systemNotification } from '../../database/schema/common';
+import { userRole } from '../../database/schema/iam';
 
 @Injectable()
 export class ReportListener {
@@ -74,6 +76,7 @@ export class ReportListener {
         this.assignReportCompileTask(
           payload.bizId,
           reportWriterIds[0],
+          payload.operatorId,
         );
       }
     }
@@ -83,10 +86,18 @@ export class ReportListener {
    * Retry-based assignment of the REPORT_COMPILE task to the designated writer.
    * The task may not exist yet when this listener fires (event ordering),
    * so we poll up to 5 times with 500 ms intervals.
+   *
+   * When all retries fail the task stays as a pool task (assigneeId=null),
+   * meaning any writer from the pool could claim it — but since the
+   * business flow designates a specific writer, we also push a
+   * system_notification to the report assigner and all super_admins so
+   * someone notices and can manually intervene (e.g. use an admin tool
+   * to set the assignee).
    */
   private async assignReportCompileTask(
     projectRegisterId: number,
     writerId: number,
+    assignerId: number,
   ): Promise<void> {
     const { wfInstance } = await import('../../database/schema/workflow');
     const MAX_RETRIES = 5;
@@ -135,8 +146,57 @@ export class ReportListener {
       }
     }
 
-    this.logger.warn(
-      `Failed to assign REPORT_COMPILE task for project #${projectRegisterId} after ${MAX_RETRIES} retries`,
+    this.logger.error(
+      `Failed to assign REPORT_COMPILE task for project #${projectRegisterId} after ${MAX_RETRIES} retries — notifying assigner + admins`,
     );
+    await this.notifyAssignFailure(projectRegisterId, writerId, assignerId);
+  }
+
+  /**
+   * Push a system_notification when REPORT_COMPILE assignee binding fails
+   * so the report assigner + super_admins can manually resolve.
+   * Swallows errors: notification failure must not cascade and hide the
+   * original problem.
+   */
+  private async notifyAssignFailure(
+    projectRegisterId: number,
+    writerId: number,
+    assignerId: number,
+  ): Promise<void> {
+    try {
+      // Gather recipients: assigner + all super_admin users (dedup)
+      const admins = await this.db
+        .select({ userId: userRole.userId })
+        .from(userRole)
+        .where(eq(userRole.roleCode, 'super_admin'));
+      const recipientIds = Array.from(
+        new Set([assignerId, ...admins.map((a) => a.userId)]),
+      );
+      if (recipientIds.length === 0) return;
+
+      const title = '[系统告警] 报告编制任务绑定失败';
+      const content =
+        `项目 #${projectRegisterId} 的报告编制任务无法自动绑定给指定编制人` +
+        ` (user #${writerId})。可能原因：工作流任务创建延迟过久。` +
+        `请在 "报告管理" 列表中人工介入，或联系技术同学处理。`;
+
+      const rows = recipientIds.map((receiverId) => ({
+        receiverId,
+        title,
+        content,
+        eventType: 'REPORT_ASSIGN_FAILED',
+        refType: 'PROJECT_REGISTER',
+        refId: projectRegisterId,
+      }));
+      await this.db.insert(systemNotification).values(rows);
+      this.logger.log(
+        `Sent REPORT_ASSIGN_FAILED notification to ${recipientIds.length} recipient(s)`,
+      );
+    } catch (e) {
+      this.logger.error(
+        `Failed to send REPORT_ASSIGN_FAILED notification for project #${projectRegisterId}`,
+        e,
+      );
+    }
   }
 }
