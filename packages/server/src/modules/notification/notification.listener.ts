@@ -70,39 +70,98 @@ export class NotificationListener {
 
       const userIds = new Set<number>();
 
-      // MATERIAL_ARCHIVE: limit to relevant people only
+      // MATERIAL_ARCHIVE: 拆两种文案
+      //   - 归档员 (archiver): 真的要做事 → "你有新的待办任务"
+      //   - 销售/PM/部门经理: 知情抄送 → "项目 XXX 已进入归档阶段"
+      // 注意: wf_assignment_rule 里 MATERIAL_ARCHIVE 已清理只剩 archiver+super_admin
+      // (见 scripts/cleanup-material-archive-rules.sql)，这里的销售/PM/部门经理
+      // 通知是独立于 assignment_rule 的硬编码抄送，让他们能通过铃铛知情，
+      // 但不会在待办中心业务提醒里看到"池化归档任务"。
       if (payload.nodeKey === 'MATERIAL_ARCHIVE' && payload.bizType === 'PROJECT_REGISTER') {
-        // All archivers + all dept_managers
-        for (const roleCode of ['archiver', 'dept_manager']) {
-          const users = await this.db
-            .select({ userId: userRole.userId })
-            .from(userRole)
-            .where(eq(userRole.roleCode, roleCode));
-          users.forEach((u) => userIds.add(u.userId));
-        }
-        // Project PM
+        const archiverIds = new Set<number>();
+        const informationalIds = new Set<number>();
+
+        // 归档员 (真正领任务的人)
+        const archivers = await this.db
+          .select({ userId: userRole.userId })
+          .from(userRole)
+          .where(eq(userRole.roleCode, 'archiver'));
+        archivers.forEach((u) => archiverIds.add(u.userId));
+
+        // 部门经理 (知情)
+        const deptMgrs = await this.db
+          .select({ userId: userRole.userId })
+          .from(userRole)
+          .where(eq(userRole.roleCode, 'dept_manager'));
+        deptMgrs.forEach((u) => informationalIds.add(u.userId));
+
+        // 项目 PM (知情)
         const pms = await this.db
           .select({ userId: projectMember.userId })
           .from(projectMember)
-          .where(and(eq(projectMember.projectId, payload.bizId), eq(projectMember.roleType, 'PM'), eq(projectMember.status, 'ACTIVE')));
-        pms.forEach((p) => userIds.add(p.userId));
-        // Contract creator + salesPerson
+          .where(
+            and(
+              eq(projectMember.projectId, payload.bizId),
+              eq(projectMember.roleType, 'PM'),
+              eq(projectMember.status, 'ACTIVE'),
+            ),
+          );
+        pms.forEach((p) => informationalIds.add(p.userId));
+
+        // 合同创建者 + 跟单销售 (知情) + 取项目名用于文案
         const proj = await this.db
-          .select({ contractId: projectRegister.contractId })
+          .select({
+            contractId: projectRegister.contractId,
+            applicationName: projectRegister.applicationName,
+          })
           .from(projectRegister)
           .where(eq(projectRegister.id, payload.bizId))
           .limit(1);
+        const projectName = proj[0]?.applicationName ?? `项目#${payload.bizId}`;
         if (proj[0]?.contractId) {
           const cont = await this.db
-            .select({ createdBy: contract.createdBy, salesPersonId: contract.salesPersonId })
+            .select({
+              createdBy: contract.createdBy,
+              salesPersonId: contract.salesPersonId,
+            })
             .from(contract)
             .where(eq(contract.id, proj[0].contractId))
             .limit(1);
           if (cont[0]) {
-            userIds.add(cont[0].createdBy);
-            if (cont[0].salesPersonId) userIds.add(cont[0].salesPersonId);
+            informationalIds.add(cont[0].createdBy);
+            if (cont[0].salesPersonId) informationalIds.add(cont[0].salesPersonId);
           }
         }
+
+        // 发"待办任务"文案给归档员
+        for (const userId of archiverIds) {
+          await this.notificationService.createNotification(
+            userId,
+            `你有新的待办任务：${payload.nodeName}`,
+            `你有新的待办任务：${payload.nodeName}`,
+            'TASK_CREATED',
+            payload.bizType,
+            payload.bizId,
+          );
+        }
+
+        // 发"知情抄送"文案给销售/PM/部门经理 (跳过已收到待办的人，避免重复)
+        for (const userId of informationalIds) {
+          if (archiverIds.has(userId)) continue;
+          await this.notificationService.createNotification(
+            userId,
+            `项目「${projectName}」已进入材料归档阶段`,
+            `项目「${projectName}」已进入材料归档阶段，如需协助上传原始材料请前往材料归档详情页`,
+            'ARCHIVE_STARTED',
+            payload.bizType,
+            payload.bizId,
+          );
+        }
+
+        this.logger.log(
+          `MATERIAL_ARCHIVE 通知: ${archiverIds.size} 归档员(待办) + ${informationalIds.size} 知情(抄送)`,
+        );
+        return;
       } else if (
         (payload.nodeKey === 'DEPT_REVIEW' &&
           payload.bizType === 'PROJECT_REGISTER') ||

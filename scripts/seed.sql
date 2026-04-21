@@ -228,9 +228,11 @@ INSERT INTO wf_assignment_rule (node_key, slot_key, slot_label, role_code, avoid
     ('REPORT_ASSIGN','ASSIGNER','报告分配人','report_assigner','NONE',10),('REPORT_ASSIGN','ASSIGNER','报告分配人','super_admin','NONE',99),
     ('REPORT_COMPILE','WRITER','报告编制人','report_writer','NONE',10),('REPORT_COMPILE','WRITER','报告编制人','super_admin','NONE',99),
     ('FINAL_REVIEW','REVIEWER','最终审核人','dept_manager','NONE',10),('FINAL_REVIEW','REVIEWER','最终审核人','super_admin','NONE',99),
+    -- MATERIAL_ARCHIVE: 只有 archiver 参与池化领取 + super_admin 兜底。
+    -- 销售/PM/部门经理通过 notification.listener 的硬编码通知收到"知情抄送"，
+    -- 从材料归档列表(archive.service 按 sales/PM 过滤)进入详情页协助上传。
     ('MATERIAL_ARCHIVE','ARCHIVER','材料归档人','archiver','NONE',10),
-    ('MATERIAL_ARCHIVE','ARCHIVER','材料归档人','sales','NONE',5),('MATERIAL_ARCHIVE','ARCHIVER','材料归档人','dept_manager','NONE',5),
-    ('MATERIAL_ARCHIVE','ARCHIVER','材料归档人','super_admin','NONE',0)
+    ('MATERIAL_ARCHIVE','ARCHIVER','材料归档人','super_admin','NONE',99)
 ON CONFLICT DO NOTHING;
 
 -- ============================================================================
