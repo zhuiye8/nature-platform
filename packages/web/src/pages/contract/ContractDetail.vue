@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, Edit, Download, Delete, Paperclip, Upload } from '@element-plus/icons-vue'
+import { ArrowLeft, Edit, Download, Delete, Paperclip, Upload, QuestionFilled } from '@element-plus/icons-vue'
 import { getContractDetail, archiveContract } from '@/api/contract'
 import type { ContractItem, ArchiveContractData } from '@/api/contract'
 import { getFileList, getFileDownloadPath, getFilePreviewPath, deleteFile, getUploadUrl, type FileItem } from '@/api/file'
+import { getSystemItems } from '@/api/project'
 import { ElMessage } from 'element-plus'
 import { getInstanceByBiz } from '@/api/workflow'
 import RejectReasonPanel from '@/components/RejectReasonPanel.vue'
+import SystemItemDetailDialog from '@/components/SystemItemDetailDialog.vue'
 import { getStatusLabel, getStatusTagType } from '@/utils/status-map'
 import { formatTime } from '@/utils/format'
 import { usePermission } from '@/composables/usePermission'
@@ -65,6 +67,39 @@ const archiveForm = ref<any>({
 const archiving = ref(false)
 const scanFiles = ref<FileItem[]>([])
 const scanUploadHeaders = computed(() => ({ Authorization: `Bearer ${localStorage.getItem('token')}` }))
+
+// ── 系统明细详情弹窗（按需调 getSystemItems 拿 enriched，含文件对象）──
+const siDialogVisible = ref(false)
+const siDialogItem = ref<any>(null)
+const enrichedItemsCache = new Map<number, any[]>()  // projectId → enriched items
+
+async function showSystemItemDetail(row: any) {
+  let items = enrichedItemsCache.get(row.projectId)
+  if (!items) {
+    try {
+      items = (await getSystemItems(row.projectId)) as unknown as any[]
+      enrichedItemsCache.set(row.projectId, items)
+    } catch {
+      items = []
+    }
+  }
+  const enriched = items.find((i: any) => i.id === row.systemItemId)
+  // Fallback: row 构造最小可用对象（符合 SystemItemDetailDialog 的 required 字段）
+  siDialogItem.value = enriched || {
+    id: row.systemItemId,
+    systemNo: row.systemNo,
+    systemName: row.systemName,
+    filingAgency: row.filingAgency,
+    securityLevel: row.securityLevel,
+    isReassessment: false,
+    assessedUnitName: row.assessedUnitName,
+    filingCertificateNo: row.filingCertificateNo,
+    hasFilingCertificate: !!row.filingCertificateNo,
+    hasFilingForm: false,
+    hasClassificationReport: false,
+  }
+  siDialogVisible.value = true
+}
 
 async function fetchScanFiles() {
   try {
@@ -317,9 +352,19 @@ onMounted(async () => {
            不再在详情页展示。 -->
       <el-card shadow="never" style="margin-bottom: 16px">
         <template #header>
-          <span style="font-weight: 600; font-size: 15px">
-            系统明细（{{ contract.projectSystemItems?.length ?? 0 }} 个 · 已通过项目登记）
-          </span>
+          <div style="display: flex; align-items: center; gap: 6px">
+            <span style="font-weight: 600; font-size: 15px">
+              系统明细（{{ contract.projectSystemItems?.length ?? 0 }} 个）
+            </span>
+            <el-tooltip
+              placement="top"
+              content="此列表仅展示已通过项目登记申请的实际执行系统清单（含项目编号），不含合同签约时的粗粒度约定"
+            >
+              <el-icon style="color: var(--el-text-color-placeholder); cursor: help; font-size: 14px">
+                <QuestionFilled />
+              </el-icon>
+            </el-tooltip>
+          </div>
         </template>
         <el-table
           v-if="contract.projectSystemItems?.length"
@@ -352,6 +397,11 @@ onMounted(async () => {
           <el-table-column prop="assessedUnitName" label="被测单位" min-width="180" show-overflow-tooltip>
             <template #default="{ row }">{{ row.assessedUnitName || '--' }}</template>
           </el-table-column>
+          <el-table-column label="操作" width="80" align="center" fixed="right">
+            <template #default="{ row }">
+              <el-button type="primary" link size="small" @click="showSystemItemDetail(row)">详情</el-button>
+            </template>
+          </el-table-column>
         </el-table>
         <el-empty
           v-else
@@ -359,6 +409,9 @@ onMounted(async () => {
           :image-size="80"
         />
       </el-card>
+
+      <!-- 系统明细详情弹窗（展示完整字段 + 文件） -->
+      <SystemItemDetailDialog v-model:visible="siDialogVisible" :item="siDialogItem" />
 
       <!-- ── 5. 合同文件 ────────────────────────────────────── -->
       <el-card shadow="never" style="margin-bottom: 16px">
