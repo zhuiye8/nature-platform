@@ -17,7 +17,7 @@ import {
   wfTransition,
   wfAssignmentRule,
 } from '../../database/schema/workflow';
-import { contract, contractGroup, projectRegister } from '../../database/schema/business';
+import { contract, contractGroup, projectRegister, projectMember } from '../../database/schema/business';
 import { reviewOpinion } from '../../database/schema/review-opinion';
 import { compileReportFile } from '../../database/schema/assessment-file';
 import { userRole } from '../../database/schema/iam';
@@ -376,6 +376,51 @@ export class WorkflowService {
             currentUserId: operatorId,
           };
           await compileHandler.onEnter(compileCtx);
+
+          // ──────────────────────────────────────────────────────────────────
+          // 修复: 把新建的 REPORT_COMPILE task 的 assignee 改回"原编制人"。
+          //
+          // compileHandler.onEnter 走规则表 (assignment.service.resolveAssignee)
+          // 会选 sort_order 最小的 report_writer 用户 — 固定回到同一个人
+          // (实际是 luyuxin)。但业务本意是"让原编制人修改报告"，原编制人
+          // 已在 REPORT_ASSIGN 阶段写入 project_member (roleType='REPORT_WRITER')。
+          // 这里读出来覆盖 assignee，保证复核后任务仍分配给原编制人。
+          // 若 project_member 里没有 REPORT_WRITER (异常情况)，保留
+          // onEnter 的规则表默认分配作为兜底，避免 task 无人领。
+          // ──────────────────────────────────────────────────────────────────
+          if (instance.bizType === 'PROJECT_REGISTER') {
+            const writerRows = await tx
+              .select({ userId: projectMember.userId })
+              .from(projectMember)
+              .where(
+                and(
+                  eq(projectMember.projectId, instance.bizId),
+                  eq(projectMember.roleType, 'REPORT_WRITER'),
+                  eq(projectMember.status, 'ACTIVE'),
+                ),
+              )
+              .limit(1);
+
+            if (writerRows.length > 0) {
+              await tx
+                .update(wfTask)
+                .set({ assigneeId: writerRows[0].userId })
+                .where(
+                  and(
+                    eq(wfTask.instanceId, instance.id),
+                    eq(wfTask.nodeKey, 'REPORT_COMPILE'),
+                    eq(wfTask.status, 'PENDING'),
+                  ),
+                );
+              this.logger.log(
+                `FINAL_REVIEW REVIEW: restored REPORT_COMPILE assignee to original writer #${writerRows[0].userId} (project #${instance.bizId})`,
+              );
+            } else {
+              this.logger.warn(
+                `FINAL_REVIEW REVIEW: no REPORT_WRITER in project_member for project #${instance.bizId}, keeping rule-table default assignee`,
+              );
+            }
+          }
 
           // Emit task.created for notification
           await this.emitTaskCreatedEvents(txDb, refreshed, compileNodeDef);
