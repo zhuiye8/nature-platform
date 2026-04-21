@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { OnEvent } from '@nestjs/event-emitter';
+import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { eq, and, sql } from 'drizzle-orm';
 import { DRIZZLE, DrizzleDB } from '../../database/database.module';
 import {
@@ -23,7 +23,10 @@ interface WorkflowNodeCompletedEvent {
 export class ProjectListener {
   private readonly logger = new Logger(ProjectListener.name);
 
-  constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: DrizzleDB,
+    private readonly eventEmitter: EventEmitter2,
+  ) {}
 
   @OnEvent('workflow.node.completed')
   async handleNodeCompleted(payload: WorkflowNodeCompletedEvent) {
@@ -98,6 +101,23 @@ export class ProjectListener {
             }
           }
         });
+
+        // 事务已 commit，emit 事件让 notification.listener 给新成员发
+        // "你被指派为项目经理/测评师" 通知。事件与事务解耦，单独发送失败
+        // 不会回滚已写入的 project_member。
+        const assignments: { userId: number; roleType: 'PM' | 'ASSESSOR' }[] = [];
+        if (pmUserId) assignments.push({ userId: pmUserId, roleType: 'PM' });
+        for (const userId of assessorUserIds) {
+          if (userId === pmUserId) continue;
+          assignments.push({ userId, roleType: 'ASSESSOR' });
+        }
+        if (assignments.length > 0) {
+          this.eventEmitter.emit('project.member.assigned', {
+            projectId: payload.bizId,
+            assignments,
+            assignedBy: payload.operatorId,
+          });
+        }
       } else if (payload.event === 'REJECT') {
         this.logger.log(
           `Project #${payload.bizId} director review rejected — updating status`,

@@ -338,13 +338,16 @@ export class NotificationListener {
     );
     if (!creatorId) return;
 
-    // For CONTRACT, also notify salesPerson (treated same as creator)
+    // 通知列表 = 创建者 + 跟单销售 (两类业务对象都处理)
+    // CONTRACT: contract.sales_person_id
+    // PROJECT_REGISTER: 通过 project.contract_id -> contract.sales_person_id
     const notifyIds = [creatorId];
     if (payload.bizType === 'CONTRACT') {
       const salesId = await this.getContractSalesPerson(payload.bizId);
-      if (salesId && salesId !== creatorId) {
-        notifyIds.push(salesId);
-      }
+      if (salesId && salesId !== creatorId) notifyIds.push(salesId);
+    } else if (payload.bizType === 'PROJECT_REGISTER') {
+      const salesId = await this.getProjectSalesPerson(payload.bizId);
+      if (salesId && salesId !== creatorId) notifyIds.push(salesId);
     }
 
     // Contract archived — notify creator + salesPerson
@@ -378,18 +381,6 @@ export class NotificationListener {
           payload.bizId,
         );
       }
-
-      // CC notification: DEPT_REVIEW approved → notify all project_directors
-      // ("有新项目待分配")，因为 DIRECTOR_REVIEW 节点的 task.created 事件已经会通知
-      // project_directors，这里其实可省略。但保留一条"已分配到项目主管"的明确抄送，
-      // 方便部门经理追踪项目流转。
-      if (
-        payload.bizType === 'PROJECT_REGISTER' &&
-        payload.nodeKey === 'DEPT_REVIEW'
-      ) {
-        // task.created for DIRECTOR_REVIEW will already notify all project_directors,
-        // so no additional CC is needed here. Keep this branch for future expansion.
-      }
     } else if (payload.event === 'REJECT') {
       const reason = payload.remark ?? '';
       const bizName = await this.getBizDisplayName(payload.bizType, payload.bizId);
@@ -406,6 +397,172 @@ export class NotificationListener {
         );
       }
     }
+    // APPROVE / REJECT 之外的 event (如 SUBMIT) 不发"审核"类通知
+
+    // ── 项目阶段抄送 (P1-2) ────────────────────────────────────────
+    // 除了上面给创建者/跟单销售发"审核已通过/被驳回"通知，PROJECT_REGISTER
+    // 的关键节点还需要抄送给 PM + 创建者 + 跟单销售三类 stakeholder，
+    // 让项目经理和销售持续掌握项目进度。文案"项目进入 XX 阶段"。
+    // REJECT 不抄送 (被驳回已由上面的 WORKFLOW_REJECTED 通知过)。
+    if (payload.bizType === 'PROJECT_REGISTER' && payload.event !== 'REJECT') {
+      await this.notifyProjectStageTransition(
+        payload.bizId,
+        payload.nodeKey,
+        payload.event,
+      );
+    }
+  }
+
+  /**
+   * 项目阶段抄送 — 当关键节点完成/推进时，向 PM + 创建者 + 跟单销售发
+   * "项目进入 XX 阶段" 知情通知。
+   *
+   * 设计原则:
+   * - 按节点白名单触发 (STAGE_TRANSITIONS)，非白名单节点不发，避免信息噪声
+   * - 同一节点必须 event 匹配 (如 DIRECTOR_REVIEW 只在 APPROVE 时发)
+   * - 和 WORKFLOW_APPROVED 通知并存 — 前者给"stakeholder 进度更新"，
+   *   后者给"创建者/销售审核结果确认"，eventType 和文案都不同
+   */
+  private async notifyProjectStageTransition(
+    projectId: number,
+    nodeKey: string,
+    event: string,
+  ): Promise<void> {
+    // (节点完成, 触发事件) → 下一阶段名称
+    // TECH_REVIEW 不单独发 (属于质量审核内部步骤)，等 CONTENT_REVIEW 完整通过再发
+    const STAGE_TRANSITIONS: Record<
+      string,
+      { event: string; nextStage: string; isComplete?: boolean }
+    > = {
+      DIRECTOR_REVIEW: { event: 'APPROVE', nextStage: '公安登记' },
+      POLICE_REGISTER: { event: 'SUBMIT', nextStage: '现场测评' },
+      ON_SITE_ASSESSMENT: { event: 'SUBMIT', nextStage: '质量审核' },
+      CONTENT_REVIEW: { event: 'APPROVE', nextStage: '报告编制分配' },
+      REPORT_ASSIGN: { event: 'APPROVE', nextStage: '报告编制' },
+      REPORT_COMPILE: { event: 'SUBMIT', nextStage: '最终审核' },
+      FINAL_REVIEW: { event: 'APPROVE', nextStage: '材料归档' },
+      MATERIAL_ARCHIVE: { event: 'SUBMIT', nextStage: '完成', isComplete: true },
+    };
+
+    const transition = STAGE_TRANSITIONS[nodeKey];
+    if (!transition || transition.event !== event) return;
+
+    const projectName = await this.getBizDisplayName('PROJECT_REGISTER', projectId);
+    const title = transition.isComplete
+      ? '项目全流程已完成'
+      : `项目进入${transition.nextStage}阶段`;
+    const content = transition.isComplete
+      ? `项目「${projectName}」已完成全部流程 (材料归档已提交)`
+      : `项目「${projectName}」已进入${transition.nextStage}阶段`;
+
+    await this.notifyProjectStakeholders(
+      projectId,
+      title,
+      content,
+      transition.isComplete ? 'PROJECT_COMPLETED' : 'PROJECT_STAGE',
+    );
+  }
+
+  /**
+   * 抄送给项目的 stakeholders = PM + 合同创建者 + 合同跟单销售。
+   * 3 类可能重叠 (同一个人既是销售又是创建者)，内部去重。
+   * 没有 stakeholder 时静默跳过 (例如 DIRECTOR_REVIEW 前还没 PM 就只抄送销售)。
+   */
+  private async notifyProjectStakeholders(
+    projectId: number,
+    title: string,
+    content: string,
+    eventType: string,
+  ): Promise<void> {
+    const stakeholderIds = new Set<number>();
+
+    // PM
+    const pms = await this.db
+      .select({ userId: projectMember.userId })
+      .from(projectMember)
+      .where(
+        and(
+          eq(projectMember.projectId, projectId),
+          eq(projectMember.roleType, 'PM'),
+          eq(projectMember.status, 'ACTIVE'),
+        ),
+      );
+    pms.forEach((p) => stakeholderIds.add(p.userId));
+
+    // 创建者 + 跟单销售 (合同上的 sales_person)
+    const proj = await this.db
+      .select({
+        createdBy: projectRegister.createdBy,
+        contractId: projectRegister.contractId,
+      })
+      .from(projectRegister)
+      .where(eq(projectRegister.id, projectId))
+      .limit(1);
+    if (proj[0]) {
+      stakeholderIds.add(proj[0].createdBy);
+      if (proj[0].contractId) {
+        const cont = await this.db
+          .select({ salesPersonId: contract.salesPersonId })
+          .from(contract)
+          .where(eq(contract.id, proj[0].contractId))
+          .limit(1);
+        if (cont[0]?.salesPersonId) stakeholderIds.add(cont[0].salesPersonId);
+      }
+    }
+
+    if (stakeholderIds.size === 0) return;
+
+    for (const uid of stakeholderIds) {
+      await this.notificationService.createNotification(
+        uid,
+        title,
+        content,
+        eventType,
+        'PROJECT_REGISTER',
+        projectId,
+      );
+    }
+    this.logger.log(
+      `notifyProjectStakeholders(${eventType}): ${stakeholderIds.size} users for project #${projectId}`,
+    );
+  }
+
+  /**
+   * 新成员被指派 (project.member.assigned 事件) — 给每位新成员发
+   * "你被指派为 项目经理/测评师" 通知，便于他们第一时间知道自己要参与哪个项目。
+   * 事件在 project.listener DIRECTOR_REVIEW APPROVE 事务完成后 emit。
+   */
+  @OnEvent('project.member.assigned')
+  async handleMemberAssigned(payload: {
+    projectId: number;
+    assignments: { userId: number; roleType: 'PM' | 'ASSESSOR' }[];
+    assignedBy: number;
+  }) {
+    if (payload.assignments.length === 0) return;
+
+    const projectName = await this.getBizDisplayName(
+      'PROJECT_REGISTER',
+      payload.projectId,
+    );
+    const ROLE_LABEL: Record<string, string> = {
+      PM: '项目经理',
+      ASSESSOR: '测评师',
+    };
+
+    for (const { userId, roleType } of payload.assignments) {
+      const label = ROLE_LABEL[roleType] ?? roleType;
+      await this.notificationService.createNotification(
+        userId,
+        `你被指派为${label}`,
+        `你被指派为项目「${projectName}」的${label}，请前往项目详情查看`,
+        'MEMBER_ASSIGNED',
+        'PROJECT_REGISTER',
+        payload.projectId,
+      );
+    }
+    this.logger.log(
+      `handleMemberAssigned: notified ${payload.assignments.length} new members for project #${payload.projectId}`,
+    );
   }
 
   private async getProjectPm(projectRegisterId: number): Promise<number | null> {
@@ -470,6 +627,22 @@ export class NotificationListener {
       .where(eq(contract.id, bizId))
       .limit(1);
     return rows[0]?.salesPersonId ?? null;
+  }
+
+  /**
+   * 通过 project → contract 查跟单销售。用于 PROJECT_REGISTER 相关通知
+   * 的抄送 (和 CONTRACT 的跟单销售同一个人，但取数路径经过两层表)。
+   */
+  private async getProjectSalesPerson(
+    projectRegisterId: number,
+  ): Promise<number | null> {
+    const proj = await this.db
+      .select({ contractId: projectRegister.contractId })
+      .from(projectRegister)
+      .where(eq(projectRegister.id, projectRegisterId))
+      .limit(1);
+    if (!proj[0]?.contractId) return null;
+    return this.getContractSalesPerson(proj[0].contractId);
   }
 
   private async getBusinessCreator(
