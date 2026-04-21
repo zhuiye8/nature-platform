@@ -453,6 +453,7 @@ onMounted(async () => {
           <el-descriptions :column="2" border size="small">
             <el-descriptions-item label="签订时间">{{ contract.signedAt ? new Date(contract.signedAt).toLocaleDateString('zh-CN') : '--' }}</el-descriptions-item>
             <el-descriptions-item label="归档人">{{ contract.archivedByName || '--' }}</el-descriptions-item>
+            <el-descriptions-item label="归档时间">{{ contract.archivedAt ? formatTime(contract.archivedAt) : '--' }}</el-descriptions-item>
             <el-descriptions-item label="文件份数">{{ contract.fileCount ?? '--' }}</el-descriptions-item>
             <el-descriptions-item label="存放位置">{{ contract.storageLocation || '--' }}</el-descriptions-item>
             <el-descriptions-item label="归档备注">{{ contract.archiveRemark || '--' }}</el-descriptions-item>

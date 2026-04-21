@@ -269,6 +269,40 @@ function onFilingRegionChange(clientKey: string | undefined, val: string[], item
   item.filingAgency = generateFilingAgency(val)
 }
 
+// Reverse-map a filingAgency string back to a cascader region path, so the
+// "备案地区" selector can be restored when editing an existing system item.
+// Database only persists `filing_agency` (e.g. "扬州市公安局") — not the
+// original cascader path. We walk regionData to find a matching province /
+// city pair. District information is intentionally lost (generateFilingAgency
+// collapses to city level), so the returned path has at most 2 entries.
+//
+// Returns [] on failure: non-standard agency strings (e.g. user edited the
+// input to something like "扬州市公安局网安支队") leave the cascader blank
+// while preserving whatever the user typed in filingAgency — safer than
+// forcing a bad default that disagrees with the saved value.
+function reverseFilingAgencyToRegion(filingAgency: string | null | undefined): string[] {
+  if (!filingAgency) return []
+  const cityMatch = filingAgency.match(/^(.+?市)公安局$/)
+  if (cityMatch) {
+    const city = cityMatch[1]
+    // Direct municipality: province == city (e.g. "北京市公安局" -> ["北京市", "北京市"])
+    if (directMunicipalities.includes(city)) {
+      return [city, city]
+    }
+    // Prefecture-level city: find the province by walking regionData
+    for (const province of regionData) {
+      if (province.children?.some((c) => c.value === city)) {
+        return [province.value, city]
+      }
+    }
+  }
+  const provinceMatch = filingAgency.match(/^(.+?(?:省|自治区))公安厅$/)
+  if (provinceMatch) {
+    return [provinceMatch[1]]
+  }
+  return []
+}
+
 // Security level options
 const securityLevelOptions = [
   { label: '一级', value: '一级' },
@@ -348,6 +382,15 @@ async function fetchDetail() {
         pendingFormName: null,
         pendingReportName: null,
       })),
+    }
+    // Restore cascader state for 备案地区 by reverse-mapping each item's
+    // filingAgency. Items with non-standard filingAgency strings will get
+    // an empty path (cascader blank, input preserved).
+    for (const si of formData.value.systemItems as any[]) {
+      const regionPath = reverseFilingAgencyToRegion(si.filingAgency)
+      if (regionPath.length > 0) {
+        filingRegionMap.value[si.clientKey] = regionPath
+      }
     }
     selectedContractName.value = data.contractName ?? ''
     // Ensure contract appears in selector

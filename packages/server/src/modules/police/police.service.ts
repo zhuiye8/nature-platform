@@ -71,7 +71,19 @@ export class PoliceService {
       conditions.push(ilike(projectRegister.applicationName, pattern));
     }
     if (query.status) {
-      conditions.push(eq(policeRegister.status, query.status));
+      // Compat: migration 0008 set DEFAULT 'PENDING' but did not backfill
+      // older rows that were created with status='DRAFT'. Both values mean
+      // "待登记" to the user. When the client asks for PENDING, we include
+      // DRAFT as well so the default filter doesn't hide legacy rows.
+      // After running scripts/backfill-police-status.sql in production this
+      // branch becomes a pure equality check at the data level, but keeping
+      // the IN clause costs nothing and makes the server robust to future
+      // legacy data resurfacing (imports, restores, etc.).
+      if (query.status === 'PENDING') {
+        conditions.push(inArray(policeRegister.status, ['PENDING', 'DRAFT']));
+      } else {
+        conditions.push(eq(policeRegister.status, query.status));
+      }
     }
 
     const whereClause =

@@ -517,12 +517,27 @@ export class WorkflowService {
       .orderBy(wfTask.createdAt);
 
     // ── Pool role filter ──────────────────────────────────────────────
-    // For variable-driven pool nodes (PROJECT_REVIEW, CONTRACT_REVIEW)
-    // the same nodeKey is shared by multiple roles (e.g. project_director
-    // AND dept_manager). The SQL above returns ALL pool tasks where the
-    // user's role appears in wf_assignment_rule for that nodeKey, but we
-    // must further narrow: only show pool tasks whose
-    // variables.reviewerRoleCode matches one of the current user's roles.
+    // For variable-driven pool nodes the same nodeKey can be shared by
+    // multiple roles (e.g. CONTRACT_REVIEW — the reviewer role is picked
+    // at submit-time via variables.reviewerRoleCode). The SQL above
+    // returns ALL pool tasks where the user's role appears in
+    // wf_assignment_rule for that nodeKey, but we must further narrow:
+    // only show pool tasks whose variables.reviewerRoleCode matches one
+    // of the current user's roles.
+    //
+    // NOTE: 'PROJECT_REVIEW' is retained here purely for backward
+    // compatibility with in-flight workflow instances that were created
+    // before the 2026-04 DEPT_REVIEW / DIRECTOR_REVIEW split (see
+    // scripts/migrate-assessor-roles.sql). That migration removed the
+    // node definition but DOES NOT touch existing wf_instance rows whose
+    // current_node or task.node_key is still 'PROJECT_REVIEW'. Removing
+    // it from this set would cause those legacy pool tasks to skip the
+    // role filter and potentially surface to the wrong user. Only remove
+    // after verifying production has zero PROJECT_REVIEW task rows.
+    //
+    // New instances use hardcoded role mapping in review.handler.ts
+    // (NODE_POOL_ROLE) so the filter is effectively a no-op for
+    // DEPT_REVIEW / DIRECTOR_REVIEW.
     const POOL_FILTERED_NODES = new Set(['PROJECT_REVIEW', 'CONTRACT_REVIEW']);
 
     const filteredRows = isSuperAdmin
