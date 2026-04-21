@@ -54,10 +54,12 @@ export class NotificationListener {
       this.logger.log(
         `Notifying user #${payload.assigneeId} about new task at node "${payload.nodeName}"`,
       );
+      const bizName = await this.getBizDisplayName(payload.bizType, payload.bizId);
+      const bizLabel = this.getBizTypeLabel(payload.bizType);
       await this.notificationService.createNotification(
         payload.assigneeId,
-        `你有新的待办任务：${payload.nodeName}`,
-        `你有新的待办任务：${payload.nodeName}`,
+        `新待办：${payload.nodeName}`,
+        `${bizLabel}「${bizName}」需要你处理：${payload.nodeName}`,
         'TASK_CREATED',
         payload.bizType,
         payload.bizId,
@@ -222,11 +224,13 @@ export class NotificationListener {
       }
 
       // Notify each user
+      const bizName = await this.getBizDisplayName(payload.bizType, payload.bizId);
+      const bizLabel = this.getBizTypeLabel(payload.bizType);
       for (const userId of userIds) {
         await this.notificationService.createNotification(
           userId,
-          `你有新的待办任务：${payload.nodeName}`,
-          `你有新的待办任务：${payload.nodeName}`,
+          `新待办：${payload.nodeName}`,
+          `${bizLabel}「${bizName}」需要你处理：${payload.nodeName}`,
           'TASK_CREATED',
           payload.bizType,
           payload.bizId,
@@ -261,6 +265,7 @@ export class NotificationListener {
           ),
         );
 
+      const projectName = await this.getBizDisplayName('PROJECT_REGISTER', payload.bizId);
       for (const w of writers) {
         this.logger.log(
           `Notifying report writer #${w.userId} about FINAL_REVIEW review`,
@@ -268,7 +273,7 @@ export class NotificationListener {
         await this.notificationService.createNotification(
           w.userId,
           '编制报告需要修改',
-          '最终审核对编制报告提出了修改意见，请修改后重新提交',
+          `项目「${projectName}」的编制报告需要修改，最终审核提出了意见，请前往报告详情页修改后重新提交`,
           'TASK_REVIEW',
           payload.bizType,
           payload.bizId,
@@ -281,13 +286,15 @@ export class NotificationListener {
     const pmId = await this.getProjectPm(payload.bizId);
     if (!pmId) return;
 
+    const projectName = await this.getBizDisplayName('PROJECT_REGISTER', payload.bizId);
+    const nodeLabel = this.getNodeLabel(payload.nodeKey);
     this.logger.log(
       `Notifying PM #${pmId} about review at ${payload.nodeKey}`,
     );
     await this.notificationService.createNotification(
       pmId,
-      `质量审核需要整改：${this.getNodeLabel(payload.nodeKey)}`,
-      `有一条${this.getNodeLabel(payload.nodeKey)}需要整改，请前往现场测评详情页修改测评成果后重新提交`,
+      `质量审核需要整改：${nodeLabel}`,
+      `项目「${projectName}」的${nodeLabel}需要整改，请前往现场测评详情页修改测评成果后重新提交`,
       'TASK_REVIEW',
       payload.bizType,
       payload.bizId,
@@ -306,6 +313,7 @@ export class NotificationListener {
   }) {
     // Notify all original reviewers that the PM has resubmitted
     const bizLabel = this.getBizTypeLabel(payload.bizType);
+    const bizName = await this.getBizDisplayName(payload.bizType, payload.bizId);
     for (const assigneeId of payload.assigneeIds) {
       this.logger.log(
         `Notifying reviewer #${assigneeId} about resubmission at ${payload.nodeKey}`,
@@ -313,7 +321,7 @@ export class NotificationListener {
       await this.notificationService.createNotification(
         assigneeId,
         '整改已重新提交',
-        `${bizLabel}的测评成果已重新提交，请重新审核`,
+        `${bizLabel}「${bizName}」的测评成果已重新提交，请重新审核`,
         'TASK_RESUBMITTED',
         payload.bizType,
         payload.bizId,
@@ -342,11 +350,12 @@ export class NotificationListener {
     // Contract archived — notify creator + salesPerson
     if (payload.bizType === 'CONTRACT' && payload.nodeKey === 'CONTRACT_ARCHIVE' && payload.event === 'SUBMIT') {
       this.logger.log(`Contract #${payload.bizId} archived, notifying ${notifyIds.join(',')}`);
+      const bizName = await this.getBizDisplayName(payload.bizType, payload.bizId);
       for (const uid of notifyIds) {
         await this.notificationService.createNotification(
           uid,
           '合同已归档',
-          '您的合同已完成归档，可以创建项目登记',
+          `合同「${bizName}」已完成归档，可以创建项目登记`,
           'CONTRACT_ARCHIVED',
           payload.bizType,
           payload.bizId,
@@ -356,12 +365,14 @@ export class NotificationListener {
     }
 
     if (payload.event === 'APPROVE') {
+      const bizName = await this.getBizDisplayName(payload.bizType, payload.bizId);
+      const bizLabel = this.getBizTypeLabel(payload.bizType);
       for (const uid of notifyIds) {
         this.logger.log(`Notifying #${uid} that ${payload.bizType} #${payload.bizId} was approved`);
         await this.notificationService.createNotification(
           uid,
           '审核已通过',
-          `您提交的${this.getBizTypeLabel(payload.bizType)}审核已通过`,
+          `您提交的${bizLabel}「${bizName}」审核已通过`,
           'WORKFLOW_APPROVED',
           payload.bizType,
           payload.bizId,
@@ -381,12 +392,14 @@ export class NotificationListener {
       }
     } else if (payload.event === 'REJECT') {
       const reason = payload.remark ?? '';
+      const bizName = await this.getBizDisplayName(payload.bizType, payload.bizId);
+      const bizLabel = this.getBizTypeLabel(payload.bizType);
       for (const uid of notifyIds) {
         this.logger.log(`Notifying #${uid} that ${payload.bizType} #${payload.bizId} was rejected`);
         await this.notificationService.createNotification(
           uid,
-          `被驳回：${reason}`,
-          `您提交的${this.getBizTypeLabel(payload.bizType)}被驳回：${reason}`,
+          '审核被驳回',
+          `您提交的${bizLabel}「${bizName}」被驳回${reason ? '：' + reason : ''}`,
           'WORKFLOW_REJECTED',
           payload.bizType,
           payload.bizId,
@@ -408,6 +421,46 @@ export class NotificationListener {
       )
       .limit(1);
     return rows[0]?.userId ?? null;
+  }
+
+  /**
+   * 获取业务对象的可读名称，用于通知文案
+   * CONTRACT: 优先 contractName，fallback contractNo，最终 合同#id
+   * PROJECT_REGISTER: applicationName，fallback 项目#id
+   * 其他: bizType#id
+   */
+  private async getBizDisplayName(
+    bizType: string,
+    bizId: number,
+  ): Promise<string> {
+    try {
+      if (bizType === 'CONTRACT') {
+        const rows = await this.db
+          .select({
+            contractName: contract.contractName,
+            contractNo: contract.contractNo,
+          })
+          .from(contract)
+          .where(eq(contract.id, bizId))
+          .limit(1);
+        return (
+          rows[0]?.contractName ??
+          rows[0]?.contractNo ??
+          `合同#${bizId}`
+        );
+      }
+      if (bizType === 'PROJECT_REGISTER') {
+        const rows = await this.db
+          .select({ applicationName: projectRegister.applicationName })
+          .from(projectRegister)
+          .where(eq(projectRegister.id, bizId))
+          .limit(1);
+        return rows[0]?.applicationName ?? `项目#${bizId}`;
+      }
+    } catch {
+      // ignore
+    }
+    return `${bizType}#${bizId}`;
   }
 
   private async getContractSalesPerson(bizId: number): Promise<number | null> {

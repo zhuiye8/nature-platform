@@ -289,7 +289,7 @@ onUnmounted(() => {
           <el-popover
             :visible="notificationPopoverVisible"
             placement="bottom-end"
-            :width="380"
+            :width="440"
             trigger="click"
             :show-arrow="false"
           >
@@ -644,9 +644,13 @@ onUnmounted(() => {
   font-size: var(--n-font-size-sm);
   color: var(--n-text-tertiary);
   margin-top: 2px;
+  /* 允许最多 3 行展示，超出再省略 */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.5;
+  word-break: break-all;
 }
 
 .n-notification-item__time {
