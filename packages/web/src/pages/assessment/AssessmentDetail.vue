@@ -248,6 +248,9 @@ onMounted(fetchData)
         <h4 style="margin-bottom: 8px">系统明细</h4>
         <el-table :data="project.systemItems" stripe border size="small">
           <el-table-column type="index" label="#" width="50" />
+          <el-table-column prop="systemNo" label="项目编号" min-width="180" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.systemNo || '--' }}</template>
+          </el-table-column>
           <el-table-column prop="systemName" label="系统名称" min-width="150" show-overflow-tooltip />
           <el-table-column label="安全等级" width="100" align="center">
             <template #default="{ row }">

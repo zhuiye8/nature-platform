@@ -12,6 +12,8 @@ import {
   contractGroup,
   contractSystemItem,
   customer,
+  projectRegister,
+  projectSystemItem,
 } from '../../database/schema/business';
 import { partner } from '../../database/schema/business';
 import { userRole } from '../../database/schema/iam';
@@ -427,6 +429,44 @@ export class ContractService {
         .orderBy(contract.createdAt);
     }
 
+    // ── 关联项目的系统明细（仅已通过项目登记的 project_system_item）──
+    // 用于合同详情页展示"实际执行的系统清单"，替代 contract_system_item
+    // 的粗粒度约定。系统编号 (systemNo) 在 DIRECTOR_REVIEW 通过时由
+    // project.listener 生成，所以只有 status='APPROVED' 的项目才有值。
+    // 若已通过但 systemNo 仍为 null (历史遗留 / 异常) 也展示，方便发现。
+    const projectSystemItems = await this.db
+      .select({
+        projectId: projectRegister.id,
+        applicationName: projectRegister.applicationName,
+        contractYear: projectRegister.contractYear,
+        projectStatus: projectRegister.status,
+        systemItemId: projectSystemItem.id,
+        systemNo: projectSystemItem.systemNo,
+        systemName: projectSystemItem.systemName,
+        securityLevel: projectSystemItem.securityLevel,
+        filingAgency: projectSystemItem.filingAgency,
+        assessedUnitName: projectSystemItem.assessedUnitName,
+        filingCertificateNo: projectSystemItem.filingCertificateNo,
+      })
+      .from(projectSystemItem)
+      .innerJoin(
+        projectRegister,
+        eq(projectSystemItem.projectRegisterId, projectRegister.id),
+      )
+      .where(
+        and(
+          eq(projectRegister.contractId, id),
+          eq(projectRegister.deleted, false),
+          eq(projectRegister.status, 'APPROVED'),
+          eq(projectSystemItem.deleted, false),
+        ),
+      )
+      .orderBy(
+        desc(projectRegister.contractYear),
+        projectRegister.id,
+        projectSystemItem.sortOrder,
+      );
+
     return {
       ...record,
       groupName,
@@ -435,6 +475,7 @@ export class ContractService {
       archivedByName,
       financialHandlerName,
       systemItems: items,
+      projectSystemItems,
     };
   }
 

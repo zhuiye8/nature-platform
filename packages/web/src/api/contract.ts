@@ -64,6 +64,25 @@ export interface ContractItem {
   systemItems?: ContractSystemItem[]
   systemItemsSummary?: { systemName: string; systemLevel: number }[]
   /**
+   * 已通过项目登记的实际系统明细 (扁平化，按项目+年度分组排序)
+   * 合同详情页替代 systemItems 展示 — systemItems 是合同签约时的粗粒度
+   * 约定清单，projectSystemItems 才是"实际执行的系统清单"含项目编号。
+   * 仅在 findById 返回。
+   */
+  projectSystemItems?: Array<{
+    projectId: number
+    applicationName: string
+    contractYear: number
+    projectStatus: string
+    systemItemId: number
+    systemNo: string | null
+    systemName: string
+    securityLevel: string | null
+    filingAgency: string | null
+    assessedUnitName: string | null
+    filingCertificateNo: string | null
+  }>
+  /**
    * Current reviewer label for the CONTRACT_REVIEW stage (only populated when
    * reviewStatus === 'SUBMITTED' and the workflow is at CONTRACT_REVIEW):
    *   - '部门经理' when pool review is active

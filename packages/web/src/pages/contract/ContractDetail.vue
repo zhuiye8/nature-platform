@@ -310,18 +310,54 @@ onMounted(async () => {
         </el-descriptions>
       </el-card>
 
-      <!-- ── 4. 系统明细 ────────────────────────────────────── -->
-      <el-card v-if="contract.systemItems?.length" shadow="never" style="margin-bottom: 16px">
+      <!-- ── 4. 系统明细（来自已通过项目登记的实际执行清单）───── -->
+      <!-- 此卡片展示的是 project_system_item (含 systemNo) 的整合视图，
+           取代了原合同签约约定清单 (contract_system_item)。
+           合同签约清单仍保留在合同编辑页 ContractForm 用于审核后生成合同名称，
+           不再在详情页展示。 -->
+      <el-card shadow="never" style="margin-bottom: 16px">
         <template #header>
-          <span style="font-weight: 600; font-size: 15px">系统明细（{{ contract.systemItems.length }} 个）</span>
+          <span style="font-weight: 600; font-size: 15px">
+            系统明细（{{ contract.projectSystemItems?.length ?? 0 }} 个 · 已通过项目登记）
+          </span>
         </template>
-        <el-table :data="contract.systemItems" border size="small" stripe>
+        <el-table
+          v-if="contract.projectSystemItems?.length"
+          :data="contract.projectSystemItems"
+          border
+          size="small"
+          stripe
+        >
           <el-table-column type="index" label="#" width="50" align="center" />
+          <el-table-column prop="applicationName" label="所属项目" min-width="280" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span>{{ row.applicationName }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="年度" width="80" align="center">
+            <template #default="{ row }">
+              <el-tag size="small" type="info">{{ row.contractYear }}年</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="systemNo" label="项目编号" min-width="200" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.systemNo || '--' }}</template>
+          </el-table-column>
           <el-table-column prop="systemName" label="系统名称" min-width="200" show-overflow-tooltip />
-          <el-table-column label="系统等级" width="100" align="center">
-            <template #default="{ row }">{{ row.systemLevel || '--' }}</template>
+          <el-table-column label="安全等级" width="100" align="center">
+            <template #default="{ row }">{{ row.securityLevel || '--' }}</template>
+          </el-table-column>
+          <el-table-column prop="filingAgency" label="备案机关" min-width="150" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.filingAgency || '--' }}</template>
+          </el-table-column>
+          <el-table-column prop="assessedUnitName" label="被测单位" min-width="180" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.assessedUnitName || '--' }}</template>
           </el-table-column>
         </el-table>
+        <el-empty
+          v-else
+          description="该合同暂无已通过的项目登记系统明细，请在项目登记审批通过后查看"
+          :image-size="80"
+        />
       </el-card>
 
       <!-- ── 5. 合同文件 ────────────────────────────────────── -->

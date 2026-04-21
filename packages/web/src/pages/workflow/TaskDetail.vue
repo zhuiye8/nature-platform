@@ -424,6 +424,9 @@ onMounted(() => {
         <h4 style="margin: 0 0 8px; font-size: 14px; color: #606266">系统明细（{{ bizData.systemItems.length }} 个）</h4>
         <el-table :data="bizData.systemItems" border size="small" stripe>
           <el-table-column type="index" label="#" width="50" align="center" />
+          <el-table-column prop="systemNo" label="项目编号" min-width="180" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.systemNo || '--' }}</template>
+          </el-table-column>
           <el-table-column prop="systemName" label="系统名称" min-width="150" show-overflow-tooltip />
           <el-table-column label="安全等级" width="90" align="center">
             <template #default="{ row }">{{ getStatusLabel(row.systemLevel || row.securityLevel) || '--' }}</template>
