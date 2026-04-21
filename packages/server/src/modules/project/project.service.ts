@@ -51,37 +51,54 @@ export class ProjectService {
     const isCommercial = roleCodes.includes('commercial');
     const isDeptManager = roleCodes.includes('dept_manager');
     const isDirector = roleCodes.includes('project_director');
-    const isAssessor =
-      roleCodes.includes('senior_assessor') ||
-      roleCodes.includes('middle_assessor') ||
-      roleCodes.includes('junior_assessor');
-
     const conditions: SQL[] = [eq(projectRegister.deleted, false)];
 
-    // Row-level visibility:
+    // Row-level visibility (UNION semantics — 多身份用户取所有身份的并集):
     //   super_admin / commercial / dept_manager / project_director → all projects
-    //   assessors (senior/middle/junior) → only projects they are a member of
-    //   others (sales, etc.) → only projects they created
+    //   其他角色用户 → 以下任一条件满足即可见：
+    //     a) 自己是创建者 (created_by = userId)
+    //     b) 自己是 project_member (PM / ASSESSOR / REPORT_WRITER)
+    //     c) 自己是所属合同的跟单销售 (contract.sales_person_id = userId)
+    // 之前版本用互斥 if/else，导致身兼销售+测评师的用户走 assessor 分支后
+    // 看不到自己创建的项目 — 改为 OR 并集，任一身份满足即可见。
     if (!isSuperAdmin && !isCommercial && !isDeptManager && !isDirector) {
-      if (isAssessor) {
-        // Find project IDs where this user is an active member
-        const memberRows = await this.db
-          .select({ projectId: projectMember.projectId })
-          .from(projectMember)
-          .where(
-            and(
-              eq(projectMember.userId, currentUserId),
-              eq(projectMember.status, 'ACTIVE'),
-            ),
-          );
-        const memberProjectIds = [...new Set(memberRows.map((r) => r.projectId))];
-        if (memberProjectIds.length === 0) {
-          return { list: [], total: 0, page, pageSize };
-        }
-        conditions.push(inArray(projectRegister.id, memberProjectIds));
-      } else {
-        conditions.push(eq(projectRegister.createdBy, currentUserId));
+      const orConditions: SQL[] = [];
+
+      // (a) 作为创建者
+      orConditions.push(eq(projectRegister.createdBy, currentUserId));
+
+      // (b) 作为 project_member (任何 roleType — PM / ASSESSOR / REPORT_WRITER 都算)
+      const memberRows = await this.db
+        .select({ projectId: projectMember.projectId })
+        .from(projectMember)
+        .where(
+          and(
+            eq(projectMember.userId, currentUserId),
+            eq(projectMember.status, 'ACTIVE'),
+          ),
+        );
+      const memberProjectIds = [...new Set(memberRows.map((r) => r.projectId))];
+      if (memberProjectIds.length > 0) {
+        orConditions.push(inArray(projectRegister.id, memberProjectIds));
       }
+
+      // (c) 作为合同跟单销售 — 业务约定：跟单销售与创建者同等可见权限
+      const salesContractRows = await this.db
+        .select({ id: contract.id })
+        .from(contract)
+        .where(
+          and(
+            eq(contract.salesPersonId, currentUserId),
+            eq(contract.deleted, false),
+          ),
+        );
+      const salesContractIds = salesContractRows.map((r) => r.id);
+      if (salesContractIds.length > 0) {
+        orConditions.push(inArray(projectRegister.contractId, salesContractIds));
+      }
+
+      // orConditions 至少含 (a)，恒非空
+      conditions.push(or(...orConditions)!);
     }
 
     if (query.keyword) {
