@@ -233,8 +233,165 @@ async function main() {
   const notifList = await api('GET', '/notification?page=1&pageSize=10', token);
   check('通知列表', notifList.code === 0);
 
-  // ── 13. 中文编码验证 ──
-  console.log('\n【13】中文编码验证');
+  // ── 13. DIRECTOR_REVIEW 事务化冒烟测试（覆盖 project.listener 事务化改动）──
+  // 目标：走完 项目登记 → 提交 → (DEPT_REVIEW) → DIRECTOR_REVIEW 分配 PM/测评师 →
+  //       验证 project.listener 事务化的 4 项副作用全部落地：
+  //       1. project.status = APPROVED
+  //       2. project_system_item.systemNo 生成
+  //       3. project_member 插入 PM
+  //       4. project_member 插入 ASSESSOR
+  //       5. police.listener 独立事件：police_register 自动创建 status=PENDING
+  // 前置：contractId (Section 3) 已 APPROVED；u1/u2 (Section 5) 已存在
+  // 容错：后端 listener 不校验测评师角色 (只要 userId 合法就入库)，
+  //       故此处用 u1 作 PM、u2 作 assessor 无需额外角色分配
+  // 降级：任一前置失败则跳过后续断言，打印诊断，不崩溃
+  console.log('\n【13】DIRECTOR_REVIEW 事务化冒烟测试');
+  let projectId = null;
+
+  // 动态寻找一个 APPROVED 合同：优先用 Section 3 的 ct1，回退到数据库已有
+  // 这样即使 Section 3 失败 (重复创建冲突等)，本 Section 仍能独立运行
+  let useContractId = contractId;
+  if (!useContractId) {
+    const apprList = await api('GET', '/contract/page?reviewStatus=APPROVED&pageSize=5', token);
+    useContractId = apprList.data?.list?.find(c => c.serviceYears?.includes(2026))?.id
+      ?? apprList.data?.list?.[0]?.id;
+    if (useContractId) {
+      console.log('  ℹ️  Section 3 ct1 不可用，回退到已有合同 id=' + useContractId);
+    }
+  }
+
+  // 获取 PM 和 assessor 候选：优先用 Section 5 创建的，回退到现有用户池
+  // (后端 listener 不校验 assessor 角色，只要 userId 合法即可)
+  let pmId = u1.data?.id;
+  let assessorId = u2.data?.id;
+  if (!pmId || !assessorId) {
+    const uAll = await api('GET', '/user/simple-list', token);
+    const pool = (uAll.data || []).filter(u => u.username !== 'admin');
+    pmId = pmId ?? pool[0]?.id;
+    assessorId = assessorId ?? pool.find(u => u.id !== pmId)?.id;
+    if (pmId && assessorId) {
+      console.log('  ℹ️  Section 5 用户不可用，回退到现有用户 PM=' + pmId + ' assessor=' + assessorId);
+    }
+  }
+
+  if (!useContractId || !pmId || !assessorId) {
+    console.log('  ⚠️  前置缺失 (contract=' + useContractId + ' pm=' + pmId + ' assessor=' + assessorId + ')，整个 Section 跳过');
+  } else {
+    // 拿合同详情以确定 contractYear + 客户信息填 systemItem
+    const ctDetail = await api('GET', '/contract/' + useContractId, token);
+    const useYear = ctDetail.data?.serviceYears?.[0] ?? 2026;
+
+    // Step 1: 创建项目登记
+    const projCreate = await api('POST', '/project', token, {
+      contractId: useContractId, contractYear: useYear,
+      applicationName: 'E2E测试-事务化-' + Date.now(),
+    });
+    check('项目登记创建', projCreate.code === 0,
+      projCreate.code !== 0 ? 'msg=' + JSON.stringify(projCreate).slice(0, 180) : 'id=' + projCreate.data?.id);
+    projectId = projCreate.data?.id;
+
+    if (projectId) {
+      // Step 2: 补充系统明细 (必填字段齐全，否则 submit 会被 service 层拦住)
+      const projUpdate = await api('PUT', '/project/' + projectId, token, {
+        systemItems: [{
+          clientKey: 'ck_e2e_1',
+          systemName: 'E2E测试-HIS系统',
+          filingAgency: '扬州市公安局',
+          securityLevel: '三级',
+          assessedUnitName: '江苏省人民医院',
+          assessedUnitContact: '张明远',
+          assessedUnitMobile: '13900001234',
+          assessedUnitAddress: '南京市玄武区',
+          hasFilingCertificate: true,
+          filingCertificateNo: 'FILE-E2E-001',
+          filingCertificateIssuedAt: '2026-01-15',
+          requiredEntryDate: '2026-03-01',
+          requiredReportDeliveryDate: '2026-06-01',
+          sortOrder: 1,
+        }],
+      });
+      check('添加系统明细', projUpdate.code === 0,
+        projUpdate.code !== 0 ? 'msg=' + JSON.stringify(projUpdate).slice(0, 180) : '');
+
+      // Step 3: 提交审核
+      const subRes = await api('POST', '/project/' + projectId + '/submit', token);
+      check('提交项目登记审核', subRes.code === 0,
+        subRes.code !== 0 ? 'msg=' + JSON.stringify(subRes).slice(0, 180) : '');
+
+      if (subRes.code === 0) {
+        // Step 4: 推进 DEPT_REVIEW (合同未归档时出现)
+        let projTasks = await api('GET', '/workflow/my-tasks', token);
+        const deptTask = projTasks.data?.find(
+          t => t.nodeKey === 'DEPT_REVIEW' && t.bizId === projectId);
+        if (deptTask) {
+          const sigDept = await api('POST', '/workflow/signal', token, {
+            instanceId: deptTask.instanceId, taskId: deptTask.id,
+            action: 'APPROVE', remark: 'E2E 部门经理准入',
+          });
+          check('DEPT_REVIEW 通过', sigDept.code === 0,
+            sigDept.code !== 0 ? 'msg=' + JSON.stringify(sigDept).slice(0, 120) : '');
+        } else {
+          console.log('  ℹ️  未出现 DEPT_REVIEW (合同已归档，跳过此步属正常)');
+        }
+
+        // Step 5: 推进 DIRECTOR_REVIEW + 分配 PM/测评师
+        projTasks = await api('GET', '/workflow/my-tasks', token);
+        const dirTask = projTasks.data?.find(
+          t => t.nodeKey === 'DIRECTOR_REVIEW' && t.bizId === projectId);
+        check('DIRECTOR_REVIEW 任务已生成', !!dirTask,
+          dirTask ? 'taskId=' + dirTask.id : '未找到，流程异常');
+
+        if (dirTask) {
+          const sigDir = await api('POST', '/workflow/signal', token, {
+            instanceId: dirTask.instanceId, taskId: dirTask.id,
+            action: 'APPROVE', remark: 'E2E 项目主管分配 PM + 测评师',
+            extraData: {
+              pmUserId: pmId,
+              assessorUserIds: [assessorId],
+            },
+          });
+          check('DIRECTOR_REVIEW APPROVE + 分配', sigDir.code === 0,
+            sigDir.code !== 0 ? 'msg=' + JSON.stringify(sigDir).slice(0, 180) : '');
+
+          if (sigDir.code === 0) {
+            // Step 6: listener 异步执行，等待完成
+            await new Promise(r => setTimeout(r, 1500));
+
+            // Step 7: 验证 project.listener 事务化的 4 项产物
+            const projAfter = await api('GET', '/project/' + projectId, token);
+            check('[TX] project.status → APPROVED',
+              projAfter.data?.status === 'APPROVED',
+              'status=' + projAfter.data?.status);
+
+            const sysItems = projAfter.data?.systemItems || [];
+            check('[TX] systemNo 已生成 (事务内)',
+              sysItems.length > 0 && sysItems.every(s => !!s.systemNo),
+              sysItems[0] ? '样例=' + sysItems[0].systemNo : '无明细');
+
+            const members = projAfter.data?.members || [];
+            const pm = members.find(m => m.roleType === 'PM');
+            const assessors = members.filter(m => m.roleType === 'ASSESSOR');
+            check('[TX] PM 入 project_member',
+              pm?.userId === pmId,
+              'pm=' + JSON.stringify(pm));
+            check('[TX] ASSESSOR 入 project_member',
+              assessors.length === 1 && assessors[0].userId === assessorId,
+              'count=' + assessors.length);
+
+            // Step 8: police.listener 独立事件 — 验证 police_register 自动创建
+            const polList2 = await api('GET', '/police/page?status=PENDING&pageSize=50', token);
+            const autoPol = polList2.data?.list?.find(
+              p => p.projectRegisterId === projectId);
+            check('police_register 自动创建 (status=PENDING)',
+              !!autoPol, autoPol ? 'id=' + autoPol.id : '未找到对应记录');
+          }
+        }
+      }
+    }
+  }
+
+  // ── 14. 中文编码验证 ──
+  console.log('\n【14】中文编码验证');
   const cnCustomer = await api('GET', '/customer/' + custId1, token);
   check('中文客户名完整', cnCustomer.data?.fullName === '江苏省人民医院', 'name=' + cnCustomer.data?.fullName);
   check('中文联系人完整', cnCustomer.data?.contactName === '张明远', 'contact=' + cnCustomer.data?.contactName);
