@@ -41,14 +41,6 @@ export interface ProjectItem {
   status: string
   contractName?: string
   createdAt: string
-  /**
-   * Current reviewer label for the PROJECT_REVIEW stage (only populated when
-   * status === 'SUBMITTED' and currentNode === 'PROJECT_REVIEW'):
-   *   - '项目主管' / '部门经理' when pool review is active
-   *   - an actual user display name when a single-assign fallback is in effect
-   *   - null otherwise (draft / other stages / completed)
-   */
-  currentReviewerLabel?: string | null
 }
 
 export interface ProjectDetail extends ProjectItem {

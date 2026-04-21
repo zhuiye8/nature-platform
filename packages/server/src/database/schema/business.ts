@@ -241,7 +241,7 @@ export type NewProjectSystemItem = typeof projectSystemItem.$inferInsert;
 
 // ---------------------------------------------------------------------------
 // project_system_serial — per (contract, year) counter for system numbers
-// Used by project.listener on PROJECT_REVIEW APPROVE to generate system_no.
+// Used by project.listener on DIRECTOR_REVIEW APPROVE to generate system_no.
 // ---------------------------------------------------------------------------
 export const projectSystemSerial = pgTable(
   'project_system_serial',

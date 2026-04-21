@@ -135,11 +135,6 @@ export class ProjectService {
         .offset((page - 1) * pageSize),
     ]);
 
-    const POOL_LABELS: Record<string, string> = {
-      project_director: '项目主管',
-      dept_manager: '部门经理',
-    };
-
     const rowIds = rows.map((r) => r.id!);
 
     // Batch: sales person names
@@ -187,57 +182,11 @@ export class ProjectService {
       for (const s of siCounts) siCountMap.set(s.projectRegisterId, s.total);
     }
 
-    // Batch: reviewer labels (only for rows at PROJECT_REVIEW)
-    const reviewRowIds = rows
-      .filter((r) => r.status === 'SUBMITTED' && r.currentNode === 'PROJECT_REVIEW')
-      .map((r) => r.id!);
-    const reviewerLabelMap = new Map<number, string>();
-    if (reviewRowIds.length > 0) {
-      const instRows = await this.db
-        .select({ bizId: wfInstance.bizId, variables: wfInstance.variables, instanceId: wfInstance.id })
-        .from(wfInstance)
-        .where(
-          and(
-            eq(wfInstance.bizType, 'PROJECT_REGISTER'),
-            inArray(wfInstance.bizId, reviewRowIds),
-          ),
-        );
-      // Collect instance IDs needing single-assignee name lookup
-      const needNameLookup: { bizId: number; instanceId: number }[] = [];
-      for (const inst of instRows) {
-        const vars = (inst.variables as Record<string, any> | null) ?? {};
-        if (vars.isPoolReview && POOL_LABELS[vars.reviewerRoleCode]) {
-          reviewerLabelMap.set(inst.bizId, POOL_LABELS[vars.reviewerRoleCode]);
-        } else {
-          needNameLookup.push({ bizId: inst.bizId, instanceId: inst.instanceId });
-        }
-      }
-      if (needNameLookup.length > 0) {
-        const reviewers = await this.db
-          .select({ instanceId: wfTask.instanceId, name: userAccount.displayName })
-          .from(wfTask)
-          .innerJoin(userAccount, eq(wfTask.assigneeId, userAccount.id))
-          .where(
-            and(
-              inArray(wfTask.instanceId, needNameLookup.map((n) => n.instanceId)),
-              eq(wfTask.nodeKey, 'PROJECT_REVIEW'),
-              eq(wfTask.status, 'PENDING'),
-            ),
-          );
-        const instIdToName = new Map(reviewers.map((r) => [r.instanceId, r.name]));
-        for (const nl of needNameLookup) {
-          const name = instIdToName.get(nl.instanceId);
-          if (name) reviewerLabelMap.set(nl.bizId, name);
-        }
-      }
-    }
-
     const enriched = rows.map((row) => ({
       ...row,
       salesPersonName: (row.salesPersonId && userNameMap.get(row.salesPersonId)) ?? null,
       rejectRemark: rejectRemarkMap.get(row.id!) ?? null,
       systemItemCount: siCountMap.get(row.id!) ?? 0,
-      currentReviewerLabel: reviewerLabelMap.get(row.id!) ?? null,
     }));
 
     return {
@@ -714,7 +663,8 @@ export class ProjectService {
         { skip_dept_review, isPoolReview },
       );
 
-      // Auto-signal the first SIMPLE node to advance to PROJECT_REVIEW
+      // Auto-signal the first SIMPLE node to advance into the review stage
+      // (DEPT_REVIEW when contract is not fully archived, otherwise DIRECTOR_REVIEW)
       try {
         const { wfTask: wfTaskSchema, wfInstance: wfInstSchema } =
           await import('../../database/schema/workflow');

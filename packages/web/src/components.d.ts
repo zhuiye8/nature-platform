@@ -65,7 +65,6 @@ declare module 'vue' {
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     SystemItemDetailDialog: typeof import('./components/SystemItemDetailDialog.vue')['default']
-    TaskActionDialog: typeof import('./components/TaskActionDialog.vue')['default']
   }
   export interface GlobalDirectives {
     vLoading: typeof import('element-plus/es')['ElLoadingDirective']

@@ -44,7 +44,6 @@ const businessRouteMap: Record<string, (task: TaskItem) => string> = {
   CONTENT_REVIEW: (t) => `/workflow/task/${t.id}`,
   FINAL_REVIEW: (t) => `/workflow/task/${t.id}`,
   CONTRACT_REVIEW: (t) => `/workflow/task/${t.id}`,
-  PROJECT_REVIEW: (t) => `/workflow/task/${t.id}`,
   REPORT_COMPILE: () => '/report',
   MATERIAL_ARCHIVE: (t) => `/archive/${t.bizId}`,
 }
@@ -63,7 +62,6 @@ function getTaskTypeLabel(task: TaskItem): string {
   }
   if (t.nodeKey === 'FINAL_REVIEW') return '最终审核'
   if (t.nodeKey === 'CONTRACT_REVIEW') return '合同审核'
-  if (t.nodeKey === 'PROJECT_REVIEW') return '项目审核'
   if (t.nodeKey === 'CONTRACT_ARCHIVE') return '合同归档'
   if (t.nodeKey === 'POLICE_REGISTER') return '公安登记'
   if (t.nodeKey === 'ON_SITE_ASSESSMENT') return '现场测评'

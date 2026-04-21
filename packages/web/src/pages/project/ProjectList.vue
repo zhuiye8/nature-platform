@@ -27,7 +27,6 @@ const statusOptions = [
 const submittedSubLabel: Record<string, string> = {
   DEPT_REVIEW: '部门经理确认中',
   DIRECTOR_REVIEW: '项目主管审核中',
-  PROJECT_REVIEW: '审核中', // 兼容旧数据
 }
 
 // 项目登记列表只展示 4 种状态（SUBMITTED 下细分 2 种审核阶段）
