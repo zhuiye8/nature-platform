@@ -176,29 +176,59 @@ export class AssessmentService {
   // Project detail for assessment page
   // -----------------------------------------------------------------------
   async getProjectDetail(projectRegisterId: number) {
-    // Project info
-    const projects = await this.db
-      .select()
+    const { contract, customer } = await import('../../database/schema/business');
+
+    // Project + contract + customer (leftJoin so projects with a dangling
+    // contract reference still render, just without contract fields)
+    const rows = await this.db
+      .select({
+        // project fields
+        id: projectRegister.id,
+        applicationName: projectRegister.applicationName,
+        contractYear: projectRegister.contractYear,
+        status: projectRegister.status,
+        contractId: projectRegister.contractId,
+        // contract fields (for 关联合同信息 card in AssessmentDetail)
+        contractNo: contract.contractNo,
+        contractName: contract.contractName,
+        serviceContent: contract.serviceContent,
+        contractType: contract.contractType,
+        serviceYears: contract.serviceYears,
+        paymentAmount: contract.paymentAmount,
+        contactName: contract.contactName,
+        contactPhone: contract.contactPhone,
+        partnerName: contract.partnerName,
+        salesPersonId: contract.salesPersonId,
+        contractArchiveStatus: contract.archiveStatus,
+        contractArchivedBy: contract.archivedBy,
+        contractArchivedAt: contract.archivedAt,
+        // customer fields
+        customerName: customer.fullName,
+        customerUscc: customer.uscc,
+      })
       .from(projectRegister)
+      .leftJoin(contract, eq(projectRegister.contractId, contract.id))
+      .leftJoin(customer, eq(contract.customerId, customer.id))
       .where(eq(projectRegister.id, projectRegisterId))
       .limit(1);
 
-    if (projects.length === 0) {
+    if (rows.length === 0) {
       throw new NotFoundException('Project not found');
     }
-    const project = projects[0];
+    const row = rows[0];
 
-    // Customer name via contract
-    const { contract, customer } = await import('../../database/schema/business');
-    let customerName = '';
-    if (project.contractId) {
-      const contracts = await this.db
-        .select({ customerName: customer.fullName })
-        .from(contract)
-        .innerJoin(customer, eq(contract.customerId, customer.id))
-        .where(eq(contract.id, project.contractId))
-        .limit(1);
-      customerName = contracts[0]?.customerName || '';
+    // Resolve salesPersonName and contractArchivedByName in a single
+    // batch (only users we actually need)
+    const userIds = [row.salesPersonId, row.contractArchivedBy].filter(
+      (x): x is number => !!x,
+    );
+    const userNameMap = new Map<number, string>();
+    if (userIds.length > 0) {
+      const users = await this.db
+        .select({ id: userAccount.id, displayName: userAccount.displayName })
+        .from(userAccount)
+        .where(inArray(userAccount.id, userIds));
+      for (const u of users) userNameMap.set(u.id, u.displayName);
     }
 
     // Members
@@ -230,11 +260,32 @@ export class AssessmentService {
       .orderBy(projectSystemItem.sortOrder);
 
     return {
-      id: project.id,
-      applicationName: project.applicationName,
-      contractYear: project.contractYear,
-      customerName,
-      status: project.status,
+      id: row.id,
+      applicationName: row.applicationName,
+      contractYear: row.contractYear,
+      customerName: row.customerName ?? '',
+      status: row.status,
+      // ── 关联合同信息（供 AssessmentDetail 展示）──
+      contractId: row.contractId,
+      contractNo: row.contractNo,
+      contractName: row.contractName,
+      serviceContent: row.serviceContent,
+      contractType: row.contractType,
+      serviceYears: row.serviceYears,
+      paymentAmount: row.paymentAmount,
+      contactName: row.contactName,
+      contactPhone: row.contactPhone,
+      partnerName: row.partnerName,
+      salesPersonName: row.salesPersonId
+        ? userNameMap.get(row.salesPersonId) ?? null
+        : null,
+      customerUscc: row.customerUscc,
+      contractArchiveStatus: row.contractArchiveStatus,
+      contractArchivedAt: row.contractArchivedAt,
+      contractArchivedByName: row.contractArchivedBy
+        ? userNameMap.get(row.contractArchivedBy) ?? null
+        : null,
+      // ── 成员 / 系统明细 ──
       members,
       systemItems,
     };

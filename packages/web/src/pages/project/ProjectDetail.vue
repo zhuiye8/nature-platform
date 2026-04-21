@@ -20,15 +20,18 @@ const loading = ref(false)
 const project = ref<ProjectDetailType | null>(null)
 const workflowInstance = ref<InstanceDetail | null>(null)
 
-// 合同附件（附件 + 附件说明）
+// 合同附件（附件 + 附件说明 + 归档扫描件）
 const contractFiles = ref<FileItem[]>([])
 const contractDescFiles = ref<FileItem[]>([])
+const contractScanFiles = ref<FileItem[]>([])
 
 async function loadContractAttachments(contractId: number) {
   try { contractFiles.value = (await getFileList('CONTRACT', contractId)) as any as FileItem[] }
   catch { contractFiles.value = [] }
   try { contractDescFiles.value = (await getFileList('CONTRACT_DESC', contractId)) as any as FileItem[] }
   catch { contractDescFiles.value = [] }
+  try { contractScanFiles.value = (await getFileList('CONTRACT_SCAN', contractId)) as any as FileItem[] }
+  catch { contractScanFiles.value = [] }
 }
 
 // System items with file info
@@ -223,7 +226,7 @@ onMounted(() => {
         </el-descriptions>
 
         <!-- 关联合同附件 -->
-        <div v-if="contractFiles.length > 0 || contractDescFiles.length > 0" style="margin-top: 16px">
+        <div v-if="contractFiles.length > 0 || contractDescFiles.length > 0 || contractScanFiles.length > 0" style="margin-top: 16px">
           <h4 style="margin: 0 0 8px; font-size: 14px; color: #606266">关联合同附件</h4>
           <div v-if="contractFiles.length > 0" style="margin-bottom: 12px">
             <div style="font-size: 12px; color: #909399; margin-bottom: 4px">合同文件</div>
@@ -235,10 +238,21 @@ onMounted(() => {
               </div>
             </div>
           </div>
-          <div v-if="contractDescFiles.length > 0">
+          <div v-if="contractDescFiles.length > 0" style="margin-bottom: 12px">
             <div style="font-size: 12px; color: #909399; margin-bottom: 4px">合同附件说明</div>
             <div style="display: flex; flex-direction: column; gap: 4px">
               <div v-for="f in contractDescFiles" :key="'cd-'+f.id" style="display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: #fafafa; border-radius: 4px">
+                <el-link type="primary" :underline="false" @click="openFilePreview(f.id, f.fileName)">{{ f.fileName }}</el-link>
+                <span style="color: #909399; font-size: 12px">{{ formatFileSize(f.fileSize) }}</span>
+                <span style="color: #909399; font-size: 12px; margin-left: auto">{{ f.uploaderName || '--' }} · {{ formatTime(f.uploadedAt) }}</span>
+              </div>
+            </div>
+          </div>
+          <!-- 合同归档扫描件（仅合同归档时有数据） -->
+          <div v-if="contractScanFiles.length > 0">
+            <div style="font-size: 12px; color: #909399; margin-bottom: 4px">合同归档扫描件</div>
+            <div style="display: flex; flex-direction: column; gap: 4px">
+              <div v-for="f in contractScanFiles" :key="'cs-'+f.id" style="display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: #fafafa; border-radius: 4px">
                 <el-link type="primary" :underline="false" @click="openFilePreview(f.id, f.fileName)">{{ f.fileName }}</el-link>
                 <span style="color: #909399; font-size: 12px">{{ formatFileSize(f.fileSize) }}</span>
                 <span style="color: #909399; font-size: 12px; margin-left: auto">{{ f.uploaderName || '--' }} · {{ formatTime(f.uploadedAt) }}</span>

@@ -15,6 +15,7 @@ import { useAuthStore } from '@/stores/auth'
 import { getStatusLabel } from '@/utils/status-map'
 import { formatTime } from '@/utils/format'
 import { getSystemItems } from '@/api/project'
+import { getFileList, getFileDownloadPath, getFilePreviewPath, type FileItem } from '@/api/file'
 import FilePoolPanel from '@/components/FilePoolPanel.vue'
 import ReviewOpinionHistory from '@/components/ReviewOpinionHistory.vue'
 import SystemItemDetailDialog from '@/components/SystemItemDetailDialog.vue'
@@ -39,6 +40,35 @@ async function loadSystemItemsWithFiles() {
   try {
     systemItemsWithFiles.value = (await getSystemItems(projectRegisterId)) as any[]
   } catch { systemItemsWithFiles.value = [] }
+}
+
+// ── 合同归档扫描件（仅合同归档时加载）──
+const contractScanFiles = ref<FileItem[]>([])
+async function loadContractScanFiles(contractId: number | null | undefined) {
+  if (!contractId) { contractScanFiles.value = []; return }
+  try {
+    contractScanFiles.value = (await getFileList('CONTRACT_SCAN', contractId)) as any as FileItem[]
+  } catch { contractScanFiles.value = [] }
+}
+
+// ── File preview (opens in new tab; backend applies watermark) ──
+const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp']
+function canPreviewByName(fileName: string): boolean {
+  const lower = fileName.toLowerCase()
+  return imageExts.some((e) => lower.endsWith(e)) || lower.endsWith('.pdf')
+}
+function openFilePreview(fileId: number, fileName: string) {
+  if (!canPreviewByName(fileName)) {
+    window.open(getFileDownloadPath(fileId), '_blank')
+    return
+  }
+  window.open(getFilePreviewPath(fileId), '_blank')
+}
+function formatFileSize(bytes: number): string {
+  if (!bytes) return '-'
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
 function showSiDetail(row: any) {
@@ -105,6 +135,12 @@ async function fetchData() {
     loading.value = false
   }
   loadSystemItemsWithFiles()
+  // Only fetch contract archive scans if contract has been archived
+  // (saves a roundtrip for fully un-archived contracts)
+  const archiveStatus = project.value?.contractArchiveStatus
+  if (archiveStatus === 'ARCHIVED' || archiveStatus === 'PARTIAL_ARCHIVE') {
+    loadContractScanFiles(project.value?.contractId)
+  }
 }
 
 async function handleInitiateReview() {
@@ -227,6 +263,52 @@ onMounted(fetchData)
             </template>
           </el-table-column>
         </el-table>
+      </div>
+    </el-card>
+
+    <!-- 关联合同信息 -->
+    <el-card v-if="project" shadow="never" style="margin-bottom: 16px">
+      <template #header>
+        <span style="font-weight: 600">关联合同信息</span>
+      </template>
+      <el-descriptions :column="2" border>
+        <el-descriptions-item label="合同编号">{{ project.contractNo || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="合同名称">{{ project.contractName || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="客户名称">{{ project.customerName || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="统一信用代码">{{ project.customerUscc || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="联系人">{{ project.contactName || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="联系电话">{{ project.contactPhone || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="服务内容">{{ project.serviceContent || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="合同类型">{{ project.contractType || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="签单销售">{{ project.salesPersonName || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="合作方">{{ project.partnerName || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="服务年份">{{ (project.serviceYears || []).map((y: number) => y + '年').join('、') || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="合同金额">{{ project.paymentAmount ? '¥' + Number(project.paymentAmount).toLocaleString() : '--' }}</el-descriptions-item>
+        <template v-if="project.contractArchiveStatus === 'ARCHIVED' || project.contractArchiveStatus === 'PARTIAL_ARCHIVE'">
+          <el-descriptions-item label="归档状态">
+            <el-tag :type="project.contractArchiveStatus === 'ARCHIVED' ? 'success' : 'warning'" size="small">
+              {{ project.contractArchiveStatus === 'ARCHIVED' ? '已归档' : '部分归档' }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="归档人">{{ project.contractArchivedByName || '--' }}</el-descriptions-item>
+          <el-descriptions-item label="归档时间" :span="2">{{ project.contractArchivedAt ? formatTime(project.contractArchivedAt) : '--' }}</el-descriptions-item>
+        </template>
+      </el-descriptions>
+
+      <!-- 合同归档扫描件（仅合同归档时有数据） -->
+      <div v-if="contractScanFiles.length > 0" style="margin-top: 16px">
+        <h4 style="margin: 0 0 8px; font-size: 14px; color: #606266">合同归档扫描件</h4>
+        <div style="display: flex; flex-direction: column; gap: 4px">
+          <div
+            v-for="f in contractScanFiles"
+            :key="'cs-' + f.id"
+            style="display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: #fafafa; border-radius: 4px"
+          >
+            <el-link type="primary" :underline="false" @click="openFilePreview(f.id, f.fileName)">{{ f.fileName }}</el-link>
+            <span style="color: #909399; font-size: 12px">{{ formatFileSize(f.fileSize) }}</span>
+            <span style="color: #909399; font-size: 12px; margin-left: auto">{{ f.uploaderName || '--' }} · {{ formatTime(f.uploadedAt) }}</span>
+          </div>
+        </div>
       </div>
     </el-card>
 

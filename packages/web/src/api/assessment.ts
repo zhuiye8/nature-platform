@@ -58,6 +58,23 @@ export interface ProjectDetailForAssessment {
   contractYear: number
   customerName: string
   status: string
+  // ── 关联合同信息（后端 leftJoin contract/customer）──
+  contractId: number | null
+  contractNo: string | null
+  contractName: string | null
+  serviceContent: string | null
+  contractType: string | null
+  serviceYears: number[] | null
+  paymentAmount: string | number | null
+  contactName: string | null
+  contactPhone: string | null
+  partnerName: string | null
+  salesPersonName: string | null
+  customerUscc: string | null
+  contractArchiveStatus: string | null
+  contractArchivedAt: string | null
+  contractArchivedByName: string | null
+  // ── 成员 / 系统明细 ──
   members: { userId: number; roleType: string; displayName: string }[]
   systemItems: any[]
 }
