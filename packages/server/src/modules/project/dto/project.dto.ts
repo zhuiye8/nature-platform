@@ -31,6 +31,11 @@ export class CreateProjectSystemItemDto {
   @IsOptional()
   filingAgency?: string;
 
+  /** 备案地区完整级联路径 "省/市/区"，用于前端 cascader 完整回显 */
+  @IsString()
+  @IsOptional()
+  filingRegion?: string;
+
   @IsString()
   @IsOptional()
   securityLevel?: string;

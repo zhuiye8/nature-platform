@@ -267,40 +267,8 @@ function generateFilingAgency(regionPath: string[]): string {
 function onFilingRegionChange(clientKey: string | undefined, val: string[], item: any) {
   setFilingRegion(clientKey, val)
   item.filingAgency = generateFilingAgency(val)
-}
-
-// Reverse-map a filingAgency string back to a cascader region path, so the
-// "备案地区" selector can be restored when editing an existing system item.
-// Database only persists `filing_agency` (e.g. "扬州市公安局") — not the
-// original cascader path. We walk regionData to find a matching province /
-// city pair. District information is intentionally lost (generateFilingAgency
-// collapses to city level), so the returned path has at most 2 entries.
-//
-// Returns [] on failure: non-standard agency strings (e.g. user edited the
-// input to something like "扬州市公安局网安支队") leave the cascader blank
-// while preserving whatever the user typed in filingAgency — safer than
-// forcing a bad default that disagrees with the saved value.
-function reverseFilingAgencyToRegion(filingAgency: string | null | undefined): string[] {
-  if (!filingAgency) return []
-  const cityMatch = filingAgency.match(/^(.+?市)公安局$/)
-  if (cityMatch) {
-    const city = cityMatch[1]
-    // Direct municipality: province == city (e.g. "北京市公安局" -> ["北京市", "北京市"])
-    if (directMunicipalities.includes(city)) {
-      return [city, city]
-    }
-    // Prefecture-level city: find the province by walking regionData
-    for (const province of regionData) {
-      if (province.children?.some((c) => c.value === city)) {
-        return [province.value, city]
-      }
-    }
-  }
-  const provinceMatch = filingAgency.match(/^(.+?(?:省|自治区))公安厅$/)
-  if (provinceMatch) {
-    return [provinceMatch[1]]
-  }
-  return []
+  // 同步持久化字段 — 保存时会带上，用于编辑回显完整路径 (含区)
+  item.filingRegion = (val || []).join('/')
 }
 
 // Security level options
@@ -383,13 +351,12 @@ async function fetchDetail() {
         pendingReportName: null,
       })),
     }
-    // Restore cascader state for 备案地区 by reverse-mapping each item's
-    // filingAgency. Items with non-standard filingAgency strings will get
-    // an empty path (cascader blank, input preserved).
+    // 从持久化字段 filingRegion 恢复 cascader 状态 (格式: "省/市/区")。
+    // 老数据 (本字段未写入) cascader 会留空, 用户编辑时重新选择即可,
+    // filingAgency 仍显示原值不受影响。
     for (const si of formData.value.systemItems as any[]) {
-      const regionPath = reverseFilingAgencyToRegion(si.filingAgency)
-      if (regionPath.length > 0) {
-        filingRegionMap.value[si.clientKey] = regionPath
+      if (typeof si.filingRegion === 'string' && si.filingRegion.length > 0) {
+        filingRegionMap.value[si.clientKey] = si.filingRegion.split('/').filter(Boolean)
       }
     }
     selectedContractName.value = data.contractName ?? ''
@@ -439,6 +406,8 @@ function addSystemItem() {
     clientKey,
     systemName: '',
     filingAgency: inheritedFilingAgency,
+    // 继承客户的 region 作为备案地区默认值 (可能只有省/市，没有区)
+    filingRegion: regionPath.length > 0 ? regionPath.join('/') : '',
     securityLevel: '',
     isReassessment: false,
     requiredEntryDate: '',
@@ -537,6 +506,7 @@ async function handleSubmit() {
         clientKey: item.clientKey,
         systemName: item.systemName,
         filingAgency: item.filingAgency,
+        filingRegion: item.filingRegion || null,
         securityLevel: item.securityLevel,
         isReassessment: item.isReassessment,
         requiredEntryDate: item.requiredEntryDate,

@@ -6,6 +6,8 @@ export interface ProjectSystemItem {
   clientKey?: string
   systemName: string
   filingAgency: string
+  /** 备案地区完整级联路径 "省/市/区"，用于编辑时 cascader 完整回显 */
+  filingRegion?: string | null
   securityLevel: string
   isReassessment: boolean
   requiredEntryDate: string | null

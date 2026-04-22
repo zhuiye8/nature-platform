@@ -214,6 +214,9 @@ export const projectSystemItem = pgTable('project_system_item', {
   systemNo: varchar('system_no', { length: 128 }),
   systemName: varchar('system_name', { length: 255 }).notNull(),
   filingAgency: varchar('filing_agency', { length: 255 }),
+  // 备案地区完整级联路径 (格式: "省/市/区")，用于编辑时 cascader 完整回显。
+  // filingAgency 只保留省市两级 (业务规则: 公安机关到市级)，区级信息在此字段保留。
+  filingRegion: varchar('filing_region', { length: 128 }),
   securityLevel: varchar('security_level', { length: 64 }),
   isReassessment: boolean('is_reassessment').notNull().default(false),
   requiredEntryDate: date('required_entry_date'),

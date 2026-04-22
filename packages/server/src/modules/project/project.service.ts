@@ -389,6 +389,7 @@ export class ProjectService {
           projectRegisterId: created.id,
           systemName: item.systemName,
           filingAgency: item.filingAgency || null,
+          filingRegion: item.filingRegion || null,
           securityLevel: item.securityLevel || null,
           isReassessment: item.isReassessment ?? false,
           requiredEntryDate: item.requiredEntryDate || null,
@@ -1056,6 +1057,7 @@ export class ProjectService {
         projectRegisterId: projectId,
         systemName: dto.systemName,
         filingAgency: dto.filingAgency || null,
+        filingRegion: dto.filingRegion || null,
         securityLevel: dto.securityLevel || null,
         isReassessment: dto.isReassessment ?? false,
         requiredEntryDate: dto.requiredEntryDate || null,
@@ -1103,6 +1105,7 @@ export class ProjectService {
       .set({
         systemName: dto.systemName,
         filingAgency: dto.filingAgency || null,
+        filingRegion: dto.filingRegion || null,
         securityLevel: dto.securityLevel || null,
         isReassessment: dto.isReassessment ?? false,
         requiredEntryDate: dto.requiredEntryDate || null,
