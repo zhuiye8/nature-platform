@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { getReportPage } from '@/api/report'
 import type { ReportProject, ReportStatus } from '@/api/report'
+import ActionButton from '@/components/ActionButton.vue'
 
 const router = useRouter()
 const tableData = ref<ReportProject[]>([])
@@ -66,13 +67,9 @@ function handleReset() {
 }
 
 function handleView(row: ReportProject) {
-  // 优先用编制人自己的任务（可操作），否则用只读任务查看详情
-  const taskId = row.currentTaskId || row.viewTaskId
-  if (taskId) {
-    router.push(`/workflow/task/${taskId}`)
-  } else {
-    router.push(`/report/${row.id}`)
-  }
+  // 严格按"列表一致性": 查看永远跳本业务详情页(只读)
+  // 编制/审核等操作由 ActionButton 按 my-tasks 权限控制,跳对应目标
+  router.push(`/report/${row.id}`)
 }
 
 onMounted(() => fetchData())
@@ -137,12 +134,11 @@ onMounted(() => fetchData())
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="100" fixed="right">
+        <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="row.currentTaskId" type="primary" link size="small" @click="handleView(row)">
-              {{ row.needsRevision ? '去修改' : '编制' }}
-            </el-button>
-            <el-button v-else type="primary" link size="small" @click="handleView(row)">查看</el-button>
+            <el-button type="primary" link size="small" @click="handleView(row)">查看</el-button>
+            <!-- 编制 / 分配 / 最终审核 等操作按 my-tasks 判定,跳对应目标 -->
+            <ActionButton biz-type="PROJECT_REGISTER" :biz-id="row.id" />
           </template>
         </el-table-column>
       </el-table>

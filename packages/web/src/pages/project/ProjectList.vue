@@ -5,6 +5,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Plus } from '@element-plus/icons-vue'
 import { getProjectPage, getProjectDetail, deleteProject, submitProject } from '@/api/project'
 import type { ProjectItem } from '@/api/project'
+import ActionButton from '@/components/ActionButton.vue'
 
 const router = useRouter()
 const tableData = ref<ProjectItem[]>([])
@@ -264,11 +265,12 @@ onMounted(() => {
           </template>
         </el-table-column>
         <el-table-column prop="createdAt" label="创建时间" min-width="170" />
-        <el-table-column label="操作" width="300" fixed="right">
+        <el-table-column label="操作" width="330" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link size="small" @click="handleView(row)">
               查看
             </el-button>
+            <ActionButton biz-type="PROJECT_REGISTER" :biz-id="row.id" />
             <el-button
               v-permission="'project:update'"
               type="success"

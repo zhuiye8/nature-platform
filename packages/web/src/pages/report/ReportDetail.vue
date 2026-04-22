@@ -7,6 +7,7 @@ import { getInstanceByBiz } from '@/api/workflow'
 import type { ReportDetail } from '@/api/report'
 import type { InstanceDetail } from '@/api/workflow'
 import FilePoolPanel from '@/components/FilePoolPanel.vue'
+import { useOperableTasks } from '@/composables/useOperableTasks'
 
 const route = useRoute()
 const projectRegisterId = Number(route.params.projectRegisterId)
@@ -14,7 +15,16 @@ const projectRegisterId = Number(route.params.projectRegisterId)
 const detail = ref<ReportDetail | null>(null)
 const workflowInstance = ref<InstanceDetail | null>(null)
 const loading = ref(true)
-const isAtCompile = computed(() => detail.value?.currentNode === 'REPORT_COMPILE')
+
+/**
+ * 操作模式: 当前用户在 my-tasks 中有本项目的 REPORT_COMPILE 任务时开启。
+ * - 编辑文件池 + 显示"提交报告"按钮
+ * - 非操作模式(普通查看者/归档后/非编制人): 文件池只读,无提交按钮
+ */
+const { hasTaskFor, refresh } = useOperableTasks()
+const canEditCompile = computed(() =>
+  hasTaskFor('PROJECT_REGISTER', projectRegisterId, 'REPORT_COMPILE'),
+)
 
 async function fetchData() {
   loading.value = true
@@ -35,6 +45,8 @@ async function handleSubmitReport() {
   try {
     await submitReport({ projectRegisterId })
     ElMessage.success('报告已提交')
+    // 刷新 my-tasks 缓存: 提交后本任务消失,按钮/编辑模式应立即关闭
+    await refresh()
     fetchData()
   } catch {
     // handled by request interceptor
@@ -62,7 +74,7 @@ onMounted(() => {
         </el-descriptions-item>
       </el-descriptions>
 
-      <div v-if="isAtCompile" style="margin-top: 16px">
+      <div v-if="canEditCompile" style="margin-top: 16px">
         <el-button type="primary" @click="handleSubmitReport">提交报告</el-button>
       </div>
     </el-card>
@@ -74,7 +86,7 @@ onMounted(() => {
       <FilePoolPanel
         api-type="compile"
         :project-register-id="projectRegisterId"
-        :readonly="!isAtCompile"
+        :readonly="!canEditCompile"
       />
     </el-card>
 

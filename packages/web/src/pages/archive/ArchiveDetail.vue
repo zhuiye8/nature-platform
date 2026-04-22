@@ -13,6 +13,7 @@ import FilePoolPanel from '@/components/FilePoolPanel.vue'
 import SystemItemDetailDialog from '@/components/SystemItemDetailDialog.vue'
 import AssessorLevelTag from '@/components/AssessorLevelTag.vue'
 import ReportWriterCard from '@/components/ReportWriterCard.vue'
+import { useOperableTasks } from '@/composables/useOperableTasks'
 
 const route = useRoute()
 const router = useRouter()
@@ -20,9 +21,17 @@ const authStore = useAuthStore()
 
 const projectRegisterId = Number(route.params.projectRegisterId)
 
-// ── Role detection ──
+// ── 操作权限(归档员) ──
+// 严格按 my-tasks: 当前用户在待办中有本项目的 MATERIAL_ARCHIVE 任务才能归档
+// 即使是 super_admin,没被分到这条归档任务也不显示操作控件(避免误操作)
+const { hasTaskFor, refresh } = useOperableTasks()
+const isArchiver = computed(() =>
+  hasTaskFor('PROJECT_REGISTER', projectRegisterId, 'MATERIAL_ARCHIVE'),
+)
+
+// ── 文件池上传权限(销售/PM,与归档权限独立) ──
+// 池文件是"原始材料收集",所有参与方都能上传;归档员挑出最终版
 const userRoles = computed(() => authStore.user?.roles || [])
-const isArchiver = computed(() => userRoles.value.includes('archiver') || userRoles.value.includes('super_admin'))
 const canUploadPool = computed(() =>
   userRoles.value.includes('sales') || userRoles.value.includes('project_manager') || userRoles.value.includes('super_admin'),
 )
@@ -280,6 +289,8 @@ async function handleSubmit() {
       remark: globalRemark.value.trim() || undefined,
     })
     ElMessage.success(isSubmitted.value ? '归档已更新' : '归档已提交')
+    // 刷新 my-tasks: 归档任务状态变化后,操作控件可见性立即生效
+    await refresh()
     fetchData()
   } finally { submitting.value = false }
 }

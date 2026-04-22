@@ -3,6 +3,7 @@ import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { getAssessmentPage, type AssessmentSystemItem } from '@/api/assessment'
 import { formatTime } from '@/utils/format'
+import ActionButton from '@/components/ActionButton.vue'
 
 const router = useRouter()
 const loading = ref(false)
@@ -146,9 +147,10 @@ onMounted(fetchData)
         <el-table-column label="创建时间" width="170">
           <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="80" align="center" fixed="right">
+        <el-table-column label="操作" width="160" align="center" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link @click="viewDetail(row.id)">查看</el-button>
+            <ActionButton biz-type="PROJECT_REGISTER" :biz-id="row.id" />
           </template>
         </el-table-column>
       </el-table>

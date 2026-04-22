@@ -19,6 +19,7 @@ import { getFileList, getFileDownloadPath, getFilePreviewPath, type FileItem } f
 import FilePoolPanel from '@/components/FilePoolPanel.vue'
 import ReviewOpinionHistory from '@/components/ReviewOpinionHistory.vue'
 import SystemItemDetailDialog from '@/components/SystemItemDetailDialog.vue'
+import { useOperableTasks } from '@/composables/useOperableTasks'
 
 const route = useRoute()
 const router = useRouter()
@@ -143,11 +144,15 @@ async function fetchData() {
   }
 }
 
+// 测评相关操作完成后刷新 my-tasks,让各列表行的操作按钮立即反映最新状态
+const { refresh: refreshMyTasks } = useOperableTasks()
+
 async function handleInitiateReview() {
   try {
     await ElMessageBox.confirm('确定发起质量审核？', '发起质量审核')
     await initiateQualityReview(projectRegisterId)
     ElMessage.success('质量审核已发起')
+    await refreshMyTasks()
     fetchData()
   } catch { /* cancelled */ }
 }
@@ -158,6 +163,7 @@ async function handleResubmit() {
     resubmitting.value = true
     await resubmitAssessmentResult(projectRegisterId)
     ElMessage.success('已重新提交，审核人将重新审核')
+    await refreshMyTasks()
     fetchData()
   } catch { /* cancelled or error */ }
   finally { resubmitting.value = false }

@@ -11,6 +11,7 @@ import { getSystemItems, type EnrichedSystemItem } from '@/api/project'
 import SystemItemDetailDialog from '@/components/SystemItemDetailDialog.vue'
 import AssessorLevelTag from '@/components/AssessorLevelTag.vue'
 import ReportWriterCard from '@/components/ReportWriterCard.vue'
+import { useOperableTasks } from '@/composables/useOperableTasks'
 
 const route = useRoute()
 const router = useRouter()
@@ -37,6 +38,16 @@ function showSiDetail(row: EnrichedSystemItem) {
 }
 
 // ── 电子扫描件 ──
+/**
+ * 上传/删除权限: 严格按 my-tasks。
+ * 只有被分配到本项目 POLICE_REGISTER pool 任务的登记员才能改公安文件。
+ * 上传文件会自动 signal SUBMIT 推进流程(见 police.listener.handleFileUploaded)。
+ */
+const { hasTaskFor, refresh: refreshMyTasks } = useOperableTasks()
+const canEditFiles = computed(() =>
+  hasTaskFor('PROJECT_REGISTER', detail.value?.projectRegisterId, 'POLICE_REGISTER'),
+)
+
 const scanFiles = ref<FileItem[]>([])
 const uploadHeaders = computed(() => ({
   Authorization: `Bearer ${localStorage.getItem('token')}`,
@@ -52,7 +63,10 @@ function handleFileDownload(fileId: number) {
   window.open(getFileDownloadPath(fileId), '_blank')
 }
 
-function handleUploadSuccess() {
+async function handleUploadSuccess() {
+  // 上传成功后,后端监听器会自动 signal SUBMIT 推进到下一节点
+  // 刷新 my-tasks 缓存,上传控件/删除按钮按新状态自动隐藏
+  await refreshMyTasks()
   ElMessage.success('上传成功')
   fetchScanFiles()
   fetchDetail()
@@ -271,7 +285,9 @@ onMounted(fetchDetail)
         <template #header>
           <div style="display: flex; align-items: center; justify-content: space-between">
             <span style="font-weight: 600">电子扫描件</span>
+            <!-- 上传按钮仅对池任务所有者可见(公安登记员) -->
             <el-upload
+              v-if="canEditFiles"
               :action="getUploadUrl('POLICE', policeId)"
               :headers="uploadHeaders"
               :show-file-list="false"
@@ -301,13 +317,15 @@ onMounted(fetchDetail)
           <el-table-column label="操作" width="120" align="center">
             <template #default="{ row }">
               <el-button type="primary" link size="small" :icon="Download" @click="handleFileDownload(row.id)">下载</el-button>
-              <el-button type="danger" link size="small" :icon="Delete" @click="handleDeleteFile(row.id)">删除</el-button>
+              <!-- 删除按钮仅登记员可见; 其他人为只读查看 -->
+              <el-button v-if="canEditFiles" type="danger" link size="small" :icon="Delete" @click="handleDeleteFile(row.id)">删除</el-button>
             </template>
           </el-table-column>
         </el-table>
 
+        <!-- 空状态: 有登记权限 → 拖拽上传区; 否则 → 只读提示 -->
         <el-upload
-          v-else
+          v-else-if="canEditFiles"
           :action="getUploadUrl('POLICE', policeId)"
           :headers="uploadHeaders"
           :show-file-list="false"
@@ -320,6 +338,7 @@ onMounted(fetchDetail)
           <div style="color: var(--el-text-color-regular); font-size: 14px">将文件拖到此处，或<em style="color: var(--el-color-primary)">点击上传</em></div>
           <div style="color: var(--el-text-color-placeholder); font-size: 12px; margin-top: 4px">支持 PDF、JPG、PNG、ZIP 格式</div>
         </el-upload>
+        <el-empty v-else description="暂无电子扫描件" :image-size="60" />
       </el-card>
     </template>
 

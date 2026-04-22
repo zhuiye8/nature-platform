@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { getArchivePage } from '@/api/archive'
 import { formatTime } from '@/utils/format'
 import { getStatusLabel, getStatusTagType } from '@/utils/status-map'
+import ActionButton from '@/components/ActionButton.vue'
 
 const router = useRouter()
 const tableData = ref<any[]>([])
@@ -98,9 +99,10 @@ onMounted(fetchData)
         <el-table-column label="归档时间" width="170">
           <template #default="{ row }">{{ formatTime(row.submittedAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="80" align="center" fixed="right">
+        <el-table-column label="操作" width="160" align="center" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link size="small" @click="handleView(row)">查看</el-button>
+            <ActionButton biz-type="PROJECT_REGISTER" :biz-id="row.id" />
           </template>
         </el-table-column>
       </el-table>

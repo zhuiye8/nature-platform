@@ -10,6 +10,7 @@ import { getFileList, getFileDownloadPath, getFilePreviewPath, type FileItem } f
 import { getStatusLabel, getStatusTagType } from '@/utils/status-map'
 import { formatTime } from '@/utils/format'
 import { useAuthStore } from '@/stores/auth'
+import { useOperableTasks } from '@/composables/useOperableTasks'
 import ReviewOpinionDialog from '@/components/ReviewOpinionDialog.vue'
 import ReviewOpinionHistory from '@/components/ReviewOpinionHistory.vue'
 import FilePoolPanel from '@/components/FilePoolPanel.vue'
@@ -53,12 +54,15 @@ const visibleProjectMembers = computed(() =>
 
 const taskId = computed(() => Number(route.params.taskId))
 const isPending = computed(() => taskData.value?.status === 'PENDING')
-// Can current user operate on this task? (assignee match or pool task with no assignee)
+
+// ── 操作权限判定 ──
+// 严格按 my-tasks: 当前用户的待办中心有这条 task 才能操作。
+// - 直接分配(assigneeId 匹配) / 池任务(角色 + 回避规则)都由后端 getMyTasks 统一计算
+// - 修复旧代码"pool task 恒为 true"的 bug, 避免 admin/super_admin 看到不该看到的操作按钮
+const { myTaskIds, refresh: refreshMyTasks } = useOperableTasks()
 const canOperate = computed(() => {
   if (!taskData.value || !isPending.value) return false
-  const assigneeId = taskData.value.assigneeId
-  if (!assigneeId) return true // pool task
-  return assigneeId === authStore.user?.id
+  return myTaskIds.value.has(taskData.value.id)
 })
 const nodeKey = computed(() => taskData.value?.nodeKey ?? '')
 // Dept review: just approve/reject, no assignment
@@ -83,7 +87,9 @@ function openOpinionDialog(action: 'APPROVE' | 'REVIEW' | 'REJECT') {
   opinionDialogVisible.value = true
 }
 
-function onOpinionCompleted() {
+async function onOpinionCompleted() {
+  // 审核完成后刷新 my-tasks 缓存,让各列表/详情页的操作按钮状态立即同步
+  await refreshMyTasks()
   router.push('/dashboard')
 }
 
@@ -270,6 +276,7 @@ async function handleReportAssignApprove() {
       extraData: { reportWriterIds: [selectedReportWriterId.value] },
     })
     ElMessage.success('已分配编制人')
+    await refreshMyTasks()
     router.push('/dashboard')
   } catch { /* interceptor */ }
   finally { submitting.value = false }
@@ -318,6 +325,7 @@ async function handleResubmit() {
   try {
     await resubmitTask(taskData.value.instanceId)
     ElMessage.success('已重新提交，审核人将重新审核')
+    await refreshMyTasks()
     router.push('/dashboard')
   } catch {
     // handled by interceptor
@@ -364,6 +372,7 @@ async function handleAction(action: 'APPROVE' | 'REJECT') {
     })
     const msgMap: Record<string, string> = { APPROVE: '审批通过', REJECT: '已驳回' }
     ElMessage.success(msgMap[action] || '操作成功')
+    await refreshMyTasks()
     router.push('/dashboard')
   } catch {
     // handled by interceptor

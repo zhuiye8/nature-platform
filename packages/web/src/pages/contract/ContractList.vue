@@ -13,6 +13,7 @@ import type { ContractGroupItem, ContractItem } from '@/api/contract'
 import { getUsersByRole } from '@/api/workflow'
 import { getFileList, getUploadUrl, getFileDownloadPath, deleteFile, type FileItem } from '@/api/file'
 import { useAuthStore } from '@/stores/auth'
+import ActionButton from '@/components/ActionButton.vue'
 
 const authStore = useAuthStore()
 const router = useRouter()
@@ -367,9 +368,11 @@ onMounted(() => {
                     </el-button>
                   </template>
                 </el-table-column>
-                <el-table-column label="操作" width="220" fixed="right">
+                <el-table-column label="操作" width="260" fixed="right">
                   <template #default="{ row }">
                     <el-button type="primary" link size="small" @click="router.push(`/contract/${row.id}`)">查看</el-button>
+                    <!-- 统一操作按钮(审核 / 归档): 按 my-tasks 判断可见性和文案 -->
+                    <ActionButton biz-type="CONTRACT" :biz-id="row.id" />
                     <el-button
                       v-if="isDraftOrRejected(row) && isMyContract(row)"
                       type="primary" link size="small"
@@ -380,12 +383,6 @@ onMounted(() => {
                       type="warning" link size="small"
                       @click="handleSubmit(row)"
                     >提交审核</el-button>
-                    <el-button
-                      v-if="row.reviewStatus === 'APPROVED' && (row.archiveStatus === 'PENDING_ARCHIVE' || row.archiveStatus === 'PARTIAL_ARCHIVE')"
-                      v-permission="'contract:archive'"
-                      type="success" link size="small"
-                      @click="router.push(`/contract/${row.id}?action=archive`)"
-                    >归档</el-button>
                     <el-button
                       v-if="row.reviewStatus === 'DRAFT' && isMyContract(row)"
                       type="danger" link size="small"

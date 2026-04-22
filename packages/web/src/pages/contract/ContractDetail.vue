@@ -14,6 +14,7 @@ import { getStatusLabel, getStatusTagType } from '@/utils/status-map'
 import { formatTime } from '@/utils/format'
 import { usePermission } from '@/composables/usePermission'
 import { useAuthStore } from '@/stores/auth'
+import { useOperableTasks } from '@/composables/useOperableTasks'
 
 const { hasPermission } = usePermission()
 const authStore = useAuthStore()
@@ -153,10 +154,11 @@ function handleScanDownload(file: FileItem) {
   window.open(getFileDownloadPath(file.id), '_blank')
 }
 
+// 归档权限严格按 my-tasks: 只有被分配到本合同 CONTRACT_ARCHIVE 任务的池成员能归档
+// (合同审核未通过 / 已完全归档 时 my-tasks 自然无此任务,判断等价于旧的状态检查)
+const { hasTaskFor: _hasTaskFor, refresh: _refreshMyTasks } = useOperableTasks()
 const canArchive = computed(() =>
-  contract.value?.reviewStatus === 'APPROVED' &&
-  (contract.value?.archiveStatus === 'PENDING_ARCHIVE' || contract.value?.archiveStatus === 'PARTIAL_ARCHIVE') &&
-  hasPermission('contract:archive'),
+  _hasTaskFor('CONTRACT', Number(route.params.id), 'CONTRACT_ARCHIVE'),
 )
 
 const canEdit = computed(() => {
@@ -184,6 +186,8 @@ async function handleArchive() {
     const { isComplete, ...data } = archiveForm.value
     await archiveContract(Number(route.params.id), { ...data, isComplete })
     ElMessage.success(isComplete ? '归档完成' : '已保存（未完成归档）')
+    // 归档完成后 my-tasks 里该任务消失,刷新缓存让 canArchive 立即更新
+    if (isComplete) await _refreshMyTasks()
     fetchDetail()
   } catch {
     // handled by interceptor
