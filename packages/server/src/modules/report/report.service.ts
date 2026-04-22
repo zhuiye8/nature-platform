@@ -1,10 +1,11 @@
 import {
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
-import { eq, and, or, desc, ilike, inArray, isNotNull } from 'drizzle-orm';
+import { eq, and, or, desc, ilike, inArray } from 'drizzle-orm';
 import { DRIZZLE, DrizzleDB } from '../../database/database.module';
 import { projectRegister } from '../../database/schema/business';
 import { userAccount } from '../../database/schema/user';
@@ -26,22 +27,31 @@ import {
  * - APPROVED  已通过  : current_node=MATERIAL_ARCHIVE 或 instance.status=COMPLETED
  */
 
+/** 报告阶段（含归档）的节点集合 */
+const REPORT_STAGE_NODES = ['REPORT_COMPILE', 'FINAL_REVIEW', 'MATERIAL_ARCHIVE'] as const;
+
 @Injectable()
 export class ReportService {
+  private readonly logger = new Logger(ReportService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDB,
     private readonly workflowService: WorkflowService,
   ) {}
 
   // -----------------------------------------------------------------------
-  // List projects that have entered the report stage (曾分配过编制人).
-  // 持久化口径: project_register.compiled_by IS NOT NULL
-  //   - 由 report.listener 在 REPORT_ASSIGN APPROVE 时写入
-  //   - submitReport 后会覆盖为实际提交人
-  //   - 归档完成（COMPLETED）后仍保留，满足"报告管理数据永久保留"需求
+  // 报告管理列表
   //
-  // Visible to all report_writer role users + super_admin + dept_manager
-  // (report_writer 仅可见自己负责的项目)
+  // 数据范围 = 工作流当前/终态处于报告阶段的项目，具体为：
+  //   - wf_instance.current_node ∈ {REPORT_COMPILE, FINAL_REVIEW, MATERIAL_ARCHIVE}
+  //   - 或 wf_instance.status = 'COMPLETED'（已归档完成，永久保留）
+  //
+  // 铁律：一个 biz_id 只对应一个 wf_instance（由 submitProject 拦截保证）。
+  //       编制前节点的项目不会出现在此列表；编制后的永远出现。
+  //
+  // 可见性：super_admin / dept_manager 看所有；report_writer 仅看自己负责
+  //        （以 project_register.compiled_by 为准，该字段在 REPORT_ASSIGN
+  //         APPROVE 时写入，submitReport 覆盖，归档后仍保留）。
   // -----------------------------------------------------------------------
   async findPage(query: QueryReportDto, userId: number) {
     const page = query.page ?? 1;
@@ -62,13 +72,16 @@ export class ReportService {
       return { list: [], total: 0, page, pageSize };
     }
 
-    // ── 数据范围：曾进入过报告编制流程的项目（compiled_by 非空） ──
+    // ── 数据范围：基于 wf_instance 节点/状态判定 ──
     const whereConditions = [
       eq(projectRegister.deleted, false),
-      isNotNull(projectRegister.compiledBy),
+      or(
+        inArray(wfInstance.currentNode, [...REPORT_STAGE_NODES]),
+        eq(wfInstance.status, 'COMPLETED'),
+      )!,
     ];
 
-    // 可见性：report_writer 只看自己的（除非也是 super_admin / dept_manager）
+    // 可见性：report_writer 只看自己的（除非同时也是 super_admin / dept_manager）
     if (isReportWriter && !isSuperAdmin && !isDeptManager) {
       whereConditions.push(eq(projectRegister.compiledBy, userId));
     }
@@ -85,9 +98,7 @@ export class ReportService {
       whereConditions.push(eq(projectRegister.compiledBy, query.compilerId));
     }
 
-    // ── 一次性取所有候选项目 + 关联 wf_instance 拿 current_node ──
-    // 业务数据量级（报告管理几十到上百条）下可内存过滤 + 分页；
-    // 若后续规模化再下推状态到 SQL 层。
+    // INNER JOIN wf_instance: 报告管理要求必须有工作流实例（没有就不可能在报告阶段）
     const candidates = await this.db
       .select({
         id: projectRegister.id,
@@ -102,7 +113,7 @@ export class ReportService {
         wfStatus: wfInstance.status,
       })
       .from(projectRegister)
-      .leftJoin(
+      .innerJoin(
         wfInstance,
         and(
           eq(wfInstance.bizId, projectRegister.id),
@@ -203,12 +214,40 @@ export class ReportService {
     }
 
     // ── 为每条候选推导业务状态 + 可操作/可查看的 taskId ──
-    const enriched = candidates.map((row) => {
+    //
+    // 理论上此时 WHERE 已限定 currentNode ∈ 报告阶段 或 status=COMPLETED，
+    // deriveReportStatus 不会返回 null。但保留防御：若出现未知节点组合，
+    // 打 warn 并从结果中过滤（宁可少显示，也不编造状态）。
+    type EnrichedRow = {
+      id: number;
+      applicationName: string;
+      contractYear: number;
+      status: string;
+      compiledBy: number | null;
+      compiledAt: Date | null;
+      createdAt: Date;
+      compilerName: string | null;
+      currentNode: string | null;
+      currentTaskId: number | null;
+      viewTaskId: number | null;
+      needsRevision: boolean;
+      businessStatus: ReportStatus;
+    };
+
+    const enriched: EnrichedRow[] = [];
+    for (const row of candidates) {
       const status = this.deriveReportStatus(row, {
         rectInstanceIds,
         reviewedInstanceIds,
       });
-      const needsRevision = status === 'REVISION';
+      if (status === null) {
+        // 异常数据兜底：节点不在报告阶段但又被 WHERE 拉进来（不应发生）
+        this.logger.warn(
+          `Report list: project #${row.id} has unexpected wf state ` +
+            `(currentNode=${row.currentNode}, wfStatus=${row.wfStatus}); skipping`,
+        );
+        continue;
+      }
 
       // currentTaskId：编制人可操作的 REPORT_COMPILE task（仅当前节点在此时）
       const currentTaskId =
@@ -224,7 +263,7 @@ export class ReportService {
             null)
           : null;
 
-      return {
+      enriched.push({
         id: row.id,
         applicationName: row.applicationName,
         contractYear: row.contractYear,
@@ -238,11 +277,10 @@ export class ReportService {
         currentNode: row.currentNode,
         currentTaskId,
         viewTaskId,
-        // 保留字段供前端既有渲染（按业务状态推导，等价于 status==='REVISION'）
-        needsRevision,
+        needsRevision: status === 'REVISION',
         businessStatus: status,
-      };
-    });
+      });
+    }
 
     // ── 状态筛选（在内存中，因为 REVISION 判定含子查询信号）──
     const filtered = query.status
@@ -258,7 +296,14 @@ export class ReportService {
 
   /**
    * 按当前节点、状态、整改信号推导业务状态。
-   * 纯函数，便于测试和复用。
+   * 纯函数，便于测试。返回 null 表示当前数据不在报告阶段范围（调用方过滤）。
+   *
+   * 推导规则（与 REPORT_STAGE_NODES + status=COMPLETED 对齐）：
+   *   - wf_status=COMPLETED 或 current_node=MATERIAL_ARCHIVE → APPROVED
+   *   - current_node=FINAL_REVIEW                             → REVIEWING
+   *   - current_node=REPORT_COMPILE + 有整改信号               → REVISION
+   *   - current_node=REPORT_COMPILE + 无整改信号               → PENDING
+   *   - 其他（理论不应出现，WHERE 已过滤）                      → null（跳过）
    */
   private deriveReportStatus(
     row: {
@@ -270,20 +315,17 @@ export class ReportService {
       rectInstanceIds: Set<number>;
       reviewedInstanceIds: Set<number>;
     },
-  ): ReportStatus {
+  ): ReportStatus | null {
     const { instanceId, currentNode, wfStatus } = row;
 
-    // 已完成：wf_instance.status=COMPLETED（流程结束）或当前节点已过最终审核
     if (wfStatus === 'COMPLETED' || currentNode === 'MATERIAL_ARCHIVE') {
       return 'APPROVED';
     }
 
-    // 最终审核中
     if (currentNode === 'FINAL_REVIEW') {
       return 'REVIEWING';
     }
 
-    // 报告编制节点 —— 区分整改 vs 首次编制
     if (currentNode === 'REPORT_COMPILE') {
       const hasRect = instanceId !== null && signals.rectInstanceIds.has(instanceId);
       const hasReviewBack =
@@ -291,19 +333,7 @@ export class ReportService {
       return hasRect || hasReviewBack ? 'REVISION' : 'PENDING';
     }
 
-    // 其他节点（编制前的审核/测评阶段）—— compiled_by 非空说明以前走过报告阶段，
-    // 但被驳回到更早节点；这种项目也算"待修改"语义（编制人仍需关注）。
-    if (
-      instanceId !== null &&
-      (signals.rectInstanceIds.has(instanceId) ||
-        signals.reviewedInstanceIds.has(instanceId))
-    ) {
-      return 'REVISION';
-    }
-
-    // 兜底：若 compiled_by 非空且节点未知，按待编制处理。
-    // 实际不应走到这里；保留以防 wf_instance 意外缺失。
-    return 'PENDING';
+    return null;
   }
 
   // -----------------------------------------------------------------------

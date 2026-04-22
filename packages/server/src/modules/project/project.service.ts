@@ -660,6 +660,14 @@ export class ProjectService {
           userId,
         );
       }
+    } else if (existingWf) {
+      // 铁律：归档完成 / 流程终结后不可再次提交项目登记申请
+      // 如确有需要调整请联系管理员手工处理（材料归档材料仍可修改，独立于工作流）
+      throw new BadRequestException(
+        existingWf.instance.status === 'COMPLETED'
+          ? '该项目登记已归档完成，不可重新提交（材料归档内容仍可修改）'
+          : `该项目登记的工作流已结束（${existingWf.instance.status}），不可重新提交`,
+      );
     } else {
       // First submission: create new workflow instance with variables
       await this.workflowService.startInstance(

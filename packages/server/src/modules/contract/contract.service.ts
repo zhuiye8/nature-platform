@@ -772,6 +772,14 @@ export class ContractService {
           userId,
         );
       }
+    } else if (existingWf) {
+      // 铁律：归档完成 / 流程终结后不可再次提交合同审核
+      // 如确有需要调整请联系管理员手工处理
+      throw new BadRequestException(
+        existingWf.instance.status === 'COMPLETED'
+          ? '该合同已归档完成，不可重新提交'
+          : `该合同的工作流已结束（${existingWf.instance.status}），不可重新提交`,
+      );
     } else {
       // First submission: create new workflow instance with variables
       await this.workflowService.startInstance(
