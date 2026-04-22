@@ -3,6 +3,7 @@ import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { getArchivePage } from '@/api/archive'
 import { formatTime } from '@/utils/format'
+import { getStatusLabel, getStatusTagType } from '@/utils/status-map'
 
 const router = useRouter()
 const tableData = ref<any[]>([])
@@ -40,9 +41,9 @@ onMounted(fetchData)
     <el-card shadow="never">
       <div style="margin-bottom: 16px; display: flex; gap: 12px">
         <el-select v-model="archiveStatusFilter" placeholder="归档状态" clearable style="width: 160px" @change="() => { currentPage = 1; fetchData() }">
-          <el-option label="待归档" value="待归档" />
-          <el-option label="未完全归档" value="未完全归档" />
-          <el-option label="已归档" value="已归档" />
+          <el-option label="待归档" value="PENDING_ARCHIVE" />
+          <el-option label="部分归档" value="PARTIAL_ARCHIVE" />
+          <el-option label="已归档" value="ARCHIVED" />
         </el-select>
       </div>
 
@@ -89,11 +90,8 @@ onMounted(fetchData)
         </el-table-column>
         <el-table-column label="归档状态" width="120" align="center">
           <template #default="{ row }">
-            <el-tag
-              :type="row.archiveStatus === '已归档' ? 'success' : row.archiveStatus === '未完全归档' ? 'warning' : 'info'"
-              size="small"
-            >
-              {{ row.archiveStatus }}
+            <el-tag :type="getStatusTagType(row.archiveStatus)" size="small">
+              {{ getStatusLabel(row.archiveStatus) }}
             </el-tag>
           </template>
         </el-table-column>

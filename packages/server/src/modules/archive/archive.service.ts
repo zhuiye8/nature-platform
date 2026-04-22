@@ -205,13 +205,17 @@ export class ArchiveService {
       const salesName = (row.createdBy && userNameMap.get(row.createdBy)) ?? null;
       const archiveRecord = archiveMap.get(row.id!) ?? null;
 
-      let archiveStatus = '待归档';
+      // archiveStatus 是运行时计算的派生字段 (不存数据库)。
+      // 使用英文枚举与其他模块 (contract 等) 保持一致, 前端通过
+      // status-map.getStatusLabel / getStatusTagType 映射中文和颜色。
+      //   PENDING_ARCHIVE 待归档 | PARTIAL_ARCHIVE 部分归档 | ARCHIVED 已归档
+      let archiveStatus: 'PENDING_ARCHIVE' | 'PARTIAL_ARCHIVE' | 'ARCHIVED' = 'PENDING_ARCHIVE';
       if (archiveRecord?.status === 'SUBMITTED') {
         const items = (archiveRecord.materialStatusCodes ?? []) as any[];
         const checkedItems = items.filter((item) =>
           typeof item === 'string' ? true : item?.checked === true,
         );
-        archiveStatus = checkedItems.length >= TOTAL_MATERIALS ? '已归档' : '未完全归档';
+        archiveStatus = checkedItems.length >= TOTAL_MATERIALS ? 'ARCHIVED' : 'PARTIAL_ARCHIVE';
       }
 
       const archiverName = (archiveRecord?.submittedBy && userNameMap.get(archiveRecord.submittedBy)) ?? null;
