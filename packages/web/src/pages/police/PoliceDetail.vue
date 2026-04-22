@@ -9,6 +9,8 @@ import { formatTime } from '@/utils/format'
 import { getFileList, getFileDownloadPath, getFilePreviewPath, getUploadUrl, deleteFile, type FileItem } from '@/api/file'
 import { getSystemItems, type EnrichedSystemItem } from '@/api/project'
 import SystemItemDetailDialog from '@/components/SystemItemDetailDialog.vue'
+import AssessorLevelTag from '@/components/AssessorLevelTag.vue'
+import ReportWriterCard from '@/components/ReportWriterCard.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -91,9 +93,14 @@ function openFileDownload(id: number) {
   window.open(getFileDownloadPath(id), '_blank')
 }
 
-// ── 项目成员分组 ──
-const roleTypeLabel: Record<string, string> = { PM: '项目经理', ASSESSOR: '测评师', REPORT_WRITER: '报告编制人' }
-const roleTypeTagType: Record<string, 'primary' | 'success' | 'warning' | 'info'> = { PM: 'primary', ASSESSOR: 'success', REPORT_WRITER: 'warning' }
+// ── 项目成员分组（REPORT_WRITER 已拆到独立"报告编制" card） ──
+const roleTypeLabel: Record<string, string> = { PM: '项目经理', ASSESSOR: '测评师' }
+const roleTypeTagType: Record<string, 'primary' | 'success' | 'warning' | 'info'> = { PM: 'primary', ASSESSOR: 'success' }
+
+// 后端已按 PM 第一 / 等级降序 / assignedAt 升序排序；这里仅过滤编制人
+const visibleMembers = computed(() =>
+  (detail.value?.projectDetail?.members ?? []).filter((m: { roleType: string }) => m.roleType !== 'REPORT_WRITER'),
+)
 
 // ── 状态映射 ──
 function policeStatusLabel(s: string) {
@@ -224,11 +231,16 @@ onMounted(fetchDetail)
           <span style="font-weight: 600">项目成员</span>
         </template>
         <el-table
-          v-if="detail.projectDetail?.members?.length"
-          :data="detail.projectDetail.members"
+          v-if="visibleMembers.length"
+          :data="visibleMembers"
           stripe border style="width: 100%"
         >
-          <el-table-column prop="displayName" label="姓名" min-width="120" />
+          <el-table-column label="姓名" min-width="160">
+            <template #default="{ row }">
+              <span>{{ row.displayName }}</span>
+              <AssessorLevelTag v-if="row.roleType === 'ASSESSOR'" :level="row.level" />
+            </template>
+          </el-table-column>
           <el-table-column label="角色" min-width="120" align="center">
             <template #default="{ row }">
               <el-tag :type="roleTypeTagType[row.roleType] || 'info'" size="small">
@@ -247,6 +259,12 @@ onMounted(fetchDetail)
         </el-table>
         <el-empty v-else description="暂无项目成员" :image-size="60" />
       </el-card>
+
+      <!-- ── 报告编制（编制人单独展示） ── -->
+      <ReportWriterCard
+        v-if="detail.projectDetail?.reportWriter"
+        :report-writer="detail.projectDetail.reportWriter"
+      />
 
       <!-- ── 电子扫描件 ── -->
       <el-card shadow="never" style="margin-bottom: 16px">

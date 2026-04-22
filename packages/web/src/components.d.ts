@@ -8,6 +8,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AssessorLevelTag: typeof import('./components/AssessorLevelTag.vue')['default']
     ElAlert: typeof import('element-plus/es')['ElAlert']
     ElAside: typeof import('element-plus/es')['ElAside']
     ElAutocomplete: typeof import('element-plus/es')['ElAutocomplete']
@@ -60,6 +61,7 @@ declare module 'vue' {
     ElWatermark: typeof import('element-plus/es')['ElWatermark']
     FilePoolPanel: typeof import('./components/FilePoolPanel.vue')['default']
     RejectReasonPanel: typeof import('./components/RejectReasonPanel.vue')['default']
+    ReportWriterCard: typeof import('./components/ReportWriterCard.vue')['default']
     ReviewOpinionDialog: typeof import('./components/ReviewOpinionDialog.vue')['default']
     ReviewOpinionHistory: typeof import('./components/ReviewOpinionHistory.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']

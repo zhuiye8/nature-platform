@@ -11,6 +11,8 @@ import { formatTime } from '@/utils/format'
 import { useAuthStore } from '@/stores/auth'
 import FilePoolPanel from '@/components/FilePoolPanel.vue'
 import SystemItemDetailDialog from '@/components/SystemItemDetailDialog.vue'
+import AssessorLevelTag from '@/components/AssessorLevelTag.vue'
+import ReportWriterCard from '@/components/ReportWriterCard.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -207,9 +209,11 @@ function showSiDetail(row: EnrichedSystemItem) {
 const project = computed(() => data.value?.project)
 const contractInfo = computed(() => project.value?.contractInfo)
 const archive = computed(() => data.value?.archive)
+// 成员分组（REPORT_WRITER 已拆到独立"报告编制" card）
+// 后端已按 PM 第一 / 等级降序 / assignedAt 升序排序
 const pmMember = computed(() => project.value?.members?.find((m: any) => m.roleType === 'PM'))
 const assessors = computed(() => project.value?.members?.filter((m: any) => m.roleType === 'ASSESSOR') ?? [])
-const reportWriters = computed(() => project.value?.members?.filter((m: any) => m.roleType === 'REPORT_WRITER') ?? [])
+const reportWriter = computed(() => project.value?.reportWriter ?? null)
 
 const isSubmitted = computed(() => archive.value?.status === 'SUBMITTED')
 const archiveStatusLabel = computed(() => {
@@ -340,12 +344,32 @@ onMounted(fetchData)
       <!-- ── 项目成员 ── -->
       <el-card shadow="never" style="margin-bottom: 16px">
         <template #header><span style="font-weight: 600">项目成员</span></template>
-        <el-descriptions :column="2" border size="small">
-          <el-descriptions-item label="项目经理">{{ pmMember?.displayName || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="测评师">{{ assessors.length > 0 ? assessors.map((a: any) => a.displayName).join('、') : '-' }}</el-descriptions-item>
-          <el-descriptions-item label="编制人">{{ reportWriters.length > 0 ? reportWriters.map((w: any) => w.displayName).join('、') : '-' }}</el-descriptions-item>
+        <el-descriptions :column="1" border size="small">
+          <el-descriptions-item label="项目经理">
+            <template v-if="pmMember">{{ pmMember.displayName }}</template>
+            <span v-else>-</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="测评师">
+            <template v-if="assessors.length > 0">
+              <span
+                v-for="a in assessors"
+                :key="a.userId"
+                style="display: inline-flex; align-items: center; margin-right: 16px; margin-bottom: 4px"
+              >
+                {{ a.displayName }}
+                <AssessorLevelTag :level="a.level" />
+              </span>
+            </template>
+            <span v-else>-</span>
+          </el-descriptions-item>
         </el-descriptions>
       </el-card>
+
+      <!-- ── 报告编制（编制人单独展示） ── -->
+      <ReportWriterCard
+        v-if="reportWriter"
+        :report-writer="reportWriter"
+      />
 
       <!-- ── 测评成果 ── -->
       <el-card shadow="never" style="margin-bottom: 16px">

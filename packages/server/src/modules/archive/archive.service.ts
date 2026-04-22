@@ -19,6 +19,10 @@ import { userAccount } from '../../database/schema/user';
 import { userRole } from '../../database/schema/iam';
 import { WorkflowService } from '../workflow/workflow.service';
 import { SubmitArchiveDto, QueryArchiveDto } from './dto/archive.dto';
+import {
+  loadProjectMembersEnriched,
+  loadReportWriterInfo,
+} from '../project/project-member.util';
 
 @Injectable()
 export class ArchiveService {
@@ -320,21 +324,14 @@ export class ArchiveService {
       )
       .orderBy(projectSystemItem.sortOrder);
 
-    // Project members
-    const members = await this.db
-      .select({
-        userId: projectMember.userId,
-        roleType: projectMember.roleType,
-        displayName: userAccount.displayName,
-      })
-      .from(projectMember)
-      .innerJoin(userAccount, eq(projectMember.userId, userAccount.id))
-      .where(
-        and(
-          eq(projectMember.projectId, projectRegisterId),
-          eq(projectMember.status, 'ACTIVE'),
-        ),
-      );
+    // Project members (enriched: PM 第一 / 等级降序 / assignedAt 升序 + level 字段)
+    const members = await loadProjectMembersEnriched(this.db, projectRegisterId);
+    // 编制人信息（独立于 members 展示）
+    const reportWriter = await loadReportWriterInfo(
+      this.db,
+      projectRegisterId,
+      members,
+    );
 
     // Workflow status
     const wfRows = await this.db
@@ -355,6 +352,7 @@ export class ArchiveService {
         contractInfo,
         systemItems,
         members,
+        reportWriter,
       },
       workflow: wfRows[0] ?? null,
     };

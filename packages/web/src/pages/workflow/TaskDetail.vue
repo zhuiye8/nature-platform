@@ -14,6 +14,8 @@ import ReviewOpinionDialog from '@/components/ReviewOpinionDialog.vue'
 import ReviewOpinionHistory from '@/components/ReviewOpinionHistory.vue'
 import FilePoolPanel from '@/components/FilePoolPanel.vue'
 import SystemItemDetailDialog from '@/components/SystemItemDetailDialog.vue'
+import AssessorLevelTag from '@/components/AssessorLevelTag.vue'
+import ReportWriterCard from '@/components/ReportWriterCard.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -40,6 +42,14 @@ async function loadSystemItemsWithFiles(projectId: number) {
     systemItemsEnriched.value = []
   }
 }
+
+/**
+ * 项目成员列表（渲染用）：后端已按 PM 第一/等级降序/assignedAt 升序排序，
+ * 这里只过滤掉 REPORT_WRITER（单独在"报告编制" card 展示）。
+ */
+const visibleProjectMembers = computed(() =>
+  (projectBiz.value?.members ?? []).filter((m) => m.roleType !== 'REPORT_WRITER'),
+)
 
 const taskId = computed(() => Number(route.params.taskId))
 const isPending = computed(() => taskData.value?.status === 'PENDING')
@@ -664,11 +674,16 @@ onMounted(() => {
         </el-table>
       </div>
 
-      <!-- 项目成员 -->
-      <div v-if="projectBiz.members?.length" style="margin-top: 16px">
+      <!-- 项目成员（REPORT_WRITER 不在此处展示，见下方"报告编制"卡片） -->
+      <div v-if="visibleProjectMembers.length" style="margin-top: 16px">
         <h4 style="margin: 0 0 8px; font-size: 14px; color: #606266">项目成员</h4>
-        <el-table :data="projectBiz.members" border size="small" stripe>
-          <el-table-column prop="displayName" label="姓名" width="120" />
+        <el-table :data="visibleProjectMembers" border size="small" stripe>
+          <el-table-column label="姓名" min-width="160">
+            <template #default="{ row }">
+              <span>{{ row.displayName }}</span>
+              <AssessorLevelTag v-if="row.roleType === 'ASSESSOR'" :level="row.level" />
+            </template>
+          </el-table-column>
           <el-table-column label="角色" width="120">
             <template #default="{ row }">
               <el-tag size="small">{{ getStatusLabel(row.roleType) }}</el-tag>
@@ -684,6 +699,13 @@ onMounted(() => {
           </el-table-column>
         </el-table>
       </div>
+
+      <!-- 报告编制（编制人单独展示，独立于"项目成员"） -->
+      <ReportWriterCard
+        v-if="projectBiz.reportWriter"
+        :report-writer="projectBiz.reportWriter"
+        style="margin-top: 16px"
+      />
 
       <!-- 测评成果（审核依据） -->
       <div v-if="isQualityReview || isReportAssign || isReportCompile || isFinalReview" style="margin-top: 16px">

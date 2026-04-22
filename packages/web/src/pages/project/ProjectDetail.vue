@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Edit, Download, Paperclip } from '@element-plus/icons-vue'
 import { getStatusLabel, getStatusTagType } from '@/utils/status-map'
@@ -12,6 +12,8 @@ import { getFileDownloadPath, getFilePreviewPath, getFileList, type FileItem } f
 import { useAuthStore } from '@/stores/auth'
 import RejectReasonPanel from '@/components/RejectReasonPanel.vue'
 import SystemItemDetailDialog from '@/components/SystemItemDetailDialog.vue'
+import AssessorLevelTag from '@/components/AssessorLevelTag.vue'
+import ReportWriterCard from '@/components/ReportWriterCard.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -37,17 +39,22 @@ async function loadContractAttachments(contractId: number) {
 // System items with file info
 const systemItemsEnriched = ref<EnrichedSystemItem[]>([])
 
+/**
+ * 项目成员表格数据：过滤掉 REPORT_WRITER（单独在"报告编制" card 显示）。
+ * 后端已按 PM 第一 / 等级降序 / assignedAt 升序排好序，这里只做展示过滤。
+ */
+const visibleMembers = computed(() =>
+  (project.value?.members ?? []).filter((m) => m.roleType !== 'REPORT_WRITER'),
+)
 
 const roleTypeLabel: Record<string, string> = {
   PM: '项目经理',
   ASSESSOR: '测评师',
-  REPORT_WRITER: '报告编制人',
 }
 
 const roleTypeTagType: Record<string, 'primary' | 'success' | 'warning' | 'info'> = {
   PM: 'primary',
   ASSESSOR: 'success',
-  REPORT_WRITER: 'warning',
 }
 
 const actionLabel: Record<string, string> = {
@@ -323,13 +330,18 @@ onMounted(() => {
         <div style="margin-top: 24px">
           <h3 style="margin: 0 0 12px; font-size: 15px; font-weight: 600">项目成员</h3>
           <el-table
-            v-if="project.members && project.members.length > 0"
-            :data="project.members"
+            v-if="visibleMembers.length > 0"
+            :data="visibleMembers"
             stripe
             border
             style="width: 100%"
           >
-            <el-table-column prop="displayName" label="姓名" min-width="120" />
+            <el-table-column label="姓名" min-width="160">
+              <template #default="{ row }">
+                <span>{{ row.displayName }}</span>
+                <AssessorLevelTag v-if="row.roleType === 'ASSESSOR'" :level="row.level" />
+              </template>
+            </el-table-column>
             <el-table-column label="角色" min-width="120" align="center">
               <template #default="{ row }">
                 <el-tag :type="roleTypeTagType[row.roleType] || 'info'" size="small">
@@ -348,6 +360,13 @@ onMounted(() => {
           </el-table>
           <el-empty v-else description="暂无项目成员" :image-size="60" />
         </div>
+
+        <!-- 报告编制（编制人单独展示，不并入项目成员） -->
+        <ReportWriterCard
+          v-if="project.reportWriter"
+          :report-writer="project.reportWriter"
+          style="margin-top: 16px"
+        />
 
         <!-- 审批流程 -->
         <div v-if="workflowInstance" style="margin-top: 24px">

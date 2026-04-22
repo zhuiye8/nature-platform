@@ -12,6 +12,7 @@ import {
   date,
   primaryKey,
   check,
+  unique,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
@@ -263,6 +264,29 @@ export const projectSystemSerial = pgTable(
 
 export type ProjectSystemSerialRow = typeof projectSystemSerial.$inferSelect;
 export type NewProjectSystemSerial = typeof projectSystemSerial.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// project_reminder_log — 项目级"已发提醒"幂等标记表
+// 每 (project_id, event_type) 最多一条，保证同一种提醒对某个项目只发一次。
+// 由定时任务 reminder.scheduler 写入。
+//   - ENTRY_OVERDUE: 录入时间超过 30 天（发给项目主管）
+//   - REPORT_DUE   : 最早要求出报告日期已到（发给项目主管 + PM）
+// ---------------------------------------------------------------------------
+export const projectReminderLog = pgTable(
+  'project_reminder_log',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    projectId: bigint('project_id', { mode: 'number' }).notNull(),
+    eventType: varchar('event_type', { length: 32 }).notNull(),
+    sentAt: timestamp('sent_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique('project_reminder_log_project_event_uq').on(t.projectId, t.eventType),
+  ],
+);
+
+export type ProjectReminderLogRow = typeof projectReminderLog.$inferSelect;
+export type NewProjectReminderLog = typeof projectReminderLog.$inferInsert;
 
 // ---------------------------------------------------------------------------
 // project_member

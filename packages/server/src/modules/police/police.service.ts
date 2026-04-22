@@ -19,6 +19,10 @@ import { userAccount } from '../../database/schema/user';
 import { userRole } from '../../database/schema/iam';
 import { fileAttachment } from '../../database/schema/common';
 import { QueryPoliceDto } from './dto/police.dto';
+import {
+  loadProjectMembersEnriched,
+  loadReportWriterInfo,
+} from '../project/project-member.util';
 
 @Injectable()
 export class PoliceService {
@@ -289,24 +293,17 @@ export class PoliceService {
       )
       .orderBy(projectSystemItem.sortOrder);
 
-    // ── Project members ──
-    const members = await this.db
-      .select({
-        id: projectMember.id,
-        userId: projectMember.userId,
-        roleType: projectMember.roleType,
-        status: projectMember.status,
-        assignedAt: projectMember.assignedAt,
-        displayName: userAccount.displayName,
-      })
-      .from(projectMember)
-      .innerJoin(userAccount, eq(projectMember.userId, userAccount.id))
-      .where(
-        and(
-          eq(projectMember.projectId, record.projectRegisterId),
-          eq(projectMember.status, 'ACTIVE'),
-        ),
-      );
+    // ── Project members (enriched: PM 第一 / 等级降序 / assignedAt 升序 + level 字段) ──
+    const members = await loadProjectMembersEnriched(
+      this.db,
+      record.projectRegisterId,
+    );
+    // ── 编制人信息（独立于 members 展示） ──
+    const reportWriter = await loadReportWriterInfo(
+      this.db,
+      record.projectRegisterId,
+      members,
+    );
 
     return {
       ...record,
@@ -329,6 +326,7 @@ export class PoliceService {
         paymentAmount,
         systemItems,
         members,
+        reportWriter,
       },
     };
   }

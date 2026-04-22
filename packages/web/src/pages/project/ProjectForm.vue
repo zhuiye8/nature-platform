@@ -589,8 +589,8 @@ onMounted(async () => {
         ref="formRef"
         :model="formData"
         :rules="rules"
-        label-width="100px"
-        style="max-width: 960px; margin: 0 auto"
+        label-width="120px"
+        style="max-width: 1180px; margin: 0 auto"
       >
         <!-- 基本信息 -->
         <div class="n-form-section">

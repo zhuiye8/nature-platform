@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { NotificationController } from './notification.controller';
 import { NotificationService } from './notification.service';
 import { NotificationListener } from './notification.listener';
+import { ReminderScheduler } from './reminder.scheduler';
 import { DingtalkModule } from '../dingtalk/dingtalk.module';
 
 @Module({
@@ -17,7 +18,7 @@ import { DingtalkModule } from '../dingtalk/dingtalk.module';
     DingtalkModule,
   ],
   controllers: [NotificationController],
-  providers: [NotificationService, NotificationListener],
+  providers: [NotificationService, NotificationListener, ReminderScheduler],
   exports: [NotificationService],
 })
 export class NotificationModule {}

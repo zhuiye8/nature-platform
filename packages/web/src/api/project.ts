@@ -70,6 +70,9 @@ export interface EnrichedSystemItem {
   classificationReportFile: SystemItemFileAttachment | null
 }
 
+/** 测评师等级（仅拥有 senior/middle/junior_assessor 角色的用户才有值） */
+export type AssessorLevel = 'senior' | 'middle' | 'junior'
+
 export interface ProjectMember {
   id: number
   userId: number
@@ -77,6 +80,19 @@ export interface ProjectMember {
   roleType: string
   status: string
   assignedAt?: string
+  /**
+   * 测评师等级（后端从 user_role 表 join 得到）。
+   * PM/ASSESSOR/REPORT_WRITER 都可能有值（只要该用户配了等级角色）；
+   * 未配则为 null，前端显示"未分级"灰色 tag（PM 除外，PM 不显示 tag）。
+   */
+  level: AssessorLevel | null
+}
+
+/** 编制人信息（独立于"项目成员"展示） */
+export interface ProjectReportWriter {
+  displayName: string
+  /** 最近一次 REPORT_COMPILE SUBMIT 的时间；尚未提交过编制报告则为 null */
+  lastCompiledAt: string | null
 }
 
 export interface ProjectItem {
@@ -94,6 +110,8 @@ export interface ProjectDetail extends ProjectItem {
   applicationNo: string | null
   systemItems: ProjectSystemItem[]
   members: ProjectMember[]
+  /** 编制人信息，后端在项目分配了 REPORT_WRITER 时返回；否则为 null */
+  reportWriter: ProjectReportWriter | null
   remark?: string
 }
 

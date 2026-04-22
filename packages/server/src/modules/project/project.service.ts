@@ -26,6 +26,10 @@ import {
   AssignMembersDto,
 } from './dto/project.dto';
 import { WorkflowService } from '../workflow/workflow.service';
+import {
+  loadProjectMembersEnriched,
+  loadReportWriterInfo,
+} from './project-member.util';
 
 @Injectable()
 export class ProjectService {
@@ -276,26 +280,10 @@ export class ProjectService {
       )
       .orderBy(projectSystemItem.sortOrder);
 
-    // Load members with user display name
-    const members = await this.db
-      .select({
-        id: projectMember.id,
-        projectId: projectMember.projectId,
-        userId: projectMember.userId,
-        roleType: projectMember.roleType,
-        status: projectMember.status,
-        assignedAt: projectMember.assignedAt,
-        assignedBy: projectMember.assignedBy,
-        displayName: userAccount.displayName,
-      })
-      .from(projectMember)
-      .leftJoin(userAccount, eq(projectMember.userId, userAccount.id))
-      .where(
-        and(
-          eq(projectMember.projectId, id),
-          eq(projectMember.status, 'ACTIVE'),
-        ),
-      );
+    // Load members (enriched with assessor level + ordered: PM 第一 / 等级降序 / assignedAt 升序)
+    const members = await loadProjectMembersEnriched(this.db, id);
+    // 编制人信息 —— 独立于"项目成员"展示（前端会从成员列表过滤掉 REPORT_WRITER）。
+    const reportWriter = await loadReportWriterInfo(this.db, id, members);
 
     // Resolve sales person name
     let salesPersonName: string | null = null;
@@ -325,6 +313,7 @@ export class ProjectService {
       contractArchivedByName,
       systemItems: items,
       members,
+      reportWriter,
     };
   }
 
