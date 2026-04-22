@@ -1,42 +1,13 @@
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import { computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getStatusLabel } from '@/utils/status-map'
 import { getFileDownloadPath, getFilePreviewPath } from '@/api/file'
-
-interface FileInfo {
-  id: number
-  fileName: string
-  fileSize: number
-}
-
-interface SystemItemWithFiles {
-  id?: number
-  systemNo?: string | null
-  systemName: string
-  filingAgency?: string | null
-  securityLevel?: string | null
-  isReassessment: boolean
-  requiredEntryDate?: string | null
-  requiredReportDeliveryDate?: string | null
-  assessedUnitName?: string | null
-  assessedUnitIndustry?: string | null
-  assessedUnitContact?: string | null
-  assessedUnitMobile?: string | null
-  assessedUnitAddress?: string | null
-  hasFilingCertificate: boolean
-  filingCertificateNo?: string | null
-  filingCertificateIssuedAt?: string | null
-  hasFilingForm: boolean
-  hasClassificationReport: boolean
-  filingCertificateFile?: FileInfo | null
-  filingFormFile?: FileInfo | null
-  classificationReportFile?: FileInfo | null
-}
+import type { EnrichedSystemItem } from '@/api/project'
 
 const props = defineProps<{
   visible: boolean
-  item: SystemItemWithFiles | null
+  item: EnrichedSystemItem | null
 }>()
 
 const emit = defineEmits<{

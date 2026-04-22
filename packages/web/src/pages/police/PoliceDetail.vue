@@ -7,7 +7,7 @@ import { getPoliceRegisterDetail, exportPoliceExcel } from '@/api/police'
 import { getStatusLabel, getStatusTagType } from '@/utils/status-map'
 import { formatTime } from '@/utils/format'
 import { getFileList, getFileDownloadPath, getFilePreviewPath, getUploadUrl, deleteFile, type FileItem } from '@/api/file'
-import { getSystemItems } from '@/api/project'
+import { getSystemItems, type EnrichedSystemItem } from '@/api/project'
 import SystemItemDetailDialog from '@/components/SystemItemDetailDialog.vue'
 
 const route = useRoute()
@@ -18,18 +18,18 @@ const detail = ref<any>(null)
 
 // ── 系统明细详情弹窗 ──
 const siDialogVisible = ref(false)
-const siDialogItem = ref<any>(null)
-const systemItemsWithFiles = ref<any[]>([])
+const siDialogItem = ref<EnrichedSystemItem | null>(null)
+const systemItemsWithFiles = ref<EnrichedSystemItem[]>([])
 
 async function loadSystemItemsWithFiles() {
   if (!detail.value?.projectRegisterId) return
   try {
-    systemItemsWithFiles.value = (await getSystemItems(detail.value.projectRegisterId)) as any[]
+    systemItemsWithFiles.value = await getSystemItems(detail.value.projectRegisterId)
   } catch { systemItemsWithFiles.value = [] }
 }
 
-function showSiDetail(row: any) {
-  const enriched = systemItemsWithFiles.value.find((i: any) => i.id === row.id) || row
+function showSiDetail(row: EnrichedSystemItem) {
+  const enriched = systemItemsWithFiles.value.find((i) => i.id === row.id) || row
   siDialogItem.value = enriched
   siDialogVisible.value = true
 }

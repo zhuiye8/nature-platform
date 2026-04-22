@@ -1,6 +1,10 @@
 import request from './request'
 import type { PageQuery, PageResult } from '@nature/shared'
 
+/**
+ * 项目系统明细 —— 表单/提交用（前端填写时保证非空）。
+ * 对应 CreateProjectSystemItemDto。
+ */
 export interface ProjectSystemItem {
   id?: number
   clientKey?: string
@@ -23,6 +27,47 @@ export interface ProjectSystemItem {
   hasFilingForm: boolean
   hasClassificationReport: boolean
   sortOrder?: number
+}
+
+/** 附件对象 —— getSystemItems enrich 出来的轻量字段集合（仅 id/name/size） */
+export interface SystemItemFileAttachment {
+  id: number
+  fileName: string
+  fileSize: number
+}
+
+/**
+ * 项目系统明细 —— 读取用（DB 返回，含附件信息）。
+ * 对应 getSystemItems(projectId) 的返回项：project_system_item 原始行 + 3 个文件附件字段。
+ * 与 ProjectSystemItem（表单模型）不同：字段以 DB nullable 为准，不做业务必填约束。
+ */
+export interface EnrichedSystemItem {
+  id: number
+  projectRegisterId: number
+  systemNo: string | null
+  systemName: string
+  filingAgency: string | null
+  filingRegion: string | null
+  securityLevel: string | null
+  isReassessment: boolean
+  requiredEntryDate: string | null
+  requiredReportDeliveryDate: string | null
+  assessedUnitName: string | null
+  assessedUnitIndustry: string | null
+  assessedUnitContact: string | null
+  assessedUnitMobile: string | null
+  assessedUnitAddress: string | null
+  hasFilingCertificate: boolean
+  filingCertificateNo: string | null
+  filingCertificateIssuedAt: string | null
+  hasFilingForm: boolean
+  hasClassificationReport: boolean
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+  filingCertificateFile: SystemItemFileAttachment | null
+  filingFormFile: SystemItemFileAttachment | null
+  classificationReportFile: SystemItemFileAttachment | null
 }
 
 export interface ProjectMember {
@@ -107,7 +152,7 @@ export function getContractSystemQuota(contractId: number, excludeProjectId?: nu
 
 // System item CRUD
 export function getSystemItems(projectId: number) {
-  return request.get<ProjectSystemItem[]>(`/project/${projectId}/system-items`)
+  return request.get<EnrichedSystemItem[]>(`/project/${projectId}/system-items`)
 }
 
 export function createSystemItem(projectId: number, data: Omit<ProjectSystemItem, 'id'>) {

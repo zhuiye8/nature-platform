@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Upload, Download, Delete } from '@element-plus/icons-vue'
 import { getArchiveByProject, submitArchive } from '@/api/archive'
-import { getSystemItems } from '@/api/project'
+import { getSystemItems, type EnrichedSystemItem } from '@/api/project'
 import { getFileList, getFileDownloadPath, deleteFile, uploadFileToPool, type FileItem } from '@/api/file'
 import { getStatusLabel, getStatusTagType } from '@/utils/status-map'
 import { formatTime } from '@/utils/format'
@@ -187,16 +187,16 @@ const globalRemark = ref('')
 // System item detail
 // ════════════════════════════════════════════════════════════
 const siDialogVisible = ref(false)
-const siDialogItem = ref<any>(null)
-const systemItemsWithFiles = ref<any[]>([])
+const siDialogItem = ref<EnrichedSystemItem | null>(null)
+const systemItemsWithFiles = ref<EnrichedSystemItem[]>([])
 
 async function loadSystemItemsWithFiles() {
-  try { systemItemsWithFiles.value = (await getSystemItems(projectRegisterId)) as any[] }
+  try { systemItemsWithFiles.value = await getSystemItems(projectRegisterId) }
   catch { systemItemsWithFiles.value = [] }
 }
 
-function showSiDetail(row: any) {
-  const enriched = systemItemsWithFiles.value.find((i: any) => i.id === row.id) || row
+function showSiDetail(row: EnrichedSystemItem) {
+  const enriched = systemItemsWithFiles.value.find((i) => i.id === row.id) || row
   siDialogItem.value = enriched
   siDialogVisible.value = true
 }

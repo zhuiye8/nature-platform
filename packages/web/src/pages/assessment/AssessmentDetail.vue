@@ -14,7 +14,7 @@ import type { ProjectDetailForAssessment, ReviewStatus } from '@/api/assessment'
 import { useAuthStore } from '@/stores/auth'
 import { getStatusLabel } from '@/utils/status-map'
 import { formatTime } from '@/utils/format'
-import { getSystemItems } from '@/api/project'
+import { getSystemItems, type EnrichedSystemItem } from '@/api/project'
 import { getFileList, getFileDownloadPath, getFilePreviewPath, type FileItem } from '@/api/file'
 import FilePoolPanel from '@/components/FilePoolPanel.vue'
 import ReviewOpinionHistory from '@/components/ReviewOpinionHistory.vue'
@@ -33,12 +33,12 @@ const resubmitting = ref(false)
 
 // System item detail dialog
 const siDialogVisible = ref(false)
-const siDialogItem = ref<any>(null)
-const systemItemsWithFiles = ref<any[]>([])
+const siDialogItem = ref<EnrichedSystemItem | null>(null)
+const systemItemsWithFiles = ref<EnrichedSystemItem[]>([])
 
 async function loadSystemItemsWithFiles() {
   try {
-    systemItemsWithFiles.value = (await getSystemItems(projectRegisterId)) as any[]
+    systemItemsWithFiles.value = await getSystemItems(projectRegisterId)
   } catch { systemItemsWithFiles.value = [] }
 }
 
@@ -71,8 +71,8 @@ function formatFileSize(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
-function showSiDetail(row: any) {
-  const enriched = systemItemsWithFiles.value.find((i: any) => i.id === row.id) || row
+function showSiDetail(row: EnrichedSystemItem) {
+  const enriched = systemItemsWithFiles.value.find((i) => i.id === row.id) || row
   siDialogItem.value = enriched
   siDialogVisible.value = true
 }

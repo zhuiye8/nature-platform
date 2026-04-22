@@ -5,7 +5,7 @@ import { ArrowLeft, Edit, Download, Paperclip } from '@element-plus/icons-vue'
 import { getStatusLabel, getStatusTagType } from '@/utils/status-map'
 import { formatTime } from '@/utils/format'
 import { getProjectDetail, getSystemItems } from '@/api/project'
-import type { ProjectDetail as ProjectDetailType, ProjectMember } from '@/api/project'
+import type { ProjectDetail as ProjectDetailType, ProjectMember, EnrichedSystemItem } from '@/api/project'
 import { getInstanceByBiz } from '@/api/workflow'
 import type { InstanceDetail, TaskItem } from '@/api/workflow'
 import { getFileDownloadPath, getFilePreviewPath, getFileList, type FileItem } from '@/api/file'
@@ -35,7 +35,7 @@ async function loadContractAttachments(contractId: number) {
 }
 
 // System items with file info
-const systemItemsEnriched = ref<any[]>([])
+const systemItemsEnriched = ref<EnrichedSystemItem[]>([])
 
 
 const roleTypeLabel: Record<string, string> = {
@@ -71,9 +71,9 @@ async function fetchDetail() {
     await fetchWorkflow()
     // Load system items with files
     try {
-      systemItemsEnriched.value = (await getSystemItems(id)) as any[]
+      systemItemsEnriched.value = await getSystemItems(id)
     } catch {
-      systemItemsEnriched.value = project.value.systemItems || []
+      systemItemsEnriched.value = []
     }
     // Load contract attachments
     if (project.value?.contractId) {
@@ -128,8 +128,8 @@ function openFileDownload(fileId: number) {
 
 // ── System item detail dialog ──
 const siDialogVisible = ref(false)
-const siDialogItem = ref<any>(null)
-function showSystemItemDetail(row: any) {
+const siDialogItem = ref<EnrichedSystemItem | null>(null)
+function showSystemItemDetail(row: EnrichedSystemItem) {
   siDialogItem.value = row
   siDialogVisible.value = true
 }

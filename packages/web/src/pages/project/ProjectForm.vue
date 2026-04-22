@@ -5,7 +5,7 @@ import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import type { CascaderValue, FormInstance, FormRules } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { createProject, updateProject, getProjectDetail, getAvailableYears, getSystemItems, getContractSystemQuota } from '@/api/project'
-import type { ProjectForm as ProjectFormData, ProjectSystemItem, ContractSystemQuota } from '@/api/project'
+import type { ProjectForm as ProjectFormData, ProjectSystemItem, ContractSystemQuota, EnrichedSystemItem } from '@/api/project'
 import { useAuthStore } from '@/stores/auth'
 import { getContractPage, getContractDetail } from '@/api/contract'
 import { regionData } from '@/utils/region-data'
@@ -128,9 +128,11 @@ async function uploadPendingFiles(itemMapping: { clientKey: string; id: number }
 async function reloadSystemItemFiles() {
   if (!projectId.value) return
   try {
-    const items = (await getSystemItems(projectId.value)) as any[]
+    const items: EnrichedSystemItem[] = await getSystemItems(projectId.value)
+    // 表单行实际携带 pending/file 等 UI 扩展字段（超出 ProjectSystemItem 声明），
+    // 这是既有形状，此处保留 any 注记以便无侵入地合并文件字段。
     formData.value.systemItems = formData.value.systemItems.map((si: any) => {
-      const enriched = items.find((item: any) => item.id === si.id)
+      const enriched = items.find((item) => item.id === si.id)
       if (enriched) {
         return {
           ...si,
@@ -331,10 +333,14 @@ async function fetchDetail() {
   loading.value = true
   try {
     const data = (await getProjectDetail(projectId.value)) as unknown as import('@/api/project').ProjectDetail
-    // Load system items with file attachments
-    let enrichedItems = data.systemItems ?? []
+    // 加载包含文件附件的系统明细（EnrichedSystemItem[]）；
+    // 异常时退化为 data.systemItems（无文件信息）保证基本字段可编辑。
+    // 两者字段名重叠但 nullable 差异大，因此用 unknown[] 作中间容器，
+    // 在 map 里用 any 注记再映射到表单行（含 pending/file UI 扩展字段）。
+    let enrichedItems: unknown[] = data.systemItems ?? []
     try {
-      enrichedItems = (await getSystemItems(projectId.value)) as any[]
+      const fetched: EnrichedSystemItem[] = await getSystemItems(projectId.value)
+      enrichedItems = fetched
     } catch { /* fallback to basic items */ }
     formData.value = {
       contractId: data.contractId,

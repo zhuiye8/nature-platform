@@ -56,6 +56,10 @@ export interface ContractItem {
   financialHandlerId: number | null
   financialHandlerName?: string | null
   archiveStatus: string
+  /** 归档人显示名（仅 findById 返回；ARCHIVED/PARTIAL_ARCHIVE 时有值） */
+  archivedByName?: string | null
+  /** 归档时间（ARCHIVED/PARTIAL_ARCHIVE 时有值） */
+  archivedAt?: string | null
   reviewStatus: string
   remark: string | null
   createdBy: number

@@ -5,7 +5,7 @@ import { ArrowLeft, Edit, Download, Delete, Paperclip, Upload, QuestionFilled } 
 import { getContractDetail, archiveContract } from '@/api/contract'
 import type { ContractItem, ArchiveContractData } from '@/api/contract'
 import { getFileList, getFileDownloadPath, getFilePreviewPath, deleteFile, getUploadUrl, type FileItem } from '@/api/file'
-import { getSystemItems } from '@/api/project'
+import { getSystemItems, type EnrichedSystemItem } from '@/api/project'
 import { ElMessage } from 'element-plus'
 import { getInstanceByBiz } from '@/api/workflow'
 import RejectReasonPanel from '@/components/RejectReasonPanel.vue'
@@ -69,34 +69,53 @@ const scanFiles = ref<FileItem[]>([])
 const scanUploadHeaders = computed(() => ({ Authorization: `Bearer ${localStorage.getItem('token')}` }))
 
 // ── 系统明细详情弹窗（按需调 getSystemItems 拿 enriched，含文件对象）──
+// row 来自 ContractItem.projectSystemItems 的扁平投影（仅含 projectId/systemItemId
+// 等关键字段），与 EnrichedSystemItem 的 DB 行模型不同。
+type ProjectSystemItemFlat = NonNullable<ContractItem['projectSystemItems']>[number]
 const siDialogVisible = ref(false)
-const siDialogItem = ref<any>(null)
-const enrichedItemsCache = new Map<number, any[]>()  // projectId → enriched items
+const siDialogItem = ref<EnrichedSystemItem | null>(null)
+const enrichedItemsCache = new Map<number, EnrichedSystemItem[]>() // projectId → enriched items
 
-async function showSystemItemDetail(row: any) {
+async function showSystemItemDetail(row: ProjectSystemItemFlat) {
   let items = enrichedItemsCache.get(row.projectId)
   if (!items) {
     try {
-      items = (await getSystemItems(row.projectId)) as unknown as any[]
+      items = await getSystemItems(row.projectId)
       enrichedItemsCache.set(row.projectId, items)
     } catch {
       items = []
     }
   }
-  const enriched = items.find((i: any) => i.id === row.systemItemId)
-  // Fallback: row 构造最小可用对象（符合 SystemItemDetailDialog 的 required 字段）
-  siDialogItem.value = enriched || {
+  const enriched = items.find((i) => i.id === row.systemItemId) ?? null
+  // 若服务端 getSystemItems 取不到对应行（理论上不应发生，DB 一致性保证），
+  // 则用扁平 row 构造最小 EnrichedSystemItem 兜底展示。
+  siDialogItem.value = enriched ?? {
     id: row.systemItemId,
+    projectRegisterId: row.projectId,
     systemNo: row.systemNo,
     systemName: row.systemName,
     filingAgency: row.filingAgency,
+    filingRegion: null,
     securityLevel: row.securityLevel,
     isReassessment: false,
+    requiredEntryDate: null,
+    requiredReportDeliveryDate: null,
     assessedUnitName: row.assessedUnitName,
-    filingCertificateNo: row.filingCertificateNo,
+    assessedUnitIndustry: null,
+    assessedUnitContact: null,
+    assessedUnitMobile: null,
+    assessedUnitAddress: null,
     hasFilingCertificate: !!row.filingCertificateNo,
+    filingCertificateNo: row.filingCertificateNo,
+    filingCertificateIssuedAt: null,
     hasFilingForm: false,
     hasClassificationReport: false,
+    sortOrder: 0,
+    createdAt: '',
+    updatedAt: '',
+    filingCertificateFile: null,
+    filingFormFile: null,
+    classificationReportFile: null,
   }
   siDialogVisible.value = true
 }

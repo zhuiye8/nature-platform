@@ -3,9 +3,9 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Download, Paperclip } from '@element-plus/icons-vue'
-import { getTaskDetail, signalTask, resubmitTask, getUsersByRole } from '@/api/workflow'
-import { getContractDetail } from '@/api/contract'
-import { getProjectDetail, getSystemItems } from '@/api/project'
+import { getTaskDetail, signalTask, resubmitTask, getUsersByRole, type WfTaskDetail, type TaskItem } from '@/api/workflow'
+import { getContractDetail, type ContractItem } from '@/api/contract'
+import { getProjectDetail, getSystemItems, type ProjectDetail, type EnrichedSystemItem } from '@/api/project'
 import { getFileList, getFileDownloadPath, getFilePreviewPath, type FileItem } from '@/api/file'
 import { getStatusLabel, getStatusTagType } from '@/utils/status-map'
 import { formatTime } from '@/utils/format'
@@ -21,17 +21,21 @@ const authStore = useAuthStore()
 
 const loading = ref(true)
 const submitting = ref(false)
-const taskData = ref<any>(null)
-const bizData = ref<any>(null)
+const taskData = ref<WfTaskDetail | null>(null)
+// 业务数据按 bizType 分别持有，避免联合类型在模板中无法收窄导致的访问错误。
+// 每次 fetchData 只有其中一个会被赋值，另一个保持 null。
+const contractBiz = ref<ContractItem | null>(null)
+const projectBiz = ref<ProjectDetail | null>(null)
 const remark = ref('')
-const contractData = ref<any>(null)
+// 项目登记评审时额外加载关联合同信息（用于上方关联合同信息卡片）
+const contractData = ref<ContractItem | null>(null)
 
 // System items with files (for PROJECT_REGISTER)
-const systemItemsEnriched = ref<any[]>([])
+const systemItemsEnriched = ref<EnrichedSystemItem[]>([])
 
 async function loadSystemItemsWithFiles(projectId: number) {
   try {
-    systemItemsEnriched.value = (await getSystemItems(projectId)) as any[]
+    systemItemsEnriched.value = await getSystemItems(projectId)
   } catch {
     systemItemsEnriched.value = []
   }
@@ -114,10 +118,10 @@ const contractDescFileForReview = ref<FileItem | null>(null)
 
 async function fetchContractFile(bizId: number) {
   try {
-    contractFilesForReview.value = (await getFileList('CONTRACT', bizId)) as any as FileItem[]
+    contractFilesForReview.value = await getFileList('CONTRACT', bizId)
   } catch { contractFilesForReview.value = [] }
   try {
-    const descFiles = (await getFileList('CONTRACT_DESC', bizId)) as any as FileItem[]
+    const descFiles = await getFileList('CONTRACT_DESC', bizId)
     contractDescFileForReview.value = descFiles && descFiles.length > 0 ? descFiles[0] : null
   } catch { contractDescFileForReview.value = null }
 }
@@ -128,9 +132,9 @@ const linkedContractFiles = ref<FileItem[]>([])
 const linkedContractDescFiles = ref<FileItem[]>([])
 
 async function fetchLinkedContractAttachments(contractId: number) {
-  try { linkedContractFiles.value = (await getFileList('CONTRACT', contractId)) as any as FileItem[] }
+  try { linkedContractFiles.value = await getFileList('CONTRACT', contractId) }
   catch { linkedContractFiles.value = [] }
-  try { linkedContractDescFiles.value = (await getFileList('CONTRACT_DESC', contractId)) as any as FileItem[] }
+  try { linkedContractDescFiles.value = await getFileList('CONTRACT_DESC', contractId) }
   catch { linkedContractDescFiles.value = [] }
 }
 
@@ -147,8 +151,8 @@ function formatFileSize(bytes: number) {
 
 // ── System item detail dialog ──
 const siDialogVisible = ref(false)
-const siDialogItem = ref<any>(null)
-function showSystemItemDetail(row: any) {
+const siDialogItem = ref<EnrichedSystemItem | null>(null)
+function showSystemItemDetail(row: EnrichedSystemItem) {
   siDialogItem.value = row
   siDialogVisible.value = true
 }
@@ -177,40 +181,44 @@ const bizId = computed(() => wfInstance.value?.bizId ?? 0)
 async function fetchData() {
   loading.value = true
   try {
-    const task = (await getTaskDetail(taskId.value)) as any
+    const task = await getTaskDetail(taskId.value)
     taskData.value = task
 
     // Extract bizType/bizId directly from response (not computed, to avoid timing issue)
-    const type = task?.instance?.instance?.bizType ?? ''
-    const id = task?.instance?.instance?.bizId ?? 0
+    const type = task.instance.instance.bizType
+    const id = task.instance.instance.bizId
 
     // Load business data based on bizType
+    // 先清空两个 ref，避免切换视图时残留旧数据
+    contractBiz.value = null
+    projectBiz.value = null
     if (type === 'CONTRACT' && id) {
-      bizData.value = (await getContractDetail(id)) as any
+      contractBiz.value = await getContractDetail(id)
       fetchContractFile(id)
     } else if (type === 'PROJECT_REGISTER' && id) {
-      bizData.value = (await getProjectDetail(id)) as any
+      const project = await getProjectDetail(id)
+      projectBiz.value = project
       await loadSystemItemsWithFiles(id)
       // Load associated contract info + attachments for project review
-      if (bizData.value?.contractId) {
+      if (project.contractId) {
         try {
-          contractData.value = (await getContractDetail(bizData.value.contractId)) as any
+          contractData.value = await getContractDetail(project.contractId)
         } catch { contractData.value = null }
-        await fetchLinkedContractAttachments(bizData.value.contractId)
+        await fetchLinkedContractAttachments(project.contractId)
       }
     }
 
     // Load assessor candidates (grouped by level) for DIRECTOR_REVIEW
-    if (task?.nodeKey === 'DIRECTOR_REVIEW') {
+    if (task.nodeKey === 'DIRECTOR_REVIEW') {
       try {
         const [senior, middle, junior] = await Promise.all([
           getUsersByRole('senior_assessor'),
           getUsersByRole('middle_assessor'),
           getUsersByRole('junior_assessor'),
         ])
-        seniorAssessors.value = senior as any
-        middleAssessors.value = middle as any
-        juniorAssessors.value = junior as any
+        seniorAssessors.value = senior
+        middleAssessors.value = middle
+        juniorAssessors.value = junior
       } catch {
         seniorAssessors.value = []
         middleAssessors.value = []
@@ -219,9 +227,9 @@ async function fetchData() {
     }
 
     // Load report writer candidates if this is a report assign task
-    if (task?.nodeKey === 'REPORT_ASSIGN') {
+    if (task.nodeKey === 'REPORT_ASSIGN') {
       try {
-        reportWriterOptions.value = (await getUsersByRole('report_writer')) as any
+        reportWriterOptions.value = await getUsersByRole('report_writer')
       } catch { reportWriterOptions.value = [] }
     }
 
@@ -257,24 +265,38 @@ async function handleReportAssignApprove() {
   finally { submitting.value = false }
 }
 
-// Enrich task data with bizName for ReviewOpinionDialog.
+// Enrich task data with bizName for ReviewOpinionDialog (prop type: TaskItem).
 // For CONTRACT workflows we prefer "组名(分类)" so reviewers see a meaningful
 // label at the contract review / archive stage. Matches the same format used
 // by workflow.service.ts getMyTasks for the dashboard task list.
-const taskDataForDialog = computed(() => {
-  if (!taskData.value) return null
-  const b = bizData.value as any
-  let name = b?.applicationName || b?.projectName || ''
-  if (!name && b) {
-    if (b.groupName && b.contractCategory) {
-      name = `${b.groupName}(${b.contractCategory})`
-    } else if (b.groupName) {
-      name = b.groupName
-    } else if (b.contractName) {
-      name = b.contractName
+const taskDataForDialog = computed<TaskItem | null>(() => {
+  const task = taskData.value
+  if (!task) return null
+  // PROJECT_REGISTER 优先用项目申请名；CONTRACT 按 "组名(分类)" > 组名 > 合同名 回退。
+  let bizName = ''
+  if (projectBiz.value?.applicationName) {
+    bizName = projectBiz.value.applicationName
+  } else if (contractBiz.value) {
+    const c = contractBiz.value
+    if (c.groupName) {
+      bizName = c.contractCategory ? `${c.groupName}(${c.contractCategory})` : c.groupName
+    } else if (c.contractName) {
+      bizName = c.contractName
     }
   }
-  return { ...taskData.value, bizName: name || '' }
+  return {
+    id: task.id,
+    instanceId: task.instanceId,
+    nodeKey: task.nodeKey,
+    nodeName: task.nodeName,
+    nodeType: '', // Dialog 不使用 nodeType，但 TaskItem 契约要求提供
+    slotKey: task.slotKey,
+    status: task.status,
+    bizType: task.instance.instance.bizType,
+    bizId: task.instance.instance.bizId,
+    bizName,
+    createdAt: task.createdAt,
+  }
 })
 const isPendingRectification = computed(() => taskData.value?.status === 'PENDING_RECTIFICATION')
 const isReviewNode = computed(() => ['TECH_REVIEW', 'CONTENT_REVIEW', 'REPORT_ASSIGN', 'REPORT_COMPILE', 'FINAL_REVIEW'].includes(nodeKey.value))
@@ -316,7 +338,8 @@ async function handleAction(action: 'APPROVE' | 'REJECT') {
 
   submitting.value = true
   try {
-    const extraData: Record<string, any> = {}
+    // DIRECTOR_REVIEW 通过时附带 PM + 测评师分配；其他节点无 extraData。
+    const extraData: { pmUserId?: number; assessorUserIds?: number[] } = {}
     if (isDirectorReview.value && action === 'APPROVE') {
       extraData.pmUserId = selectedPmId.value
       extraData.assessorUserIds = selectedAssessorIds.value
@@ -363,76 +386,71 @@ onMounted(() => {
     </div>
 
     <!-- ── 合同业务数据 ──────────────────────────────────────────────── -->
-    <el-card v-if="bizType === 'CONTRACT' && bizData" shadow="never" style="margin-bottom: 16px">
+    <el-card v-if="contractBiz" shadow="never" style="margin-bottom: 16px">
       <template #header>
         <span style="font-weight: 600">合同信息</span>
       </template>
 
       <!-- 基本信息 -->
       <el-descriptions :column="2" border size="small">
-        <el-descriptions-item label="合同组">{{ bizData.groupName || '--' }}</el-descriptions-item>
-        <el-descriptions-item label="合同分类">{{ bizData.contractCategory || '--' }}</el-descriptions-item>
-        <el-descriptions-item label="合同编号">{{ bizData.contractNo || '--' }}</el-descriptions-item>
-        <el-descriptions-item label="合同名称" :span="2">{{ bizData.contractName || '--' }}</el-descriptions-item>
-        <el-descriptions-item label="客户名称">{{ bizData.customerName || '--' }}</el-descriptions-item>
-        <el-descriptions-item label="统一信用代码">{{ bizData.customerUscc || '--' }}</el-descriptions-item>
-        <el-descriptions-item label="联系人">{{ bizData.contactName || '--' }}</el-descriptions-item>
-        <el-descriptions-item label="联系电话">{{ bizData.contactPhone || '--' }}</el-descriptions-item>
-        <el-descriptions-item label="服务内容">{{ bizData.serviceContent || '--' }}</el-descriptions-item>
-        <el-descriptions-item label="合同类型">{{ bizData.contractType || '--' }}</el-descriptions-item>
-        <el-descriptions-item label="成交情况">{{ getStatusLabel(bizData.dealStatus) || bizData.dealStatus || '--' }}</el-descriptions-item>
-        <el-descriptions-item label="签单销售">{{ bizData.salesPersonName || '--' }}</el-descriptions-item>
-        <el-descriptions-item label="合作方">{{ bizData.partnerName || '--' }}</el-descriptions-item>
-        <el-descriptions-item label="业绩归属城市">{{ bizData.performanceCity || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="合同组">{{ contractBiz.groupName || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="合同分类">{{ contractBiz.contractCategory || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="合同编号">{{ contractBiz.contractNo || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="合同名称" :span="2">{{ contractBiz.contractName || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="客户名称">{{ contractBiz.customerName || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="统一信用代码">{{ contractBiz.customerUscc || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="联系人">{{ contractBiz.contactName || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="联系电话">{{ contractBiz.contactPhone || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="服务内容">{{ contractBiz.serviceContent || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="合同类型">{{ contractBiz.contractType || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="成交情况">{{ getStatusLabel(contractBiz.dealStatus) || contractBiz.dealStatus || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="签单销售">{{ contractBiz.salesPersonName || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="合作方">{{ contractBiz.partnerName || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="业绩归属城市">{{ contractBiz.performanceCity || '--' }}</el-descriptions-item>
       </el-descriptions>
 
       <!-- 财务信息 -->
       <h4 style="margin: 16px 0 8px; font-size: 14px; color: #606266">财务信息</h4>
       <el-descriptions :column="2" border size="small">
-        <el-descriptions-item label="付款金额">{{ bizData.paymentAmount ?? '--' }}</el-descriptions-item>
-        <el-descriptions-item label="付款单位">{{ bizData.paymentCompany || '--' }}</el-descriptions-item>
-        <el-descriptions-item label="发票类型">{{ bizData.invoiceType || '--' }}</el-descriptions-item>
-        <el-descriptions-item label="税率">{{ bizData.taxRate ? bizData.taxRate + '%' : '--' }}</el-descriptions-item>
-        <el-descriptions-item label="付款方式">{{ bizData.paymentMethod || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="付款金额">{{ contractBiz.paymentAmount ?? '--' }}</el-descriptions-item>
+        <el-descriptions-item label="付款单位">{{ contractBiz.paymentCompany || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="发票类型">{{ contractBiz.invoiceType || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="税率">{{ contractBiz.taxRate ? contractBiz.taxRate + '%' : '--' }}</el-descriptions-item>
+        <el-descriptions-item label="付款方式">{{ contractBiz.paymentMethod || '--' }}</el-descriptions-item>
         <el-descriptions-item label="回款状态">
-          <el-tag v-if="bizData.paymentStatus" :type="getStatusTagType(bizData.paymentStatus)" size="small">
-            {{ getStatusLabel(bizData.paymentStatus) }}
+          <el-tag v-if="contractBiz.paymentStatus" :type="getStatusTagType(contractBiz.paymentStatus)" size="small">
+            {{ getStatusLabel(contractBiz.paymentStatus) }}
           </el-tag>
           <span v-else>--</span>
         </el-descriptions-item>
       </el-descriptions>
       <el-descriptions :column="1" border size="small" style="margin-top: 8px">
         <el-descriptions-item label="付款信息">
-          <div style="white-space: pre-wrap">{{ bizData.paymentInfo || '--' }}</div>
+          <div style="white-space: pre-wrap">{{ contractBiz.paymentInfo || '--' }}</div>
         </el-descriptions-item>
-        <el-descriptions-item label="回款备注">{{ bizData.paymentRemark || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="回款备注">{{ contractBiz.paymentRemark || '--' }}</el-descriptions-item>
       </el-descriptions>
 
       <!-- 服务信息 -->
       <h4 style="margin: 16px 0 8px; font-size: 14px; color: #606266">服务信息</h4>
       <el-descriptions :column="2" border size="small">
         <el-descriptions-item label="服务年份">
-          <template v-if="Array.isArray(bizData.serviceYears) && bizData.serviceYears.length">
-            <el-tag v-for="y in bizData.serviceYears" :key="y" size="small" style="margin-right: 6px">{{ y }}年</el-tag>
+          <template v-if="Array.isArray(contractBiz.serviceYears) && contractBiz.serviceYears.length">
+            <el-tag v-for="y in contractBiz.serviceYears" :key="y" size="small" style="margin-right: 6px">{{ y }}年</el-tag>
           </template>
           <span v-else>--</span>
         </el-descriptions-item>
       </el-descriptions>
 
       <!-- 系统明细子表 -->
-      <div v-if="bizData.systemItems?.length" style="margin-top: 16px">
-        <h4 style="margin: 0 0 8px; font-size: 14px; color: #606266">系统明细（{{ bizData.systemItems.length }} 个）</h4>
-        <el-table :data="bizData.systemItems" border size="small" stripe>
+      <div v-if="contractBiz.systemItems?.length" style="margin-top: 16px">
+        <h4 style="margin: 0 0 8px; font-size: 14px; color: #606266">系统明细（{{ contractBiz.systemItems.length }} 个）</h4>
+        <el-table :data="contractBiz.systemItems" border size="small" stripe>
           <el-table-column type="index" label="#" width="50" align="center" />
-          <el-table-column prop="systemNo" label="项目编号" min-width="180" show-overflow-tooltip>
-            <template #default="{ row }">{{ row.systemNo || '--' }}</template>
-          </el-table-column>
           <el-table-column prop="systemName" label="系统名称" min-width="150" show-overflow-tooltip />
           <el-table-column label="安全等级" width="90" align="center">
-            <template #default="{ row }">{{ getStatusLabel(row.systemLevel || row.securityLevel) || '--' }}</template>
+            <template #default="{ row }">{{ getStatusLabel(String(row.systemLevel)) || row.systemLevel || '--' }}</template>
           </el-table-column>
-          <el-table-column prop="assessedUnitName" label="被测单位" min-width="120" show-overflow-tooltip />
-          <el-table-column prop="assessedUnitContact" label="联系人" width="90" />
         </el-table>
       </div>
 
@@ -468,9 +486,9 @@ onMounted(() => {
       </div>
 
       <!-- 合同组关联合同 -->
-      <div v-if="bizData.groupContracts && bizData.groupContracts.length > 1" style="margin-top: 16px">
+      <div v-if="contractBiz.groupContracts && contractBiz.groupContracts.length > 1" style="margin-top: 16px">
         <h4 style="margin: 0 0 8px; font-size: 14px; color: #606266">合同组关联合同</h4>
-        <el-table :data="bizData.groupContracts" border size="small">
+        <el-table :data="contractBiz.groupContracts" border size="small">
           <el-table-column prop="contractNo" label="合同编号" min-width="180" show-overflow-tooltip />
           <el-table-column prop="contractName" label="合同名称" min-width="200" show-overflow-tooltip />
           <el-table-column prop="contractCategory" label="分类" width="100" align="center">
@@ -486,7 +504,7 @@ onMounted(() => {
           </el-table-column>
           <el-table-column label="" width="60" align="center">
             <template #default="{ row }">
-              <el-tag v-if="row.id === bizData.id" type="primary" size="small" effect="dark">当前</el-tag>
+              <el-tag v-if="row.id === contractBiz!.id" type="primary" size="small" effect="dark">当前</el-tag>
             </template>
           </el-table-column>
         </el-table>
@@ -495,9 +513,9 @@ onMounted(() => {
       <!-- 其他 -->
       <h4 style="margin: 16px 0 8px; font-size: 14px; color: #606266">其他</h4>
       <el-descriptions :column="2" border size="small">
-        <el-descriptions-item label="备注" :span="2">{{ bizData.remark || '--' }}</el-descriptions-item>
-        <el-descriptions-item label="创建时间">{{ formatTime(bizData.createdAt) }}</el-descriptions-item>
-        <el-descriptions-item label="更新时间">{{ formatTime(bizData.updatedAt) }}</el-descriptions-item>
+        <el-descriptions-item label="备注" :span="2">{{ contractBiz.remark || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="创建时间">{{ formatTime(contractBiz.createdAt) }}</el-descriptions-item>
+        <el-descriptions-item label="更新时间">{{ formatTime(contractBiz.updatedAt) }}</el-descriptions-item>
       </el-descriptions>
     </el-card>
 
@@ -570,22 +588,22 @@ onMounted(() => {
     </el-card>
 
     <!-- ── 项目业务数据 ──────────────────────────────────────────────── -->
-    <el-card v-if="bizType === 'PROJECT_REGISTER' && bizData" shadow="never" style="margin-bottom: 16px">
+    <el-card v-if="projectBiz" shadow="never" style="margin-bottom: 16px">
       <template #header>
         <span style="font-weight: 600">项目信息</span>
       </template>
 
       <el-descriptions :column="2" border size="small">
-        <el-descriptions-item label="申请单名称" :span="2">{{ bizData.applicationName || '--' }}</el-descriptions-item>
-        <el-descriptions-item label="关联合同">{{ bizData.contractName || '--' }}</el-descriptions-item>
-        <el-descriptions-item label="合同年份">{{ bizData.contractYear || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="申请单名称" :span="2">{{ projectBiz.applicationName || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="关联合同">{{ projectBiz.contractName || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="合同年份">{{ projectBiz.contractYear || '--' }}</el-descriptions-item>
         <el-descriptions-item label="状态">
-          <el-tag :type="getStatusTagType(bizData.status)" size="small">
-            {{ getStatusLabel(bizData.status) }}
+          <el-tag :type="getStatusTagType(projectBiz.status)" size="small">
+            {{ getStatusLabel(projectBiz.status) }}
           </el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="创建时间">{{ formatTime(bizData.createdAt) }}</el-descriptions-item>
-        <el-descriptions-item label="备注" :span="2">{{ bizData.remark || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="创建时间">{{ formatTime(projectBiz.createdAt) }}</el-descriptions-item>
+        <el-descriptions-item label="备注" :span="2">{{ projectBiz.remark || '--' }}</el-descriptions-item>
       </el-descriptions>
 
       <!-- 系统明细（表格） -->
@@ -647,9 +665,9 @@ onMounted(() => {
       </div>
 
       <!-- 项目成员 -->
-      <div v-if="bizData.members?.length" style="margin-top: 16px">
+      <div v-if="projectBiz.members?.length" style="margin-top: 16px">
         <h4 style="margin: 0 0 8px; font-size: 14px; color: #606266">项目成员</h4>
-        <el-table :data="bizData.members" border size="small" stripe>
+        <el-table :data="projectBiz.members" border size="small" stripe>
           <el-table-column prop="displayName" label="姓名" width="120" />
           <el-table-column label="角色" width="120">
             <template #default="{ row }">
@@ -682,7 +700,7 @@ onMounted(() => {
     </el-card>
 
     <!-- ── 无业务数据时的提示 ─────────────────────────────────────────── -->
-    <el-card v-else-if="!loading && !bizData" shadow="never" style="margin-bottom: 16px">
+    <el-card v-else-if="!loading && !contractBiz && !projectBiz" shadow="never" style="margin-bottom: 16px">
       <el-empty description="暂无关联业务数据" :image-size="80" />
     </el-card>
 
