@@ -6,12 +6,16 @@ import { projectRegister, projectMember } from '../../database/schema/business';
 import { wfTask } from '../../database/schema/workflow';
 import { systemNotification } from '../../database/schema/common';
 import { userRole } from '../../database/schema/iam';
+import { NotificationService } from '../notification/notification.service';
 
 @Injectable()
 export class ReportListener {
   private readonly logger = new Logger(ReportListener.name);
 
-  constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: DrizzleDB,
+    private readonly notificationService: NotificationService,
+  ) {}
 
   @OnEvent('workflow.node.completed')
   async handleNodeCompleted(payload: {
@@ -136,6 +140,13 @@ export class ReportListener {
           this.logger.log(
             `Set REPORT_COMPILE assignee to user #${writerId} (attempt ${attempt + 1})`,
           );
+          // 绑定成功后主动发一次定向通知给编制人。
+          // notification.listener 的 handleTaskCreated 对 REPORT_COMPILE 无 assignee
+          // 情况做了跳过,否则会给所有 report_writer 群发。
+          await this.sendWriterAssignedNotification(
+            projectRegisterId,
+            writerId,
+          );
           return;
         }
       } catch (e) {
@@ -150,6 +161,40 @@ export class ReportListener {
       `Failed to assign REPORT_COMPILE task for project #${projectRegisterId} after ${MAX_RETRIES} retries — notifying assigner + admins`,
     );
     await this.notifyAssignFailure(projectRegisterId, writerId, assignerId);
+  }
+
+  /**
+   * REPORT_COMPILE assignee 绑定成功后的定向通知。
+   * 因 notification.listener 对 REPORT_COMPILE 的 pool fallback 做了跳过,
+   * 这里是编制人唯一的待办通知来源。
+   * 失败不抛异常（通知丢失不应影响 task 绑定）。
+   */
+  private async sendWriterAssignedNotification(
+    projectRegisterId: number,
+    writerId: number,
+  ): Promise<void> {
+    try {
+      const proj = await this.db
+        .select({ applicationName: projectRegister.applicationName })
+        .from(projectRegister)
+        .where(eq(projectRegister.id, projectRegisterId))
+        .limit(1);
+      const appName =
+        proj[0]?.applicationName ?? `项目#${projectRegisterId}`;
+
+      await this.notificationService.createNotification(
+        writerId,
+        '新待办：报告编制',
+        `项目登记「${appName}」需要你处理：报告编制`,
+        'TASK_CREATED',
+        'PROJECT_REGISTER',
+        projectRegisterId,
+      );
+    } catch (e) {
+      this.logger.warn(
+        `Failed to send writer-assigned notification for project #${projectRegisterId}: ${(e as Error).message}`,
+      );
+    }
   }
 
   /**

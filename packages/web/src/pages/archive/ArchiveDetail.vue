@@ -346,7 +346,10 @@ onMounted(fetchData)
         <template #header><span style="font-weight: 600">项目成员</span></template>
         <el-descriptions :column="1" border size="small">
           <el-descriptions-item label="项目经理">
-            <template v-if="pmMember">{{ pmMember.displayName }}</template>
+            <template v-if="pmMember">
+              {{ pmMember.displayName }}
+              <AssessorLevelTag v-if="pmMember.level" :level="pmMember.level" />
+            </template>
             <span v-else>-</span>
           </el-descriptions-item>
           <el-descriptions-item label="测评师">

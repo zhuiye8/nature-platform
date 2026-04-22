@@ -238,7 +238,7 @@ onMounted(fetchDetail)
           <el-table-column label="姓名" min-width="160">
             <template #default="{ row }">
               <span>{{ row.displayName }}</span>
-              <AssessorLevelTag v-if="row.roleType === 'ASSESSOR'" :level="row.level" />
+              <AssessorLevelTag v-if="row.level" :level="row.level" />
             </template>
           </el-table-column>
           <el-table-column label="角色" min-width="120" align="center">

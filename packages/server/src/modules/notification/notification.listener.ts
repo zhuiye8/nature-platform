@@ -49,6 +49,16 @@ export class NotificationListener {
   async handleTaskCreated(payload: WorkflowTaskCreatedEvent) {
     if (NotificationListener.SILENT_NODES.has(payload.nodeKey)) return;
 
+    // REPORT_COMPILE: 任务创建时 assigneeId=null（pool），但 report.listener 会
+    // 异步将 assignee 绑定到指定编制人，并在绑定成功后主动发定向通知。
+    // 这里跳过 pool fallback 分支，避免给所有 report_writer 群发通知。
+    if (payload.nodeKey === 'REPORT_COMPILE' && !payload.assigneeId) {
+      this.logger.log(
+        `Skip REPORT_COMPILE pool notification (will be sent by report.listener after assignee binding)`,
+      );
+      return;
+    }
+
     if (payload.assigneeId) {
       // Direct assignment — notify the assignee
       this.logger.log(
@@ -136,13 +146,14 @@ export class NotificationListener {
         }
 
         // 发"待办任务"文案给归档员
+        // refType='MATERIAL_ARCHIVE' 让前端点击跳转到归档详情页而非项目详情页
         for (const userId of archiverIds) {
           await this.notificationService.createNotification(
             userId,
             `你有新的待办任务：${payload.nodeName}`,
             `你有新的待办任务：${payload.nodeName}`,
             'TASK_CREATED',
-            payload.bizType,
+            'MATERIAL_ARCHIVE',
             payload.bizId,
           );
         }
@@ -155,7 +166,7 @@ export class NotificationListener {
             `项目「${projectName}」已进入材料归档阶段`,
             `项目「${projectName}」已进入材料归档阶段，如需协助上传原始材料请前往材料归档详情页`,
             'ARCHIVE_STARTED',
-            payload.bizType,
+            'MATERIAL_ARCHIVE',
             payload.bizId,
           );
         }

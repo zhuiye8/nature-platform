@@ -107,6 +107,8 @@ function getRefRoute(item: NotificationItem): string {
     CONTRACT: `/contract/${item.refId}`,
     PROJECT: `/project/${item.refId}`,
     PROJECT_REGISTER: `/project/${item.refId}`,
+    // 材料归档相关通知（归档员待办 / 销售/PM/部门经理知情抄送）都跳归档详情页
+    MATERIAL_ARCHIVE: `/archive/${item.refId}`,
   }
   return typeRouteMap[item.refType] || '/dashboard'
 }
