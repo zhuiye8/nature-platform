@@ -29,11 +29,55 @@ const isArchiver = computed(() =>
   hasTaskFor('PROJECT_REGISTER', projectRegisterId, 'MATERIAL_ARCHIVE'),
 )
 
-// ── 文件池上传权限(销售/PM,与归档权限独立) ──
-// 池文件是"原始材料收集",所有参与方都能上传;归档员挑出最终版
+// ── 文件池上传权限 (项目相关方可上传,与最终版归档权限独立) ──
+// 池文件是"原始材料收集"阶段,允许多方协作补充;归档员从中挑出最终版提交归档
+// 白名单 (5 条任一命中即可上传):
+//   1. 本项目 PM              (project_member.role_type='PM')
+//   2. 项目登记创建人          (project_register.created_by)
+//   3. 本项目合同的跟单销售    (contract.sales_person_id,业绩归属销售)
+//   4. 归档员                 (系统角色 archiver)
+//   5. 超管                   (系统角色 super_admin)
+//
+// 注: project_manager 不是系统角色(PM 是项目成员角色),旧代码用
+//     userRoles.includes('project_manager') 永远 false 导致 PM 看不到上传入口;
+//     "sales" 系统角色判断也过宽,改为"本项目合同的销售"更精确。
+const currentUserId = computed(() => authStore.user?.id)
 const userRoles = computed(() => authStore.user?.roles || [])
-const canUploadPool = computed(() =>
-  userRoles.value.includes('sales') || userRoles.value.includes('project_manager') || userRoles.value.includes('super_admin'),
+
+const isArchiverOrAdmin = computed(
+  () =>
+    userRoles.value.includes('archiver') ||
+    userRoles.value.includes('super_admin'),
+)
+
+const isProjectPM = computed(
+  () =>
+    project.value?.members?.some(
+      (m: any) =>
+        m.userId === currentUserId.value &&
+        m.roleType === 'PM' &&
+        m.status === 'ACTIVE',
+    ) ?? false,
+)
+
+const isProjectCreator = computed(
+  () =>
+    project.value?.createdBy != null &&
+    project.value.createdBy === currentUserId.value,
+)
+
+const isContractSalesPerson = computed(
+  () =>
+    project.value?.contractInfo?.salesPersonId != null &&
+    project.value.contractInfo.salesPersonId === currentUserId.value,
+)
+
+const canUploadPool = computed(
+  () =>
+    isArchiverOrAdmin.value ||
+    isProjectPM.value ||
+    isProjectCreator.value ||
+    isContractSalesPerson.value,
 )
 
 const data = ref<any>(null)
@@ -41,7 +85,7 @@ const loading = ref(true)
 const submitting = ref(false)
 
 // ════════════════════════════════════════════════════════════
-// 文件池（销售/PM 上传原始材料）
+// 文件池（项目相关方上传原始材料 —— 详细白名单见上方 canUploadPool）
 // ════════════════════════════════════════════════════════════
 const poolFiles = ref<FileItem[]>([])
 const poolUploadDialogVisible = ref(false)
@@ -398,12 +442,12 @@ onMounted(fetchData)
       </el-card>
 
       <!-- ═══════════════════════════════════════════════════════ -->
-      <!-- 归档材料（销售/PM 上传原始材料）                         -->
+      <!-- 归档材料（项目相关方上传原始材料）                         -->
       <!-- ═══════════════════════════════════════════════════════ -->
       <el-card shadow="never" style="margin-bottom: 16px">
         <template #header>
           <div style="display: flex; align-items: center; justify-content: space-between">
-            <span style="font-weight: 600">归档材料（销售/项目经理上传）</span>
+            <span style="font-weight: 600">归档材料（项目相关方上传）</span>
             <el-button v-if="canUploadPool" type="primary" size="small" :icon="Upload" @click="openPoolUploadDialog">上传材料</el-button>
           </div>
         </template>

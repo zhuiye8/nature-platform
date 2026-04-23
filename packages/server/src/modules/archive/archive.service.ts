@@ -268,6 +268,7 @@ export class ArchiveService {
     const archive = archiveRows[0] ?? null;
 
     // Project info
+    // createdBy 供前端 ArchiveDetail 判断 "项目创建人" 是否可上传归档材料
     const projects = await this.db
       .select({
         id: projectRegister.id,
@@ -275,6 +276,7 @@ export class ArchiveService {
         contractYear: projectRegister.contractYear,
         contractId: projectRegister.contractId,
         status: projectRegister.status,
+        createdBy: projectRegister.createdBy,
       })
       .from(projectRegister)
       .where(eq(projectRegister.id, projectRegisterId))
@@ -291,6 +293,8 @@ export class ArchiveService {
           contractNo: contract.contractNo,
           contractName: contract.contractName,
           customerName: customer.fullName,
+          // 跟单销售(业绩归属),前端 canUploadPool 依赖此字段判断当前用户是否有权上传
+          salesPersonId: contract.salesPersonId,
           paymentAmount: contract.paymentAmount,
           paymentMethod: contract.paymentMethod,
           paymentCompany: contract.paymentCompany,
