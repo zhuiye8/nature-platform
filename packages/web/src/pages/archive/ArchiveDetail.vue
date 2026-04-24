@@ -268,13 +268,13 @@ const pmMember = computed(() => project.value?.members?.find((m: any) => m.roleT
 const assessors = computed(() => project.value?.members?.filter((m: any) => m.roleType === 'ASSESSOR') ?? [])
 const reportWriter = computed(() => project.value?.reportWriter ?? null)
 
-const isSubmitted = computed(() => archive.value?.status === 'SUBMITTED')
+const isArchived = computed(() => archive.value?.status === 'ARCHIVED')
 const archiveStatusLabel = computed(() => {
-  if (!isSubmitted.value) return '待归档'
+  if (!isArchived.value) return '待归档'
   return checkedCount.value >= materialChecklist.value.length ? '已归档' : '未完全归档'
 })
 const archiveTagType = computed(() => {
-  if (!isSubmitted.value) return 'info'
+  if (!isArchived.value) return 'info'
   return checkedCount.value >= materialChecklist.value.length ? 'success' : 'warning'
 })
 
@@ -332,7 +332,7 @@ async function handleSubmit() {
       storageLocation: globalStorageLocation.value.trim() || undefined,
       remark: globalRemark.value.trim() || undefined,
     })
-    ElMessage.success(isSubmitted.value ? '归档已更新' : '归档已提交')
+    ElMessage.success(isArchived.value ? '归档已更新' : '归档已提交')
     // 刷新 my-tasks: 归档任务状态变化后,操作控件可见性立即生效
     await refresh()
     fetchData()
@@ -557,7 +557,7 @@ onMounted(fetchData)
           </div>
           <div v-else></div>
           <el-button v-if="isArchiver" type="primary" :loading="submitting" @click="handleSubmit">
-            {{ isSubmitted ? '更新归档' : '提交归档' }}
+            {{ isArchived ? '更新归档' : '提交归档' }}
           </el-button>
         </div>
       </el-card>

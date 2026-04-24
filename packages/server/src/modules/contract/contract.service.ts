@@ -868,6 +868,12 @@ export class ContractService {
       throw new BadRequestException('该合同已完成归档');
     }
 
+    // 完成归档时签订时间必填（数据完整性要求：无签订时间的合同归档不合规）
+    // 保存未完成归档（isComplete=false）时可选，允许分批补充
+    if (dto.isComplete && !dto.signedAt) {
+      throw new BadRequestException('完成归档时必须填写签订时间');
+    }
+
     const newArchiveStatus = dto.isComplete ? 'ARCHIVED' : 'PARTIAL_ARCHIVE';
 
     const now = new Date();

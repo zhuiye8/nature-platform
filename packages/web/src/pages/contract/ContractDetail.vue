@@ -181,6 +181,12 @@ function initArchiveForm() {
 }
 
 async function handleArchive() {
+  // 完成归档时签订时间必填（保存未完成时可以为空，事后补充）
+  if (archiveForm.value.isComplete && !archiveForm.value.signedAt) {
+    ElMessage.warning('完成归档时必须填写签订时间')
+    return
+  }
+
   archiving.value = true
   try {
     const { isComplete, ...data } = archiveForm.value
@@ -500,7 +506,7 @@ onMounted(async () => {
         </template>
         <div v-if="canArchive">
           <el-form label-width="100px" style="max-width: 700px">
-            <el-form-item label="签订时间">
+            <el-form-item label="签订时间" :required="archiveForm.isComplete">
               <el-date-picker v-model="archiveForm.signedAt" type="date" placeholder="请选择签订日期" value-format="YYYY-MM-DD" style="width: 100%" />
             </el-form-item>
             <el-form-item label="文件份数">

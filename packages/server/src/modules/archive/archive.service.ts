@@ -213,8 +213,11 @@ export class ArchiveService {
       // 使用英文枚举与其他模块 (contract 等) 保持一致, 前端通过
       // status-map.getStatusLabel / getStatusTagType 映射中文和颜色。
       //   PENDING_ARCHIVE 待归档 | PARTIAL_ARCHIVE 部分归档 | ARCHIVED 已归档
+      //
+      // DB 状态机：material_archive.status 只有 'ARCHIVED'（已提交归档）或不存在（未提交）。
+      // PARTIAL_ARCHIVE 是"已提交但卷内清单勾选未齐"的列表派生状态（软警示）。
       let archiveStatus: 'PENDING_ARCHIVE' | 'PARTIAL_ARCHIVE' | 'ARCHIVED' = 'PENDING_ARCHIVE';
-      if (archiveRecord?.status === 'SUBMITTED') {
+      if (archiveRecord?.status === 'ARCHIVED') {
         const items = (archiveRecord.materialStatusCodes ?? []) as any[];
         const checkedItems = items.filter((item) =>
           typeof item === 'string' ? true : item?.checked === true,
@@ -372,6 +375,8 @@ export class ArchiveService {
       .where(eq(materialArchive.projectRegisterId, dto.projectRegisterId))
       .limit(1);
 
+    // 材料归档是"一次点击即完成"的单按钮交互（无"未完成归档"中间态），
+    // 提交成功后 status 直接推进到 'ARCHIVED'；同步 workflow signal 推进 wf_instance。
     if (existing[0]) {
       await this.db
         .update(materialArchive)
@@ -384,7 +389,7 @@ export class ArchiveService {
           submittedAt: new Date(),
           updatedBy: userId,
           updatedAt: new Date(),
-          status: 'SUBMITTED',
+          status: 'ARCHIVED',
         })
         .where(eq(materialArchive.id, existing[0].id));
     } else {
@@ -394,7 +399,7 @@ export class ArchiveService {
         fileCount: dto.fileCount ?? null,
         storageLocation: dto.storageLocation ?? null,
         remark: dto.remark ?? null,
-        status: 'SUBMITTED',
+        status: 'ARCHIVED',
         submittedBy: userId,
         submittedAt: new Date(),
         updatedBy: userId,
