@@ -313,7 +313,6 @@ export const policeRegister = pgTable(
   {
     id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
     projectRegisterId: bigint('project_register_id', { mode: 'number' }).notNull(),
-    registerNo: varchar('register_no', { length: 128 }),
     filingAgency: varchar('filing_agency', { length: 255 }),
     contactName: varchar('contact_name', { length: 64 }),
     contactPhone: varchar('contact_phone', { length: 32 }),

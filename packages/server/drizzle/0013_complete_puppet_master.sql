@@ -1,0 +1,1 @@
+ALTER TABLE "police_register" DROP COLUMN "register_no";
