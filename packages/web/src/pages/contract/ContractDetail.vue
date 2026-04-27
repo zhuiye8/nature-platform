@@ -13,6 +13,7 @@ import SystemItemDetailDialog from '@/components/SystemItemDetailDialog.vue'
 import { getStatusLabel, getStatusTagType } from '@/utils/status-map'
 import { formatTime } from '@/utils/format'
 import { SERVICE_CONTENT_TAG_TYPE } from '@/utils/enums'
+import { getPaymentRecords, type PaymentRecord } from '@/api/payment-record'
 import { usePermission } from '@/composables/usePermission'
 import { useAuthStore } from '@/stores/auth'
 import { useOperableTasks } from '@/composables/useOperableTasks'
@@ -203,6 +204,20 @@ async function handleArchive() {
   }
 }
 
+// 回款明细 (只读, 任何能看到合同的人都能看)
+const paymentRecords = ref<PaymentRecord[]>([])
+const paymentSummary = ref({ contractAmount: 0, totalPaid: 0, remaining: 0 })
+
+async function fetchPaymentRecords(contractId: number) {
+  try {
+    const data = await getPaymentRecords(contractId)
+    paymentRecords.value = data.list ?? []
+    paymentSummary.value = data.summary ?? { contractAmount: 0, totalPaid: 0, remaining: 0 }
+  } catch {
+    paymentRecords.value = []
+  }
+}
+
 async function fetchDetail() {
   const id = Number(route.params.id)
   if (!id) return
@@ -214,6 +229,7 @@ async function fetchDetail() {
     } catch {
       workflowData.value = null
     }
+    fetchPaymentRecords(id)
   } finally {
     loading.value = false
     initArchiveForm()
@@ -601,6 +617,50 @@ onMounted(async () => {
             </el-table>
           </div>
         </template>
+      </el-card>
+
+      <!-- ── 8. 回款明细（只读，所有合同可见者都能看；编辑入口在合同财务详情页）──────── -->
+      <el-card v-if="contract.reviewStatus === 'APPROVED'" shadow="never" style="margin-bottom: 16px">
+        <template #header>
+          <div style="display: flex; align-items: center; justify-content: space-between">
+            <span style="font-weight: 600; font-size: 15px">回款明细</span>
+            <el-tag :type="getStatusTagType(contract.paymentStatus)" size="small">
+              {{ getStatusLabel(contract.paymentStatus) || contract.paymentStatus }}
+            </el-tag>
+          </div>
+        </template>
+        <el-row :gutter="16" style="margin-bottom: 12px">
+          <el-col :span="8">
+            <el-statistic title="合同金额" :value="paymentSummary.contractAmount" :precision="2" prefix="¥ " />
+          </el-col>
+          <el-col :span="8">
+            <el-statistic title="累计回款" :value="paymentSummary.totalPaid" :precision="2" prefix="¥ " value-style="color: #67C23A" />
+          </el-col>
+          <el-col :span="8">
+            <el-statistic title="剩余" :value="paymentSummary.remaining" :precision="2" prefix="¥ " value-style="color: #E6A23C" />
+          </el-col>
+        </el-row>
+        <el-table v-if="paymentRecords.length > 0" :data="paymentRecords" border stripe size="small" style="width: 100%">
+          <el-table-column label="金额" min-width="130" align="right">
+            <template #default="{ row }">{{ formatAmount(row.amount) }}</template>
+          </el-table-column>
+          <el-table-column label="回款日期" min-width="120" align="center">
+            <template #default="{ row }">{{ row.paidAt }}</template>
+          </el-table-column>
+          <el-table-column label="付款方" min-width="180" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.payer || '--' }}</template>
+          </el-table-column>
+          <el-table-column prop="remark" label="备注" min-width="200" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.remark || '--' }}</template>
+          </el-table-column>
+          <el-table-column label="操作人" min-width="100">
+            <template #default="{ row }">{{ row.creatorName || '--' }}</template>
+          </el-table-column>
+          <el-table-column label="操作时间" min-width="160">
+            <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-else description="暂无回款记录" :image-size="80" />
       </el-card>
 
       <!-- ── 审批流程（可折叠，默认收起） ──────────────────── -->

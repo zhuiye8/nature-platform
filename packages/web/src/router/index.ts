@@ -151,6 +151,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/pages/finance/ContractFinanceList.vue'),
         meta: { title: '合同财务', permission: 'contract:update_financial' },
       },
+      {
+        path: 'finance/contract/:id',
+        name: 'ContractFinanceDetail',
+        component: () => import('@/pages/finance/ContractFinanceDetail.vue'),
+        meta: { title: '合同财务详情', permission: 'contract:update_financial' },
+      },
       // --- 注册平台管理 ---
       {
         path: 'platform',
