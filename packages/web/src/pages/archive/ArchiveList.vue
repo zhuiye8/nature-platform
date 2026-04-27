@@ -10,7 +10,7 @@ const router = useRouter()
 const tableData = ref<any[]>([])
 const loading = ref(false)
 const currentPage = ref(1)
-const pageSize = ref(20)
+const pageSize = ref(10)
 const total = ref(0)
 const archiveStatusFilter = ref('')
 

@@ -12,7 +12,7 @@ export class QueryRecycleDto {
   @IsInt()
   @Min(1)
   @IsOptional()
-  pageSize?: number = 20;
+  pageSize?: number = 10;
 
   @IsString()
   @IsOptional()

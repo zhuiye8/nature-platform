@@ -8,7 +8,7 @@ const activeTab = ref('CONTRACT')
 const tableData = ref<RecycleItem[]>([])
 const loading = ref(false)
 const currentPage = ref(1)
-const pageSize = ref(20)
+const pageSize = ref(10)
 const total = ref(0)
 
 async function fetchData() {

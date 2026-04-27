@@ -31,7 +31,7 @@ export class QueryReportDto {
   @IsInt()
   @Min(1)
   @IsOptional()
-  pageSize?: number = 20;
+  pageSize?: number = 10;
 
   /** 按项目名称模糊搜索 */
   @IsString()

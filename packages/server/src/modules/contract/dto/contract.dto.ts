@@ -51,7 +51,7 @@ export class QueryGroupDto {
   @IsInt()
   @Min(1)
   @IsOptional()
-  pageSize?: number = 20;
+  pageSize?: number = 10;
 
   @IsString()
   @IsOptional()
@@ -305,7 +305,7 @@ export class QueryContractDto {
   @IsInt()
   @Min(1)
   @IsOptional()
-  pageSize?: number = 20;
+  pageSize?: number = 10;
 
   @IsString()
   @IsOptional()

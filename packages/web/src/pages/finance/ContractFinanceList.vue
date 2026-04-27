@@ -15,7 +15,7 @@ const keyword = ref('')
 const paymentStatusFilter = ref('')
 const serviceContentFilter = ref('')
 const currentPage = ref(1)
-const pageSize = ref(20)
+const pageSize = ref(10)
 const total = ref(0)
 
 const paymentStatusOptions = [

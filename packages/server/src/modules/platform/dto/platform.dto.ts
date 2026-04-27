@@ -18,7 +18,7 @@ export class UpdatePlatformDto extends CreatePlatformDto {}
 
 export class QueryPlatformDto {
   @Type(() => Number) @IsInt() @Min(1) @IsOptional() page?: number = 1;
-  @Type(() => Number) @IsInt() @Min(1) @IsOptional() pageSize?: number = 20;
+  @Type(() => Number) @IsInt() @Min(1) @IsOptional() pageSize?: number = 10;
   @IsString() @IsOptional() platformName?: string;
   @IsString() @IsOptional() websiteUrl?: string;
   @IsString() @IsOptional() hasCa?: string;
