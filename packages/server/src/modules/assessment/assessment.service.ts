@@ -34,16 +34,19 @@ export class AssessmentService {
     const pageSize = query.pageSize ?? 20;
 
     // Check if super_admin
-    const adminCheck = await this.db
-      .select()
+    // chairman 业务全只读，看全部
+    const allRoles = await this.db
+      .select({ roleCode: userRole.roleCode })
       .from(userRole)
-      .where(and(eq(userRole.userId, userId), eq(userRole.roleCode, 'super_admin')))
-      .limit(1);
-    const isSuperAdmin = adminCheck.length > 0;
+      .where(eq(userRole.userId, userId));
+    const roleCodes = allRoles.map((r) => r.roleCode);
+    const isSuperAdmin = roleCodes.includes('super_admin');
+    const isChairman = roleCodes.includes('chairman');
+    const isViewer = isSuperAdmin || isChairman;
 
     // Get project IDs the user is a member of (any role_type)
     let projectIds: number[] = [];
-    if (!isSuperAdmin) {
+    if (!isViewer) {
       const myProjects = await this.db
         .select({ projectId: projectMember.projectId })
         .from(projectMember)
@@ -61,7 +64,7 @@ export class AssessmentService {
 
     // Build WHERE conditions — now based on projectRegister (one row per project)
     const conditions: SQL[] = [eq(projectRegister.deleted, false)];
-    if (!isSuperAdmin) {
+    if (!isViewer) {
       conditions.push(inArray(projectRegister.id, projectIds));
     }
     if (query.keyword) {

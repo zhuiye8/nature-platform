@@ -112,6 +112,9 @@ function getRefRoute(item: NotificationItem): string {
     PROJECT_REGISTER: `/project/${item.refId}`,
     // 材料归档相关通知（归档员待办 / 销售/PM/部门经理知情抄送）都跳归档详情页
     MATERIAL_ARCHIVE: `/archive/${item.refId}`,
+    // 财务相关
+    INVOICE: `/finance/invoice/${item.refId}`,
+    EXPENSE: `/finance/expense/${item.refId}`,
   }
   return typeRouteMap[item.refType] || '/dashboard'
 }
@@ -168,7 +171,7 @@ onUnmounted(() => {
           </el-menu-item>
 
           <!-- Business -->
-          <el-sub-menu v-if="hasAnyPermission(['customer:list','partner:list','contract:list','project:list','police:operate'])" index="business">
+          <el-sub-menu v-if="hasAnyPermission(['customer:list','partner:list','contract:list','project:list','police:list','police:operate'])" index="business">
             <template #title>
               <el-icon><Briefcase /></el-icon>
               <span>业务流程</span>
@@ -189,7 +192,7 @@ onUnmounted(() => {
               <el-icon><Folder /></el-icon>
               <template #title>项目登记</template>
             </el-menu-item>
-            <el-menu-item v-if="hasPermission('police:operate')" index="/police" @click="navigateTo('/police')">
+            <el-menu-item v-if="hasAnyPermission(['police:list','police:operate'])" index="/police" @click="navigateTo('/police')">
               <el-icon><OfficeBuilding /></el-icon>
               <template #title>公安登记</template>
             </el-menu-item>

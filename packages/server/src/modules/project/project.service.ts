@@ -52,20 +52,21 @@ export class ProjectService {
       .where(eq(userRole.userId, currentUserId));
     const roleCodes = roles.map((r) => r.roleCode);
     const isSuperAdmin = roleCodes.includes('super_admin');
+    const isChairman = roleCodes.includes('chairman');
     const isCommercial = roleCodes.includes('commercial');
     const isDeptManager = roleCodes.includes('dept_manager');
     const isDirector = roleCodes.includes('project_director');
     const conditions: SQL[] = [eq(projectRegister.deleted, false)];
 
     // Row-level visibility (UNION semantics — 多身份用户取所有身份的并集):
-    //   super_admin / commercial / dept_manager / project_director → all projects
+    //   super_admin / chairman / commercial / dept_manager / project_director → all projects
     //   其他角色用户 → 以下任一条件满足即可见：
     //     a) 自己是创建者 (created_by = userId)
     //     b) 自己是 project_member (PM / ASSESSOR / REPORT_WRITER)
     //     c) 自己是所属合同的跟单销售 (contract.sales_person_id = userId)
     // 之前版本用互斥 if/else，导致身兼销售+测评师的用户走 assessor 分支后
     // 看不到自己创建的项目 — 改为 OR 并集，任一身份满足即可见。
-    if (!isSuperAdmin && !isCommercial && !isDeptManager && !isDirector) {
+    if (!isSuperAdmin && !isChairman && !isCommercial && !isDeptManager && !isDirector) {
       const orConditions: SQL[] = [];
 
       // (a) 作为创建者

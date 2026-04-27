@@ -123,6 +123,7 @@ export class ContractService {
       .where(eq(userRole.userId, currentUserId));
     const roleCodes = roles.map((r) => r.roleCode);
     const isSuperAdmin = roleCodes.includes('super_admin');
+    const isChairman = roleCodes.includes('chairman');
     const hasSales = roleCodes.includes('sales');
     const hasCommercial = roleCodes.includes('commercial') || roleCodes.includes('archiver');
     const hasManager = roleCodes.includes('dept_manager') || roleCodes.includes('project_director');
@@ -131,8 +132,8 @@ export class ContractService {
     const conditions: SQL[] = [eq(contract.deleted, false)];
 
     // Role-based visibility (union of all role permissions)
-    // super_admin: no filter
-    if (!isSuperAdmin) {
+    // super_admin / chairman: no filter (chairman 业务全只读，看全部)
+    if (!isSuperAdmin && !isChairman) {
       const visibilityConditions: SQL[] = [];
       if (hasSales) {
         visibilityConditions.push(or(eq(contract.createdBy, currentUserId), eq(contract.salesPersonId, currentUserId))!);
@@ -1153,6 +1154,7 @@ export class ContractService {
       .where(eq(userRole.userId, currentUserId));
     const roleCodes = roles.map((r) => r.roleCode);
     const isSuperAdmin = roleCodes.includes('super_admin');
+    const isChairman = roleCodes.includes('chairman');
     const hasSales = roleCodes.includes('sales');
     const hasCommercial = roleCodes.includes('commercial') || roleCodes.includes('archiver');
     const hasManager = roleCodes.includes('dept_manager') || roleCodes.includes('project_director');
@@ -1163,7 +1165,8 @@ export class ContractService {
     const contractConds: SQL[] = [eq(contract.deleted, false)];
 
     // Role-based visibility (union)
-    if (!isSuperAdmin) {
+    // super_admin / chairman: no filter (chairman 业务全只读, 看全部)
+    if (!isSuperAdmin && !isChairman) {
       const visibilityConds: SQL[] = [];
       if (hasSales) visibilityConds.push(or(eq(contract.createdBy, currentUserId), eq(contract.salesPersonId, currentUserId))!);
       if (hasCommercial) visibilityConds.push(eq(contract.reviewStatus, 'APPROVED'));
@@ -1258,7 +1261,8 @@ export class ContractService {
     const enriched = await Promise.all(
       groups.map(async (g) => {
         const conds: SQL[] = [eq(contract.groupId, g.id), eq(contract.deleted, false)];
-        if (!isSuperAdmin) {
+        // super_admin / chairman: no filter
+        if (!isSuperAdmin && !isChairman) {
           const visConds: SQL[] = [];
           if (hasSales) visConds.push(or(eq(contract.createdBy, currentUserId), eq(contract.salesPersonId, currentUserId))!);
           if (hasCommercial) visConds.push(eq(contract.reviewStatus, 'APPROVED'));
@@ -1283,6 +1287,8 @@ export class ContractService {
             paymentAmount: contract.paymentAmount,
             paymentMethod: contract.paymentMethod,
             paymentStatus: contract.paymentStatus,
+            serviceContent: contract.serviceContent,
+            remark: contract.remark,
             financialHandlerId: contract.financialHandlerId,
             salesPersonId: contract.salesPersonId,
             archivedBy: contract.archivedBy,

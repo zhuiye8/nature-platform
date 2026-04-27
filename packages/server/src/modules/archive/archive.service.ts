@@ -45,6 +45,7 @@ export class ArchiveService {
       .where(eq(userRole.userId, userId));
     const roleCodes = roles.map((r) => r.roleCode);
     const isSuperAdmin = roleCodes.includes('super_admin');
+    const isChairman = roleCodes.includes('chairman');
     const isArchiver = roleCodes.includes('archiver');
     const isSales = roleCodes.includes('sales');
     // PM is determined by project_member.roleType='PM' (not by iam_role)
@@ -82,7 +83,8 @@ export class ArchiveService {
     }
 
     // Visibility filter by role
-    if (!isSuperAdmin && !isArchiver) {
+    // chairman 业务全只读，看全部
+    if (!isSuperAdmin && !isChairman && !isArchiver) {
       const visibleIds = new Set<number>();
 
       // PM: see projects where they are PM

@@ -41,10 +41,12 @@ export class PoliceService {
       .where(eq(userRole.userId, userId));
     const roleCodes = roleCheck.map((r) => r.roleCode);
     const isSuperAdmin = roleCodes.includes('super_admin');
+    const isChairman = roleCodes.includes('chairman');
     const isPoliceRole = roleCodes.includes('police_register');
 
     let visibleProjectIds: number[] | null = null;
-    if (!isSuperAdmin && !isPoliceRole) {
+    // chairman 业务全只读，看全部
+    if (!isSuperAdmin && !isChairman && !isPoliceRole) {
       const myProjects = await this.db
         .select({ projectId: projectMember.projectId })
         .from(projectMember)

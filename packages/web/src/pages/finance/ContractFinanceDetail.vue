@@ -111,11 +111,23 @@ async function saveFinancial() {
   }
 }
 
+// ── 付款方候选项（来自合同的客户/付款公司/合作方）──
+const payerOptions = computed(() => {
+  const c = contract.value
+  if (!c) return []
+  const opts: string[] = []
+  if (c.customerName) opts.push(c.customerName)
+  if (c.paymentCompany && c.paymentCompany !== c.customerName) opts.push(c.paymentCompany)
+  if (c.partnerName) opts.push(c.partnerName)
+  return opts
+})
+
 // ── 添加回款 ──
 function openAddDialog() {
   addForm.amount = undefined
   addForm.paidAt = todayStr
-  addForm.payer = ''
+  // 默认填合同的付款公司，没有则用客户名
+  addForm.payer = contract.value?.paymentCompany || contract.value?.customerName || ''
   addForm.remark = ''
   addDialogVisible.value = true
 }
@@ -319,7 +331,17 @@ onMounted(async () => {
           />
         </el-form-item>
         <el-form-item label="付款方">
-          <el-input v-model="addForm.payer" placeholder="付款方名称（可选）" maxlength="255" />
+          <el-select
+            v-model="addForm.payer"
+            placeholder="付款方名称（可从合同候选中选择，或自行输入）"
+            filterable
+            allow-create
+            default-first-option
+            clearable
+            style="width: 100%"
+          >
+            <el-option v-for="opt in payerOptions" :key="opt" :label="opt" :value="opt" />
+          </el-select>
         </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="addForm.remark" type="textarea" :rows="2" placeholder="备注（可选）" />

@@ -90,6 +90,13 @@ export class InvoiceService {
       dto.contractId,
     );
 
+    // 校验：合同下所有系统金额合计 ≤ 合同金额（写入 project_system_item.amount 前）
+    await this.assertSystemAmountsTotal(
+      dto.contractId,
+      dto.systems.map((s) => ({ systemId: s.systemId, amount: s.amount })),
+      Number(c.paymentAmount ?? 0),
+    );
+
     return this.db.transaction(async (tx) => {
       // 1. 回写 project_system_item.amount
       for (const s of dto.systems) {
@@ -154,6 +161,18 @@ export class InvoiceService {
     await this.assertSystemsBelongToContract(
       dto.systems.map((s) => s.systemId),
       dto.contractId,
+    );
+
+    // 校验：合同下所有系统金额合计 ≤ 合同金额
+    const [contractRow] = await this.db
+      .select({ paymentAmount: contract.paymentAmount })
+      .from(contract)
+      .where(eq(contract.id, dto.contractId))
+      .limit(1);
+    await this.assertSystemAmountsTotal(
+      dto.contractId,
+      dto.systems.map((s) => ({ systemId: s.systemId, amount: s.amount })),
+      Number(contractRow?.paymentAmount ?? 0),
     );
 
     return this.db.transaction(async (tx) => {
@@ -548,6 +567,54 @@ export class InvoiceService {
       paidTotal: totalPaid,               // 前期已回款
       remainingInvoice: Math.max(contractAmount - usedInvoice, 0),
     };
+  }
+
+  // -----------------------------------------------------------------------
+  // 私有: 校验合同下所有系统金额合计 ≤ 合同金额
+  //
+  // 防止用户在系统金额栏填超额（例如合同 1 万，2 个系统各填 8 千 = 1.6 万 > 合同金额）。
+  // 计算方式：合同下其他系统的现有 amount + 本次提交的新 amount 合计 ≤ 合同金额。
+  // -----------------------------------------------------------------------
+  private async assertSystemAmountsTotal(
+    contractId: number,
+    submittedSystems: { systemId: number; amount: number }[],
+    contractAmount: number,
+  ) {
+    if (contractAmount <= 0) return; // 合同金额未填则跳过此校验
+
+    const submittedSet = new Set(submittedSystems.map((s) => s.systemId));
+    const submittedTotal = submittedSystems.reduce((sum, s) => sum + s.amount, 0);
+
+    // 合同下"未在本次提交里的"其他系统的现有 amount 合计
+    const otherSystems = await this.db
+      .select({
+        id: projectSystemItem.id,
+        amount: projectSystemItem.amount,
+      })
+      .from(projectSystemItem)
+      .innerJoin(
+        projectRegister,
+        eq(projectRegister.id, projectSystemItem.projectRegisterId),
+      )
+      .where(
+        and(
+          eq(projectRegister.contractId, contractId),
+          eq(projectRegister.deleted, false),
+          eq(projectSystemItem.deleted, false),
+          sql`${projectSystemItem.systemNo} IS NOT NULL`,
+        ),
+      );
+
+    const otherTotal = otherSystems
+      .filter((s) => !submittedSet.has(s.id))
+      .reduce((sum, s) => sum + Number(s.amount ?? 0), 0);
+
+    const total = otherTotal + submittedTotal;
+    if (total > contractAmount) {
+      throw new BadRequestException(
+        `合同下所有系统金额合计 (${total.toFixed(2)}) 超过合同金额 (${contractAmount.toFixed(2)})，请调整系统金额`,
+      );
+    }
   }
 
   // -----------------------------------------------------------------------

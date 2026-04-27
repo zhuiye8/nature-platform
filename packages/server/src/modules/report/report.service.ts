@@ -65,10 +65,12 @@ export class ReportService {
     const roleCodes = roles.map((r) => r.roleCode);
 
     const isSuperAdmin = roleCodes.includes('super_admin');
+    const isChairman = roleCodes.includes('chairman');
     const isReportWriter = roleCodes.includes('report_writer');
     const isDeptManager = roleCodes.includes('dept_manager');
 
-    if (!isSuperAdmin && !isReportWriter && !isDeptManager) {
+    // chairman 业务全只读，看全部
+    if (!isSuperAdmin && !isChairman && !isReportWriter && !isDeptManager) {
       return { list: [], total: 0, page, pageSize };
     }
 
