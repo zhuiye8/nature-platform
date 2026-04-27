@@ -26,6 +26,7 @@ import { CompileFileModule } from './modules/compile-file/compile-file.module';
 import { PaymentRecordModule } from './modules/payment-record/payment-record.module';
 import { InvoiceModule } from './modules/invoice/invoice.module';
 import { ExpenseModule } from './modules/expense/expense.module';
+import { SettlementModule } from './modules/settlement/settlement.module';
 
 @Module({
   imports: [
@@ -59,6 +60,7 @@ import { ExpenseModule } from './modules/expense/expense.module';
     PaymentRecordModule,
     InvoiceModule,
     ExpenseModule,
+    SettlementModule,
   ],
 })
 export class AppModule {}
