@@ -157,6 +157,30 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/pages/finance/ContractFinanceDetail.vue'),
         meta: { title: '合同财务详情', permission: 'contract:update_financial' },
       },
+      {
+        path: 'finance/invoice',
+        name: 'InvoiceList',
+        component: () => import('@/pages/finance/InvoiceList.vue'),
+        meta: { title: '开票申请', permission: 'invoice:apply' },
+      },
+      {
+        path: 'finance/invoice/create',
+        name: 'InvoiceCreate',
+        component: () => import('@/pages/finance/InvoiceForm.vue'),
+        meta: { title: '新建开票申请', permission: 'invoice:apply' },
+      },
+      {
+        path: 'finance/invoice/:id',
+        name: 'InvoiceDetail',
+        component: () => import('@/pages/finance/InvoiceDetail.vue'),
+        meta: { title: '开票申请详情', permission: 'invoice:apply' },
+      },
+      {
+        path: 'finance/invoice/:id/edit',
+        name: 'InvoiceEdit',
+        component: () => import('@/pages/finance/InvoiceForm.vue'),
+        meta: { title: '编辑开票申请', permission: 'invoice:apply' },
+      },
       // --- 注册平台管理 ---
       {
         path: 'platform',
