@@ -480,3 +480,80 @@ export const financeInvoiceApplicationSystem = pgTable(
 
 export type FinanceInvoiceApplicationSystemRow = typeof financeInvoiceApplicationSystem.$inferSelect;
 export type NewFinanceInvoiceApplicationSystem = typeof financeInvoiceApplicationSystem.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// finance_expense_request (费用请款)
+// 状态机:
+//   DRAFT --submit-->        SUBMITTED
+//   SUBMITTED -部门 APPROVE-> DEPT_APPROVED
+//   DEPT_APPROVED -财务 APPROVE-> APPROVED
+//   任意阶段 REJECT --->        REJECTED (编辑后重提启动新 wf_instance + roundNo+1)
+//
+// 特殊规则:
+//   - 差旅费: invoice_type / tax_rate / invoice_amount 可为 NULL
+//   - 合作费: partner_* 字段必填 (默认从 contract 回填)
+//   - 银行账号: ^\d{10,30}$ (兼容个人卡 + 对公账户)
+// ---------------------------------------------------------------------------
+export const financeExpenseRequest = pgTable(
+  'finance_expense_request',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    contractId: bigint('contract_id', { mode: 'number' }).notNull(),
+
+    // 费用类型: 报名费/代理费/专家费/合作费/项目提成/差旅费/其它
+    expenseType: varchar('expense_type', { length: 32 }).notNull(),
+    requestAmount: decimal('request_amount', { precision: 18, scale: 2 }).notNull(),
+
+    // 发票信息 (差旅费时可为 NULL)
+    invoiceType: varchar('invoice_type', { length: 16 }),
+    taxRate: varchar('tax_rate', { length: 8 }),
+    invoiceAmount: decimal('invoice_amount', { precision: 18, scale: 2 }),
+
+    // 收款人信息
+    payeeName: varchar('payee_name', { length: 128 }).notNull(),
+    payeeBank: varchar('payee_bank', { length: 255 }).notNull(),
+    payeeAccount: varchar('payee_account', { length: 64 }).notNull(),
+
+    // 合作方信息 (合作费时必填，默认从 contract 回填)
+    partnerId: bigint('partner_id', { mode: 'number' }),
+    partnerName: varchar('partner_name', { length: 255 }),
+    partnerAmount: decimal('partner_amount', { precision: 18, scale: 2 }),
+    partnerInvoiceType: varchar('partner_invoice_type', { length: 16 }),
+    partnerTaxRate: varchar('partner_tax_rate', { length: 8 }),
+
+    remark: text('remark'),
+    status: varchar('status', { length: 32 }).notNull().default('DRAFT'),
+
+    createdBy: bigint('created_by', { mode: 'number' }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedBy: bigint('updated_by', { mode: 'number' }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    check(
+      'finance_expense_request_status_check',
+      sql`${t.status} IN ('DRAFT', 'SUBMITTED', 'DEPT_APPROVED', 'APPROVED', 'REJECTED')`,
+    ),
+  ],
+);
+
+export type FinanceExpenseRequestRow = typeof financeExpenseRequest.$inferSelect;
+export type NewFinanceExpenseRequest = typeof financeExpenseRequest.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// finance_expense_request_system (费用请款-系统多对多)
+// 外键指向 project_system_item.id (与开票申请一致)
+// ---------------------------------------------------------------------------
+export const financeExpenseRequestSystem = pgTable(
+  'finance_expense_request_system',
+  {
+    expenseRequestId: bigint('expense_request_id', { mode: 'number' }).notNull(),
+    projectSystemItemId: bigint('project_system_item_id', { mode: 'number' }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.expenseRequestId, t.projectSystemItemId] }),
+  ],
+);
+
+export type FinanceExpenseRequestSystemRow = typeof financeExpenseRequestSystem.$inferSelect;
+export type NewFinanceExpenseRequestSystem = typeof financeExpenseRequestSystem.$inferInsert;
