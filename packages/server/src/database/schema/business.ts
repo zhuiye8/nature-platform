@@ -236,6 +236,9 @@ export const projectSystemItem = pgTable('project_system_item', {
   hasFilingForm: boolean('has_filing_form').notNull().default(false),
   hasClassificationReport: boolean('has_classification_report').notNull().default(false),
 
+  // 系统金额（开票申请页面录入入口；可在后续申请中修改覆盖）
+  amount: decimal('amount', { precision: 18, scale: 2 }),
+
   sortOrder: integer('sort_order').notNull().default(0),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -405,3 +408,75 @@ export const registrationPlatform = pgTable('registration_platform', {
   deleted: boolean('deleted').notNull().default(false),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
 });
+
+// ---------------------------------------------------------------------------
+// contract_payment_record (回款明细)
+// 编辑入口仅在合同财务详情页 → 添加回款弹窗。
+// 每条记录留痕 created_by + created_at，业务上不允许编辑/删除（如需改正
+// 由 super_admin 在数据库层操作）。
+// ---------------------------------------------------------------------------
+export const contractPaymentRecord = pgTable('contract_payment_record', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  contractId: bigint('contract_id', { mode: 'number' }).notNull(),
+  amount: decimal('amount', { precision: 18, scale: 2 }).notNull(),
+  paidAt: date('paid_at').notNull(),
+  payer: varchar('payer', { length: 255 }),
+  remark: text('remark'),
+  createdBy: bigint('created_by', { mode: 'number' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type ContractPaymentRecordRow = typeof contractPaymentRecord.$inferSelect;
+export type NewContractPaymentRecord = typeof contractPaymentRecord.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// finance_invoice_application (开票申请)
+// 状态机：DRAFT → SUBMITTED → APPROVED(已开票) / REJECTED(需修改)
+// REJECTED 可重新编辑提交（启动新 wf_instance + roundNo 累加）
+// ---------------------------------------------------------------------------
+export const financeInvoiceApplication = pgTable(
+  'finance_invoice_application',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    contractId: bigint('contract_id', { mode: 'number' }).notNull(),
+    invoiceContent: text('invoice_content').notNull(),
+    applyAmount: decimal('apply_amount', { precision: 18, scale: 2 }).notNull(),
+    invoiceType: varchar('invoice_type', { length: 16 }).notNull(),
+    taxRate: varchar('tax_rate', { length: 8 }).notNull(),
+    description: text('description'),
+    remark: text('remark'),
+    status: varchar('status', { length: 32 }).notNull().default('DRAFT'),
+
+    createdBy: bigint('created_by', { mode: 'number' }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedBy: bigint('updated_by', { mode: 'number' }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    check(
+      'finance_invoice_application_status_check',
+      sql`${t.status} IN ('DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED')`,
+    ),
+  ],
+);
+
+export type FinanceInvoiceApplicationRow = typeof financeInvoiceApplication.$inferSelect;
+export type NewFinanceInvoiceApplication = typeof financeInvoiceApplication.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// finance_invoice_application_system (开票申请-系统多对多)
+// 注意：外键指向 project_system_item.id（已通过项目登记审批的系统）
+// ---------------------------------------------------------------------------
+export const financeInvoiceApplicationSystem = pgTable(
+  'finance_invoice_application_system',
+  {
+    invoiceApplicationId: bigint('invoice_application_id', { mode: 'number' }).notNull(),
+    projectSystemItemId: bigint('project_system_item_id', { mode: 'number' }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.invoiceApplicationId, t.projectSystemItemId] }),
+  ],
+);
+
+export type FinanceInvoiceApplicationSystemRow = typeof financeInvoiceApplicationSystem.$inferSelect;
+export type NewFinanceInvoiceApplicationSystem = typeof financeInvoiceApplicationSystem.$inferInsert;
