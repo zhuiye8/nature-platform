@@ -121,7 +121,7 @@ export interface ContractForm {
   systemItems: ContractSystemItem[]
 }
 
-export function getContractPage(params: PageQuery & { keyword?: string; reviewStatus?: string }) {
+export function getContractPage(params: PageQuery & { keyword?: string; reviewStatus?: string; serviceContent?: string }) {
   return request.get<PageResult<ContractItem>>('/contract/page', { params })
 }
 
@@ -185,7 +185,7 @@ export function createContractGroup(data: { groupName: string; remark?: string }
   return request.post<ContractGroupItem>('/contract/group', data)
 }
 
-export function getContractGroupPage(params: PageQuery & { keyword?: string }) {
+export function getContractGroupPage(params: PageQuery & { keyword?: string; reviewStatus?: string; archiveStatus?: string; paymentStatus?: string; serviceContent?: string; salesPersonId?: number }) {
   return request.get<PageResult<ContractGroupItem>>('/contract/group/page', { params })
 }
 

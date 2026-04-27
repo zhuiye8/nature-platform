@@ -6,6 +6,7 @@ import { ArrowLeft, Download, Upload, Delete, Paperclip } from '@element-plus/ic
 import { getPoliceRegisterDetail, exportPoliceExcel } from '@/api/police'
 import { getStatusLabel, getStatusTagType } from '@/utils/status-map'
 import { formatTime } from '@/utils/format'
+import { SERVICE_CONTENT_TAG_TYPE } from '@/utils/enums'
 import { getFileList, getFileDownloadPath, getFilePreviewPath, getUploadUrl, deleteFile, type FileItem } from '@/api/file'
 import { getSystemItems, type EnrichedSystemItem } from '@/api/project'
 import SystemItemDetailDialog from '@/components/SystemItemDetailDialog.vue'
@@ -170,7 +171,12 @@ onMounted(fetchDetail)
           <el-descriptions-item label="联系人">{{ detail.projectDetail.contactName || '--' }}</el-descriptions-item>
           <el-descriptions-item label="联系电话">{{ detail.projectDetail.contactPhone || '--' }}</el-descriptions-item>
           <el-descriptions-item label="合同年度">{{ detail.projectDetail.contractYear ? detail.projectDetail.contractYear + '年' : '--' }}</el-descriptions-item>
-          <el-descriptions-item label="服务内容">{{ detail.projectDetail.serviceContent || '--' }}</el-descriptions-item>
+          <el-descriptions-item label="服务内容">
+            <el-tag v-if="detail.projectDetail.serviceContent" :type="SERVICE_CONTENT_TAG_TYPE[detail.projectDetail.serviceContent] || 'info'" size="small">
+              {{ detail.projectDetail.serviceContent }}
+            </el-tag>
+            <span v-else>--</span>
+          </el-descriptions-item>
           <el-descriptions-item label="合同类型">{{ detail.projectDetail.contractType || '--' }}</el-descriptions-item>
           <el-descriptions-item label="签单销售">{{ detail.projectDetail.salesPersonName || '--' }}</el-descriptions-item>
           <el-descriptions-item label="合作方">{{ detail.projectDetail.partnerName || '--' }}</el-descriptions-item>

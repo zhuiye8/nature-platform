@@ -1,18 +1,19 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
 import { Search, Refresh } from '@element-plus/icons-vue'
-import { getContractGroupPage, updateContractFinancial } from '@/api/contract'
-import type { ContractGroupItem, ContractItem } from '@/api/contract'
+import { getContractGroupPage } from '@/api/contract'
+import type { ContractGroupItem } from '@/api/contract'
 import { getStatusLabel, getStatusTagType } from '@/utils/status-map'
 import { formatTime } from '@/utils/format'
+import { SERVICE_CONTENT_OPTIONS, SERVICE_CONTENT_TAG_TYPE } from '@/utils/enums'
 
 const router = useRouter()
 const tableData = ref<ContractGroupItem[]>([])
 const loading = ref(false)
 const keyword = ref('')
 const paymentStatusFilter = ref('')
+const serviceContentFilter = ref('')
 const currentPage = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
@@ -32,6 +33,7 @@ async function fetchData() {
       keyword: keyword.value || undefined,
       reviewStatus: 'APPROVED',
       paymentStatus: paymentStatusFilter.value || undefined,
+      serviceContent: serviceContentFilter.value || undefined,
     } as any)) as any
     tableData.value = data.list
     total.value = data.total
@@ -48,6 +50,7 @@ function handleSearch() {
 function handleReset() {
   keyword.value = ''
   paymentStatusFilter.value = ''
+  serviceContentFilter.value = ''
   currentPage.value = 1
   fetchData()
 }
@@ -55,34 +58,6 @@ function handleReset() {
 function formatAmount(val: any) {
   if (val == null) return '--'
   return `\u00a5 ${Number(val).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}`
-}
-
-// 回款编辑弹窗
-const editDialogVisible = ref(false)
-const editingContract = ref<ContractItem | null>(null)
-const editForm = ref({ paymentStatus: '', paymentRemark: '' })
-const editSaving = ref(false)
-
-function openEditDialog(row: ContractItem) {
-  editingContract.value = row
-  editForm.value = {
-    paymentStatus: row.paymentStatus || '',
-    paymentRemark: row.paymentRemark || '',
-  }
-  editDialogVisible.value = true
-}
-
-async function saveEdit() {
-  if (!editingContract.value) return
-  editSaving.value = true
-  try {
-    await updateContractFinancial(editingContract.value.id, editForm.value)
-    ElMessage.success('保存成功')
-    editDialogVisible.value = false
-    fetchData()
-  } finally {
-    editSaving.value = false
-  }
 }
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
@@ -114,6 +89,9 @@ onMounted(fetchData)
         <el-select v-model="paymentStatusFilter" placeholder="回款状态" clearable style="width: 140px" @change="handleSearch">
           <el-option v-for="opt in paymentStatusOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
         </el-select>
+        <el-select v-model="serviceContentFilter" placeholder="服务内容" clearable style="width: 140px" @change="handleSearch">
+          <el-option v-for="sc in SERVICE_CONTENT_OPTIONS" :key="sc" :label="sc" :value="sc" />
+        </el-select>
         <el-button :icon="Search" type="primary" @click="handleSearch">搜索</el-button>
         <el-button :icon="Refresh" @click="handleReset">重置</el-button>
       </div>
@@ -139,6 +117,14 @@ onMounted(fetchData)
                 <el-table-column label="合同金额" min-width="130" align="right">
                   <template #default="{ row }">{{ formatAmount(row.paymentAmount) }}</template>
                 </el-table-column>
+                <el-table-column label="服务内容" min-width="120" align="center">
+                  <template #default="{ row }">
+                    <el-tag v-if="row.serviceContent" :type="SERVICE_CONTENT_TAG_TYPE[row.serviceContent] || 'info'" size="small">
+                      {{ row.serviceContent }}
+                    </el-tag>
+                    <span v-else>--</span>
+                  </template>
+                </el-table-column>
                 <el-table-column label="付款方式" min-width="100">
                   <template #default="{ row }">{{ row.paymentMethod || '--' }}</template>
                 </el-table-column>
@@ -155,10 +141,10 @@ onMounted(fetchData)
                 <el-table-column label="财务" min-width="100">
                   <template #default="{ row }">{{ row.financialHandlerName || '--' }}</template>
                 </el-table-column>
-                <el-table-column label="操作" width="160" fixed="right">
+                <el-table-column prop="remark" label="备注" min-width="160" show-overflow-tooltip />
+                <el-table-column label="操作" width="120" fixed="right">
                   <template #default="{ row }">
-                    <el-button type="primary" link size="small" @click="router.push(`/contract/${row.id}`)">查看</el-button>
-                    <el-button type="warning" link size="small" @click="openEditDialog(row)">编辑回款</el-button>
+                    <el-button type="primary" link size="small" @click="router.push(`/finance/contract/${row.id}`)">详情</el-button>
                   </template>
                 </el-table-column>
               </el-table>
@@ -192,23 +178,5 @@ onMounted(fetchData)
         />
       </div>
     </el-card>
-
-    <!-- 编辑回款弹窗 -->
-    <el-dialog v-model="editDialogVisible" title="编辑回款信息" width="480px" :close-on-click-modal="false">
-      <el-form label-width="90px">
-        <el-form-item label="回款状态">
-          <el-select v-model="editForm.paymentStatus" placeholder="请选择回款状态" style="width: 100%">
-            <el-option v-for="opt in paymentStatusOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="回款备注">
-          <el-input v-model="editForm.paymentRemark" type="textarea" :rows="3" placeholder="请输入回款备注" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="editDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="editSaving" @click="saveEdit">保存</el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>

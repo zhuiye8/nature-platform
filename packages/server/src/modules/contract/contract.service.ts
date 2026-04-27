@@ -98,6 +98,10 @@ export class ContractService {
       conditions.push(eq(contract.archiveStatus, query.archiveStatus));
     }
 
+    if (query.serviceContent) {
+      conditions.push(eq(contract.serviceContent, query.serviceContent));
+    }
+
     if (query.systemQuotaFull === 'false') {
       conditions.push(eq(contract.systemQuotaFull, false));
     }
@@ -1102,6 +1106,7 @@ export class ContractService {
     if (query.reviewStatus) contractConds.push(eq(contract.reviewStatus, query.reviewStatus));
     if (query.archiveStatus) contractConds.push(eq(contract.archiveStatus, query.archiveStatus));
     if (query.paymentStatus) contractConds.push(eq(contract.paymentStatus, query.paymentStatus));
+    if (query.serviceContent) contractConds.push(eq(contract.serviceContent, query.serviceContent));
     if (query.salesPersonId) contractConds.push(eq(contract.salesPersonId, query.salesPersonId));
 
     // Keyword: match group name OR contract name OR contract no
@@ -1129,7 +1134,7 @@ export class ContractService {
 
     // Groups that have at least one matching contract (for contract-level filters)
     const needsVisibilityFilter = !isSuperAdmin && (hasSales || hasCommercial || hasManager || hasFinance);
-    const hasContractFilter = !!query.reviewStatus || !!query.archiveStatus || !!query.salesPersonId || needsVisibilityFilter;
+    const hasContractFilter = !!query.reviewStatus || !!query.archiveStatus || !!query.serviceContent || !!query.salesPersonId || needsVisibilityFilter;
     let groupIdsFromContracts: Set<number> | null = null;
     if (hasContractFilter) {
       const matchingContracts = await this.db

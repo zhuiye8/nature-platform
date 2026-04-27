@@ -14,6 +14,7 @@ import type { ProjectDetailForAssessment, ReviewStatus } from '@/api/assessment'
 import { useAuthStore } from '@/stores/auth'
 import { getStatusLabel } from '@/utils/status-map'
 import { formatTime } from '@/utils/format'
+import { SERVICE_CONTENT_TAG_TYPE } from '@/utils/enums'
 import { getSystemItems, type EnrichedSystemItem } from '@/api/project'
 import { getFileList, getFileDownloadPath, getFilePreviewPath, type FileItem } from '@/api/file'
 import FilePoolPanel from '@/components/FilePoolPanel.vue'
@@ -287,7 +288,12 @@ onMounted(fetchData)
         <el-descriptions-item label="统一信用代码">{{ project.customerUscc || '--' }}</el-descriptions-item>
         <el-descriptions-item label="联系人">{{ project.contactName || '--' }}</el-descriptions-item>
         <el-descriptions-item label="联系电话">{{ project.contactPhone || '--' }}</el-descriptions-item>
-        <el-descriptions-item label="服务内容">{{ project.serviceContent || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="服务内容">
+          <el-tag v-if="project.serviceContent" :type="SERVICE_CONTENT_TAG_TYPE[project.serviceContent] || 'info'" size="small">
+            {{ project.serviceContent }}
+          </el-tag>
+          <span v-else>--</span>
+        </el-descriptions-item>
         <el-descriptions-item label="合同类型">{{ project.contractType || '--' }}</el-descriptions-item>
         <el-descriptions-item label="签单销售">{{ project.salesPersonName || '--' }}</el-descriptions-item>
         <el-descriptions-item label="合作方">{{ project.partnerName || '--' }}</el-descriptions-item>

@@ -12,6 +12,7 @@ import RejectReasonPanel from '@/components/RejectReasonPanel.vue'
 import SystemItemDetailDialog from '@/components/SystemItemDetailDialog.vue'
 import { getStatusLabel, getStatusTagType } from '@/utils/status-map'
 import { formatTime } from '@/utils/format'
+import { SERVICE_CONTENT_TAG_TYPE } from '@/utils/enums'
 import { usePermission } from '@/composables/usePermission'
 import { useAuthStore } from '@/stores/auth'
 import { useOperableTasks } from '@/composables/useOperableTasks'
@@ -291,7 +292,12 @@ onMounted(async () => {
           <el-descriptions-item label="统一信用代码">{{ contract.customerUscc || '--' }}</el-descriptions-item>
           <el-descriptions-item label="联系人">{{ contract.contactName || '--' }}</el-descriptions-item>
           <el-descriptions-item label="联系电话">{{ contract.contactPhone || '--' }}</el-descriptions-item>
-          <el-descriptions-item label="服务内容">{{ contract.serviceContent || '--' }}</el-descriptions-item>
+          <el-descriptions-item label="服务内容">
+            <el-tag v-if="contract.serviceContent" :type="SERVICE_CONTENT_TAG_TYPE[contract.serviceContent] || 'info'" size="small">
+              {{ contract.serviceContent }}
+            </el-tag>
+            <span v-else>--</span>
+          </el-descriptions-item>
           <el-descriptions-item label="合同类型">{{ contract.contractType || '--' }}</el-descriptions-item>
           <el-descriptions-item label="成交情况">{{ getStatusLabel(contract.dealStatus) || contract.dealStatus || '--' }}</el-descriptions-item>
           <el-descriptions-item label="签单销售">{{ contract.salesPersonName || '--' }}</el-descriptions-item>

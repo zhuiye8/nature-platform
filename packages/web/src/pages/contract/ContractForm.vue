@@ -237,8 +237,9 @@ const systemLevelOptions = [
 ]
 
 // ── 预设选项 ──
+import { SERVICE_CONTENT_OPTIONS } from '@/utils/enums'
 const paymentMethodOptions = ['全款', '进度款']
-const serviceContentOptions = ['等级保护测评', '等保（综合）', '安全咨询', '渗透测试', '风险评估', '其他']
+const serviceContentOptions = SERVICE_CONTENT_OPTIONS
 const contractTypeOptions = ['自主', '直接合作', '间接合作']
 const dealStatusOptions = ['新客户挖掘', '老客户续签', '老客户转介绍', '招投标', '其他']
 const invoiceTypeOptions = ['专票', '普票']

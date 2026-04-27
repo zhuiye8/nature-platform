@@ -14,6 +14,7 @@ import { getUsersByRole } from '@/api/workflow'
 import { getFileList, getUploadUrl, getFileDownloadPath, deleteFile, type FileItem } from '@/api/file'
 import { useAuthStore } from '@/stores/auth'
 import ActionButton from '@/components/ActionButton.vue'
+import { SERVICE_CONTENT_OPTIONS, SERVICE_CONTENT_TAG_TYPE } from '@/utils/enums'
 
 const authStore = useAuthStore()
 const router = useRouter()
@@ -22,6 +23,7 @@ const loading = ref(false)
 const keyword = ref('')
 const reviewStatus = ref('')
 const archiveStatusFilter = ref('')
+const serviceContentFilter = ref('')
 const salesFilter = ref<number | ''>('')
 const salesOptions = ref<{ id: number; displayName: string }[]>([])
 const currentPage = ref(1)
@@ -62,6 +64,7 @@ async function fetchData() {
       keyword: keyword.value || undefined,
       reviewStatus: reviewStatus.value || undefined,
       archiveStatus: archiveStatusFilter.value || undefined,
+      serviceContent: serviceContentFilter.value || undefined,
       salesPersonId: salesFilter.value || undefined,
     } as any)) as any
     tableData.value = data.list
@@ -82,6 +85,7 @@ function handleReset() {
   keyword.value = ''
   reviewStatus.value = ''
   archiveStatusFilter.value = ''
+  serviceContentFilter.value = ''
   salesFilter.value = ''
   currentPage.value = 1
   fetchData()
@@ -286,6 +290,9 @@ onMounted(() => {
         <el-select v-model="archiveStatusFilter" placeholder="归档状态" clearable style="width: 130px" @change="handleSearch">
           <el-option v-for="opt in archiveStatusOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
         </el-select>
+        <el-select v-model="serviceContentFilter" placeholder="服务内容" clearable style="width: 140px" @change="handleSearch">
+          <el-option v-for="sc in SERVICE_CONTENT_OPTIONS" :key="sc" :label="sc" :value="sc" />
+        </el-select>
         <el-select v-model="salesFilter" placeholder="签单销售" filterable clearable style="width: 140px" @change="handleSearch">
           <el-option v-for="u in salesOptions" :key="u.id" :label="u.displayName" :value="u.id" />
         </el-select>
@@ -321,6 +328,14 @@ onMounted(() => {
                 <el-table-column label="合同金额" min-width="120" align="right">
                   <template #default="{ row }">
                     {{ row.paymentAmount ? `¥${Number(row.paymentAmount).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}` : '--' }}
+                  </template>
+                </el-table-column>
+                <el-table-column label="服务内容" min-width="120" align="center">
+                  <template #default="{ row }">
+                    <el-tag v-if="row.serviceContent" :type="SERVICE_CONTENT_TAG_TYPE[row.serviceContent] || 'info'" size="small">
+                      {{ row.serviceContent }}
+                    </el-tag>
+                    <span v-else>--</span>
                   </template>
                 </el-table-column>
                 <el-table-column label="签单销售" min-width="100">

@@ -9,6 +9,7 @@ import { getProjectDetail, getSystemItems, type ProjectDetail, type EnrichedSyst
 import { getFileList, getFileDownloadPath, getFilePreviewPath, type FileItem } from '@/api/file'
 import { getStatusLabel, getStatusTagType } from '@/utils/status-map'
 import { formatTime } from '@/utils/format'
+import { SERVICE_CONTENT_TAG_TYPE } from '@/utils/enums'
 import { useAuthStore } from '@/stores/auth'
 import { useOperableTasks } from '@/composables/useOperableTasks'
 import ReviewOpinionDialog from '@/components/ReviewOpinionDialog.vue'
@@ -420,7 +421,12 @@ onMounted(() => {
         <el-descriptions-item label="统一信用代码">{{ contractBiz.customerUscc || '--' }}</el-descriptions-item>
         <el-descriptions-item label="联系人">{{ contractBiz.contactName || '--' }}</el-descriptions-item>
         <el-descriptions-item label="联系电话">{{ contractBiz.contactPhone || '--' }}</el-descriptions-item>
-        <el-descriptions-item label="服务内容">{{ contractBiz.serviceContent || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="服务内容">
+          <el-tag v-if="contractBiz.serviceContent" :type="SERVICE_CONTENT_TAG_TYPE[contractBiz.serviceContent] || 'info'" size="small">
+            {{ contractBiz.serviceContent }}
+          </el-tag>
+          <span v-else>--</span>
+        </el-descriptions-item>
         <el-descriptions-item label="合同类型">{{ contractBiz.contractType || '--' }}</el-descriptions-item>
         <el-descriptions-item label="成交情况">{{ getStatusLabel(contractBiz.dealStatus) || contractBiz.dealStatus || '--' }}</el-descriptions-item>
         <el-descriptions-item label="签单销售">{{ contractBiz.salesPersonName || '--' }}</el-descriptions-item>
@@ -550,7 +556,12 @@ onMounted(() => {
         <el-descriptions-item label="统一信用代码">{{ contractData.customerUscc || '--' }}</el-descriptions-item>
         <el-descriptions-item label="联系人">{{ contractData.contactName || '--' }}</el-descriptions-item>
         <el-descriptions-item label="联系电话">{{ contractData.contactPhone || '--' }}</el-descriptions-item>
-        <el-descriptions-item label="服务内容">{{ contractData.serviceContent || '--' }}</el-descriptions-item>
+        <el-descriptions-item label="服务内容">
+          <el-tag v-if="contractData.serviceContent" :type="SERVICE_CONTENT_TAG_TYPE[contractData.serviceContent] || 'info'" size="small">
+            {{ contractData.serviceContent }}
+          </el-tag>
+          <span v-else>--</span>
+        </el-descriptions-item>
         <el-descriptions-item label="合同类型">{{ contractData.contractType || '--' }}</el-descriptions-item>
         <el-descriptions-item label="签单销售">{{ contractData.salesPersonName || '--' }}</el-descriptions-item>
         <el-descriptions-item label="合作方">{{ contractData.partnerName || '--' }}</el-descriptions-item>

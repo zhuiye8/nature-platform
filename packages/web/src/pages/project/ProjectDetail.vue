@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Edit, Download, Paperclip } from '@element-plus/icons-vue'
 import { getStatusLabel, getStatusTagType } from '@/utils/status-map'
 import { formatTime } from '@/utils/format'
+import { SERVICE_CONTENT_TAG_TYPE } from '@/utils/enums'
 import { getProjectDetail, getSystemItems } from '@/api/project'
 import type { ProjectDetail as ProjectDetailType, ProjectMember, EnrichedSystemItem } from '@/api/project'
 import { getInstanceByBiz } from '@/api/workflow'
@@ -215,7 +216,12 @@ onMounted(() => {
           <el-descriptions-item label="统一信用代码">{{ (project as any).customerUscc || '--' }}</el-descriptions-item>
           <el-descriptions-item label="联系人">{{ (project as any).contactName || '--' }}</el-descriptions-item>
           <el-descriptions-item label="联系电话">{{ (project as any).contactPhone || '--' }}</el-descriptions-item>
-          <el-descriptions-item label="服务内容">{{ (project as any).serviceContent || '--' }}</el-descriptions-item>
+          <el-descriptions-item label="服务内容">
+            <el-tag v-if="(project as any).serviceContent" :type="SERVICE_CONTENT_TAG_TYPE[(project as any).serviceContent] || 'info'" size="small">
+              {{ (project as any).serviceContent }}
+            </el-tag>
+            <span v-else>--</span>
+          </el-descriptions-item>
           <el-descriptions-item label="合同类型">{{ (project as any).contractType || '--' }}</el-descriptions-item>
           <el-descriptions-item label="签单销售">{{ (project as any).salesPersonName || '--' }}</el-descriptions-item>
           <el-descriptions-item label="合作方">{{ (project as any).partnerName || '--' }}</el-descriptions-item>

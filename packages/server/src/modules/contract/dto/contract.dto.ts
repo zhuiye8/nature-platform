@@ -69,6 +69,10 @@ export class QueryGroupDto {
   @IsOptional()
   paymentStatus?: string;
 
+  @IsString()
+  @IsOptional()
+  serviceContent?: string;
+
   @Type(() => Number)
   @IsInt()
   @IsOptional()
@@ -318,6 +322,10 @@ export class QueryContractDto {
   @IsString()
   @IsOptional()
   paymentStatus?: string;
+
+  @IsString()
+  @IsOptional()
+  serviceContent?: string;
 
   @IsString()
   @IsOptional()
