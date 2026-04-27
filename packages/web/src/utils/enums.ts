@@ -29,3 +29,31 @@ export const SERVICE_CONTENT_TAG_TYPE: Record<string, TagType> = {
 // ─── 发票相关 ────────────────────────────────────────────
 export const INVOICE_TYPE_OPTIONS = ['专票', '普票', '其他'] as const
 export const TAX_RATE_OPTIONS = ['0%', '1%', '3%', '6%', '9%', '13%'] as const
+
+// ─── 费用类型（费用请款）───────────────────────────────────
+export const EXPENSE_TYPE_OPTIONS = [
+  '报名费',
+  '代理费',
+  '专家费',
+  '合作费',
+  '项目提成',
+  '差旅费',
+  '其它',
+] as const
+
+export type ExpenseType = (typeof EXPENSE_TYPE_OPTIONS)[number]
+
+// 差旅费时灰化 invoice_type / tax_rate / invoice_amount
+export const EXPENSE_TYPE_TRAVEL = '差旅费'
+// 合作费时强制必填 partner_* 字段
+export const EXPENSE_TYPE_PARTNER = '合作费'
+
+// 附件危险扩展名黑名单
+export const DANGEROUS_FILE_EXTENSIONS = [
+  '.exe', '.bat', '.cmd', '.sh', '.com', '.scr', '.ps1',
+] as const
+
+export function isDangerousFile(fileName: string): boolean {
+  const lower = fileName.toLowerCase()
+  return DANGEROUS_FILE_EXTENSIONS.some((ext) => lower.endsWith(ext))
+}

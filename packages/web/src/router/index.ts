@@ -181,6 +181,24 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/pages/finance/InvoiceForm.vue'),
         meta: { title: '编辑开票申请', permission: 'invoice:apply' },
       },
+      {
+        path: 'finance/expense',
+        name: 'ExpenseList',
+        component: () => import('@/pages/finance/ExpenseList.vue'),
+        meta: { title: '费用请款', permission: 'expense:request' },
+      },
+      {
+        path: 'finance/expense/create',
+        name: 'ExpenseCreate',
+        component: () => import('@/pages/finance/ExpenseForm.vue'),
+        meta: { title: '新建费用请款', permission: 'expense:request' },
+      },
+      {
+        path: 'finance/expense/:id/edit',
+        name: 'ExpenseEdit',
+        component: () => import('@/pages/finance/ExpenseForm.vue'),
+        meta: { title: '编辑费用请款', permission: 'expense:request' },
+      },
       // --- 注册平台管理 ---
       {
         path: 'platform',
