@@ -80,6 +80,21 @@ export class ContractController {
     return this.contractService.getPayerOptions(keyword);
   }
 
+  // 开票申请 / 费用请款 等模块用：按服务内容 + 名称搜索可见的已通过合同
+  // 鉴权用 invoice:apply (所有人都有此权限) — 实际可见性由 service 内可见性条件决定
+  @Get('options')
+  @RequirePermission('invoice:apply')
+  async getContractOptions(
+    @Query('serviceContent') serviceContent: string | undefined,
+    @Query('keyword') keyword: string | undefined,
+    @CurrentUser() user: { id: number },
+  ) {
+    return this.contractService.findApprovedOptions(
+      { serviceContent, keyword },
+      user.id,
+    );
+  }
+
   @Get('page')
   @RequirePermission('contract:list')
   async findPage(

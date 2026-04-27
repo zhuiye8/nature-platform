@@ -39,6 +39,77 @@ export class ContractService {
   ) {}
 
   // -----------------------------------------------------------------------
+  // 已通过审核的合同选项 (开票申请 / 费用请款 选合同时用)
+  //
+  // 复用 findPage 的可见性条件:
+  //   super_admin / chairman 看全部 APPROVED
+  //   sales       看自己创建/负责的 APPROVED
+  //   commercial / dept_manager / finance 看全部 APPROVED
+  //   其它角色    看自己创建的 APPROVED (走 sales 分支兜底)
+  // -----------------------------------------------------------------------
+  async findApprovedOptions(
+    args: { serviceContent?: string; keyword?: string },
+    currentUserId: number,
+  ) {
+    const roles = await this.db
+      .select({ roleCode: userRole.roleCode })
+      .from(userRole)
+      .where(eq(userRole.userId, currentUserId));
+    const roleCodes = roles.map((r) => r.roleCode);
+    const isSuperAdmin = roleCodes.includes('super_admin');
+    const isChairman = roleCodes.includes('chairman');
+    const hasFullVisibility =
+      roleCodes.includes('finance') ||
+      roleCodes.includes('commercial') ||
+      roleCodes.includes('archiver') ||
+      roleCodes.includes('dept_manager') ||
+      roleCodes.includes('project_director');
+
+    const conditions: SQL[] = [
+      eq(contract.deleted, false),
+      eq(contract.reviewStatus, 'APPROVED'),
+    ];
+
+    if (!isSuperAdmin && !isChairman && !hasFullVisibility) {
+      // 普通用户(含 sales) 只能看到自己创建/负责的合同
+      conditions.push(
+        or(
+          eq(contract.createdBy, currentUserId),
+          eq(contract.salesPersonId, currentUserId),
+        )!,
+      );
+    }
+
+    if (args.serviceContent) {
+      conditions.push(eq(contract.serviceContent, args.serviceContent));
+    }
+    if (args.keyword) {
+      conditions.push(ilike(contract.contractName, `%${args.keyword}%`));
+    }
+
+    return this.db
+      .select({
+        id: contract.id,
+        contractNo: contract.contractNo,
+        contractName: contract.contractName,
+        paymentAmount: contract.paymentAmount,
+        invoiceType: contract.invoiceType,
+        taxRate: contract.taxRate,
+        serviceContent: contract.serviceContent,
+        partnerId: contract.partnerId,
+        partnerName: partner.name,
+        customerId: contract.customerId,
+        customerName: customer.fullName,
+      })
+      .from(contract)
+      .leftJoin(partner, eq(partner.id, contract.partnerId))
+      .leftJoin(customer, eq(customer.id, contract.customerId))
+      .where(and(...conditions)!)
+      .orderBy(desc(contract.id))
+      .limit(50);
+  }
+
+  // -----------------------------------------------------------------------
   // Paginated list
   // -----------------------------------------------------------------------
   async findPage(query: QueryContractDto, currentUserId: number) {

@@ -23,6 +23,8 @@ import { FileModule } from './modules/file/file.module';
 import { ReviewOpinionModule } from './modules/review-opinion/review-opinion.module';
 import { AssessmentFileModule } from './modules/assessment-file/assessment-file.module';
 import { CompileFileModule } from './modules/compile-file/compile-file.module';
+import { PaymentRecordModule } from './modules/payment-record/payment-record.module';
+import { InvoiceModule } from './modules/invoice/invoice.module';
 
 @Module({
   imports: [
@@ -53,6 +55,8 @@ import { CompileFileModule } from './modules/compile-file/compile-file.module';
     ReviewOpinionModule,
     AssessmentFileModule,
     CompileFileModule,
+    PaymentRecordModule,
+    InvoiceModule,
   ],
 })
 export class AppModule {}

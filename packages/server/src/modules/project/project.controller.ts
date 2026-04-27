@@ -45,6 +45,16 @@ export class ProjectController {
     return this.projectService.getAvailableYears(contractId);
   }
 
+  // 开票申请 / 费用请款 选系统时使用：返回该合同下所有项目登记已通过(system_no IS NOT NULL)的系统
+  // 鉴权用 invoice:apply（所有人都有此权限）
+  @Get('system-options/:contractId')
+  @RequirePermission('invoice:apply')
+  async getSystemOptions(
+    @Param('contractId', ParseIntPipe) contractId: number,
+  ) {
+    return this.projectService.findSystemOptionsForContract(contractId);
+  }
+
   @Get('contract-system-quota/:contractId')
   @RequirePermission('project:create')
   async getContractSystemQuota(

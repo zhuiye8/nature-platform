@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { eq, and, or, ilike, count, desc, inArray, SQL } from 'drizzle-orm';
+import { eq, and, or, ilike, count, desc, asc, inArray, sql, SQL } from 'drizzle-orm';
 import { DRIZZLE, DrizzleDB } from '../../database/database.module';
 import {
   projectRegister,
@@ -775,6 +775,38 @@ export class ProjectService {
     }
 
     return (contracts[0].serviceYears as number[]) ?? [];
+  }
+
+  // -----------------------------------------------------------------------
+  // 开票申请/费用请款 选系统时使用：
+  //   返回该合同下所有 system_no IS NOT NULL（即项目登记已审批通过）的系统。
+  //   未通过的项目登记下系统 system_no=NULL → 自动排除。
+  // -----------------------------------------------------------------------
+  async findSystemOptionsForContract(contractId: number) {
+    return this.db
+      .select({
+        id: projectSystemItem.id,
+        systemNo: projectSystemItem.systemNo,
+        systemName: projectSystemItem.systemName,
+        securityLevel: projectSystemItem.securityLevel,
+        amount: projectSystemItem.amount,
+        projectRegisterId: projectSystemItem.projectRegisterId,
+        applicationName: projectRegister.applicationName,
+      })
+      .from(projectSystemItem)
+      .innerJoin(
+        projectRegister,
+        eq(projectRegister.id, projectSystemItem.projectRegisterId),
+      )
+      .where(
+        and(
+          eq(projectRegister.contractId, contractId),
+          eq(projectRegister.deleted, false),
+          eq(projectSystemItem.deleted, false),
+          sql`${projectSystemItem.systemNo} IS NOT NULL`,
+        ),
+      )
+      .orderBy(asc(projectRegister.id), asc(projectSystemItem.sortOrder));
   }
 
   // -----------------------------------------------------------------------
