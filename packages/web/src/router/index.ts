@@ -199,6 +199,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/pages/finance/ExpenseForm.vue'),
         meta: { title: '编辑费用请款', permission: 'expense:request' },
       },
+      {
+        path: 'finance/expense/:id',
+        name: 'ExpenseDetail',
+        component: () => import('@/pages/finance/ExpenseDetail.vue'),
+        meta: { title: '费用请款详情', permission: 'expense:request' },
+      },
       // --- 注册平台管理 ---
       {
         path: 'platform',

@@ -24,6 +24,8 @@ import {
   FolderChecked,
   Coin,
   Tickets,
+  Money,
+  TrendCharts,
 } from '@element-plus/icons-vue'
 
 import { usePermission } from '@/composables/usePermission'
@@ -228,7 +230,7 @@ onUnmounted(() => {
           </el-menu-item>
 
           <!-- Finance -->
-          <el-sub-menu v-if="hasAnyPermission(['contract:update_financial','invoice:apply'])" index="finance">
+          <el-sub-menu v-if="hasAnyPermission(['contract:update_financial','invoice:apply','expense:request','settlement:view'])" index="finance">
             <template #title>
               <el-icon><Coin /></el-icon>
               <span>财务管理</span>
@@ -240,6 +242,14 @@ onUnmounted(() => {
             <el-menu-item v-if="hasPermission('invoice:apply')" index="/finance/invoice" @click="navigateTo('/finance/invoice')">
               <el-icon><Tickets /></el-icon>
               <template #title>开票申请</template>
+            </el-menu-item>
+            <el-menu-item v-if="hasPermission('expense:request')" index="/finance/expense" @click="navigateTo('/finance/expense')">
+              <el-icon><Money /></el-icon>
+              <template #title>费用请款</template>
+            </el-menu-item>
+            <el-menu-item v-if="hasPermission('settlement:view')" index="/finance/settlement" @click="navigateTo('/finance/settlement')">
+              <el-icon><TrendCharts /></el-icon>
+              <template #title>结算管理</template>
             </el-menu-item>
           </el-sub-menu>
 

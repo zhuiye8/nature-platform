@@ -46,6 +46,10 @@ const businessRouteMap: Record<string, (task: TaskItem) => string> = {
   CONTRACT_REVIEW: (t) => `/workflow/task/${t.id}`,
   REPORT_COMPILE: () => '/report',
   MATERIAL_ARCHIVE: (t) => `/archive/${t.bizId}`,
+  // 财务相关：跳到详情页（详情页内审核，比 TaskDetail 信息更全）
+  FIN_INVOICE_REVIEW: (t) => `/finance/invoice/${t.bizId}`,
+  FIN_EXPENSE_DEPT_REVIEW: (t) => `/finance/expense/${t.bizId}`,
+  FIN_EXPENSE_FIN_REVIEW: (t) => `/finance/expense/${t.bizId}`,
 }
 
 // Smart display for task type — uses nodeKey + slotKey instead of raw bizType
@@ -68,6 +72,9 @@ function getTaskTypeLabel(task: TaskItem): string {
   if (t.nodeKey === 'REPORT_ASSIGN') return '编制任务分配'
   if (t.nodeKey === 'REPORT_COMPILE') return '报告编制'
   if (t.nodeKey === 'MATERIAL_ARCHIVE') return '材料归档'
+  if (t.nodeKey === 'FIN_INVOICE_REVIEW') return '开票审核'
+  if (t.nodeKey === 'FIN_EXPENSE_DEPT_REVIEW') return '请款部门审核'
+  if (t.nodeKey === 'FIN_EXPENSE_FIN_REVIEW') return '请款财务审核'
   return getStatusLabel(t.bizType) || t.nodeKey
 }
 
