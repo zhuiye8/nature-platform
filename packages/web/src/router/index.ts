@@ -205,6 +205,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/pages/finance/ExpenseDetail.vue'),
         meta: { title: '费用请款详情', permission: 'expense:request' },
       },
+      {
+        path: 'finance/settlement',
+        name: 'SettlementList',
+        component: () => import('@/pages/finance/SettlementList.vue'),
+        meta: { title: '结算管理', permission: 'settlement:view' },
+      },
       // --- 注册平台管理 ---
       {
         path: 'platform',
