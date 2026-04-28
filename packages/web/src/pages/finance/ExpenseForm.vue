@@ -14,6 +14,7 @@ import {
   createExpense,
   updateExpense,
   submitExpense,
+  deleteExpense,
   type ExpenseCreateData,
 } from '@/api/expense'
 import { getFileList, getUploadUrl, getFileDownloadPath, deleteFile, type FileItem } from '@/api/file'
@@ -351,17 +352,30 @@ async function handleSubmit() {
   submitting.value = true
   try {
     let id: number = editId.value
+    let createdInThisCall = false
     if (isEdit.value) {
       await updateExpense(editId.value, payload)
     } else {
       const created = (await createExpense(payload)) as any
       id = created?.id ?? created?.data?.id
+      createdInThisCall = true
     }
     if (id) {
-      await submitExpense(id)
-      ElMessage.success('已提交审核')
-      router.push('/finance/expense')
+      try {
+        await submitExpense(id)
+        ElMessage.success('已提交审核')
+        router.push('/finance/expense')
+      } catch (err) {
+        // submit 失败 (校验等): 如果是新建本次创建的草稿, 清理掉避免残留
+        // 错误信息已由 axios interceptor 显示给用户
+        if (createdInThisCall) {
+          try { await deleteExpense(id) } catch { /* 清理失败不再扩散 */ }
+        }
+        throw err
+      }
     }
+  } catch {
+    /* 错误已通过 interceptor 显示 */
   } finally {
     submitting.value = false
   }

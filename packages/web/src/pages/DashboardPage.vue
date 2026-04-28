@@ -78,19 +78,18 @@ function getTaskTypeLabel(task: TaskItem): string {
   return getStatusLabel(t.bizType) || t.nodeKey
 }
 
-function handleReviewAction(task: TaskItem) {
-  router.push(`/workflow/task/${task.id}`)
-}
-
-function handleBusinessAction(task: TaskItem) {
+// 统一路由：财务相关审核跳到详情页（详情页内有审核按钮），其他跳 TaskDetail
+function handleAction(task: TaskItem) {
   const routeFn = businessRouteMap[task.nodeKey]
   if (routeFn) {
     router.push(routeFn(task))
   } else {
-    // Fallback: go to task detail
     router.push(`/workflow/task/${task.id}`)
   }
 }
+
+const handleReviewAction = handleAction
+const handleBusinessAction = handleAction
 
 
 // 无角色用户
