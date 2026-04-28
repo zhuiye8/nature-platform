@@ -516,11 +516,12 @@ export class WorkflowService {
       .where(eq(userRole.userId, userId));
     const roleCodes = userRoles.map((r) => r.roleCode);
     const isSuperAdmin = roleCodes.includes('super_admin');
-    const isChairman = roleCodes.includes('chairman');
 
     // Get pool-eligible node keys based on user's roles
+    // chairman 不在任何 wf_assignment_rule 中 → poolNodeKeys=[] → 只看 assigneeId=自己的任务
+    // (chairman 全只读: 业务列表能看全部, 但待办中心只看真分配给他的, 避免被无关任务淹没)
     let poolNodeKeys: string[] = [];
-    if (!isSuperAdmin && !isChairman && roleCodes.length > 0) {
+    if (!isSuperAdmin && roleCodes.length > 0) {
       const poolRules = await this.db
         .select({ nodeKey: wfAssignmentRule.nodeKey })
         .from(wfAssignmentRule)
@@ -529,20 +530,17 @@ export class WorkflowService {
     }
 
     // Query: assigned to me OR (pool task + I have the role)
-    // chairman: 全只读视角，看所有 PENDING 任务（与 super_admin 看到一样多，只是不能操作）
     const conditions = [
       statusFilter,
-      isSuperAdmin || isChairman
-        ? // chairman/super_admin: 不限制 assignee — 看到所有有 assignee 或池任务
-          // (这里直接不加 assignee 条件，让 conditions 只剩 statusFilter)
-          undefined
+      isSuperAdmin
+        ? or(eq(wfTask.assigneeId, userId), isNull(wfTask.assigneeId))!
         : poolNodeKeys.length > 0
           ? or(
               eq(wfTask.assigneeId, userId),
               and(isNull(wfTask.assigneeId), inArray(wfTask.nodeKey, poolNodeKeys)),
             )!
           : eq(wfTask.assigneeId, userId),
-    ].filter((c): c is NonNullable<typeof c> => c !== undefined);
+    ];
 
     const rows = await this.db
       .select({
@@ -579,8 +577,7 @@ export class WorkflowService {
     // don't need this filter.
     const POOL_FILTERED_NODES = new Set(['CONTRACT_REVIEW']);
 
-    // chairman/super_admin: 不做池角色过滤（只读全局视图）
-    const filteredRows = (isSuperAdmin || isChairman)
+    const filteredRows = isSuperAdmin
       ? rows
       : rows.filter((row) => {
           // Single-assign tasks (assigneeId set) always pass — the SQL
