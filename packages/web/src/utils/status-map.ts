@@ -96,6 +96,26 @@ export const statusLabel: Record<string, string> = {
   content_reviewer_network: '内容审核（网络）',
   report_writer: '报告编制人',
   dept_manager: '部门经理',
+  project_director: '项目主管',
+  archiver: '归档员',
+  report_assigner: '报告分配人',
+  senior_assessor: '高级测评师',
+  middle_assessor: '中级测评师',
+  junior_assessor: '初级测评师',
+  finance: '财务',
+  chairman: '董事长',
+
+  // 财务工作流节点
+  FIN_INVOICE_REVIEW: '开票审核',
+  FIN_EXPENSE_DEPT_REVIEW: '请款部门审核',
+  FIN_EXPENSE_FIN_REVIEW: '请款财务审核',
+
+  // 财务业务类型 (用于通知 / 待办 bizType 显示)
+  INVOICE: '开票申请',
+  EXPENSE: '费用请款',
+
+  // 财务请款专用状态: DEPT_APPROVED 是费用请款的中间态
+  DEPT_APPROVED: '财务审核中',
 
   SIMPLE: '简单节点',
   PARALLEL_REVIEW: '并行审核',
@@ -177,6 +197,9 @@ export const statusTagType: Record<string, StatusTagType> = {
   CONTENT_REJECTED: 'danger',
   FINAL_APPROVED: 'success',
   FINAL_ADJUST: 'warning',
+
+  // 财务请款专用: 部门通过 → 进入财务审核（用 primary 区分两阶段）
+  DEPT_APPROVED: 'primary',
 }
 
 export const categoryLabel: Record<string, string> = {
@@ -192,6 +215,59 @@ export const categoryLabel: Record<string, string> = {
   WORKFLOW: '工作流',
   IAM: '系统管理',
   AUDIT: '审计日志',
+  // 财务相关
+  FINANCE: '财务管理',
+  INVOICE: '开票申请',
+  EXPENSE: '费用请款',
+}
+
+// ─── 财务专用状态映射（INVOICE / EXPENSE 同样的字符串 SUBMITTED/APPROVED/REJECTED
+//     在不同业务里中文不同，用专用映射避免冲突）─────────────────────────
+// INVOICE: DRAFT → 草稿 / SUBMITTED → 审核中 / APPROVED → 已开票 / REJECTED → 需修改
+// EXPENSE: DRAFT → 草稿 / SUBMITTED → 部门审核中 / DEPT_APPROVED → 财务审核中 / APPROVED → 已通过 / REJECTED → 需修改
+export const invoiceStatusLabel: Record<string, string> = {
+  DRAFT: '草稿',
+  SUBMITTED: '审核中',
+  APPROVED: '已开票',
+  REJECTED: '需修改',
+}
+export const invoiceStatusTagType: Record<string, StatusTagType> = {
+  DRAFT: 'info',
+  SUBMITTED: 'warning',
+  APPROVED: 'success',
+  REJECTED: 'danger',
+}
+
+export const expenseStatusLabel: Record<string, string> = {
+  DRAFT: '草稿',
+  SUBMITTED: '部门审核中',
+  DEPT_APPROVED: '财务审核中',
+  APPROVED: '已通过',
+  REJECTED: '需修改',
+}
+export const expenseStatusTagType: Record<string, StatusTagType> = {
+  DRAFT: 'info',
+  SUBMITTED: 'warning',
+  DEPT_APPROVED: 'primary',
+  APPROVED: 'success',
+  REJECTED: 'danger',
+}
+
+export function getInvoiceStatusLabel(s: string | null | undefined): string {
+  if (!s) return '--'
+  return invoiceStatusLabel[s] ?? s
+}
+export function getInvoiceStatusTagType(s: string | null | undefined): StatusTagType {
+  if (!s) return 'info'
+  return invoiceStatusTagType[s] ?? 'info'
+}
+export function getExpenseStatusLabel(s: string | null | undefined): string {
+  if (!s) return '--'
+  return expenseStatusLabel[s] ?? s
+}
+export function getExpenseStatusTagType(s: string | null | undefined): StatusTagType {
+  if (!s) return 'info'
+  return expenseStatusTagType[s] ?? 'info'
 }
 
 export function getCategoryLabel(category: string): string {

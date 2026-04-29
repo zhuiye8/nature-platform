@@ -5,7 +5,7 @@ import { Search, Refresh } from '@element-plus/icons-vue'
 import { getContractGroupPage } from '@/api/contract'
 import type { ContractGroupItem } from '@/api/contract'
 import { getStatusLabel, getStatusTagType } from '@/utils/status-map'
-import { formatTime } from '@/utils/format'
+import { formatAmount, formatTime } from '@/utils/format'
 import { SERVICE_CONTENT_OPTIONS, SERVICE_CONTENT_TAG_TYPE } from '@/utils/enums'
 
 const router = useRouter()
@@ -53,11 +53,6 @@ function handleReset() {
   serviceContentFilter.value = ''
   currentPage.value = 1
   fetchData()
-}
-
-function formatAmount(val: any) {
-  if (val == null) return '--'
-  return `\u00a5 ${Number(val).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}`
 }
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null

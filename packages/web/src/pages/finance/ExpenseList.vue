@@ -5,7 +5,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Plus } from '@element-plus/icons-vue'
 import { getExpensePage, deleteExpense, type ExpenseListItem } from '@/api/expense'
 import { SERVICE_CONTENT_OPTIONS, SERVICE_CONTENT_TAG_TYPE, EXPENSE_TYPE_OPTIONS } from '@/utils/enums'
-import { formatTime } from '@/utils/format'
+import { getExpenseStatusLabel, getExpenseStatusTagType } from '@/utils/status-map'
+import { formatAmount, formatTime } from '@/utils/format'
 import { usePermission } from '@/composables/usePermission'
 import { useAuthStore } from '@/stores/auth'
 
@@ -31,20 +32,7 @@ const statusOptions = [
   { label: '需修改', value: 'REJECTED' },
 ]
 
-const statusLabel: Record<string, string> = {
-  DRAFT: '草稿',
-  SUBMITTED: '部门审核中',
-  DEPT_APPROVED: '财务审核中',
-  APPROVED: '已通过',
-  REJECTED: '需修改',
-}
-const statusTagType: Record<string, 'info' | 'warning' | 'success' | 'danger' | 'primary'> = {
-  DRAFT: 'info',
-  SUBMITTED: 'warning',
-  DEPT_APPROVED: 'primary',
-  APPROVED: 'success',
-  REJECTED: 'danger',
-}
+// status 映射统一走 status-map.ts (getExpenseStatusLabel / getExpenseStatusTagType)
 
 const currentUserId = computed(() => authStore.user?.id)
 const isReviewer = computed(() =>
@@ -108,11 +96,6 @@ async function handleDelete(row: ExpenseListItem) {
 
 function isMine(row: ExpenseListItem) {
   return row.createdBy === currentUserId.value
-}
-
-function formatAmount(val: any) {
-  if (val == null || val === '') return '--'
-  return `¥${Number(val).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}`
 }
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
@@ -188,8 +171,8 @@ onMounted(fetchData)
         </el-table-column>
         <el-table-column label="状态" width="120" align="center">
           <template #default="{ row }">
-            <el-tag :type="statusTagType[row.status] || 'info'" size="small">
-              {{ statusLabel[row.status] || row.status }}
+            <el-tag :type="getExpenseStatusTagType(row.status)" size="small">
+              {{ getExpenseStatusLabel(row.status) }}
             </el-tag>
           </template>
         </el-table-column>

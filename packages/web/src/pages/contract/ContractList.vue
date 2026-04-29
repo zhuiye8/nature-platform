@@ -49,12 +49,8 @@ async function loadSalesUsers() {
   try { salesOptions.value = (await getUsersByRole('sales')) as any } catch { salesOptions.value = [] }
 }
 
-const reviewStatusLabel: Record<string, string> = {
-  DRAFT: '草稿', SUBMITTED: '审核中', APPROVED: '已通过', REJECTED: '已驳回',
-}
-const reviewStatusTagType: Record<string, 'info' | 'warning' | 'success' | 'danger'> = {
-  DRAFT: 'info', SUBMITTED: 'warning', APPROVED: 'success', REJECTED: 'danger',
-}
+// reviewStatus 映射统一走 status-map.ts (getStatusLabel / getStatusTagType)
+// DRAFT/SUBMITTED/APPROVED/REJECTED 在通用 statusLabel 已覆盖
 async function fetchData() {
   loading.value = true
   try {
@@ -343,8 +339,8 @@ onMounted(() => {
                 </el-table-column>
                 <el-table-column label="审核状态" min-width="100" align="center">
                   <template #default="{ row }">
-                    <el-tag :type="reviewStatusTagType[row.reviewStatus] || 'info'" size="small">
-                      {{ reviewStatusLabel[row.reviewStatus] || row.reviewStatus }}
+                    <el-tag :type="getStatusTagType(row.reviewStatus)" size="small">
+                      {{ getStatusLabel(row.reviewStatus) }}
                     </el-tag>
                   </template>
                 </el-table-column>

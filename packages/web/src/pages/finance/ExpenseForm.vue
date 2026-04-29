@@ -27,7 +27,7 @@ import {
   EXPENSE_TYPE_PARTNER,
   isDangerousFile,
 } from '@/utils/enums'
-import { formatTime } from '@/utils/format'
+import { formatAmount, formatTime } from '@/utils/format'
 
 const route = useRoute()
 const router = useRouter()
@@ -154,11 +154,6 @@ function toggleSystem(systemId: number) {
 }
 
 // ── Helpers ──
-function formatAmount(val: any) {
-  if (val == null || val === '') return '--'
-  return `¥${Number(val).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}`
-}
-
 function formatTaxRate(rate: string | null): string {
   if (!rate) return ''
   return rate.endsWith('%') ? rate : `${rate}%`

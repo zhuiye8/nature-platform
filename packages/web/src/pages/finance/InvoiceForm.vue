@@ -16,6 +16,7 @@ import {
   type InvoiceCreateData,
 } from '@/api/invoice'
 import { SERVICE_CONTENT_OPTIONS, INVOICE_TYPE_OPTIONS, TAX_RATE_OPTIONS } from '@/utils/enums'
+import { formatAmount } from '@/utils/format'
 
 const route = useRoute()
 const router = useRouter()
@@ -143,11 +144,6 @@ const cumulative = computed(() => {
 })
 
 // ── Helpers ──
-function formatAmount(val: any) {
-  if (val == null || val === '') return '--'
-  return `¥${Number(val).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}`
-}
-
 function formatTaxRate(rate: string | null): string {
   if (!rate) return ''
   // 后端可能存 "6" 或 "6%"，统一为 "6%"

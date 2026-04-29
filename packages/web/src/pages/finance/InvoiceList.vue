@@ -5,7 +5,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Plus } from '@element-plus/icons-vue'
 import { getInvoicePage, deleteInvoice, type InvoiceListItem } from '@/api/invoice'
 import { SERVICE_CONTENT_OPTIONS, SERVICE_CONTENT_TAG_TYPE } from '@/utils/enums'
-import { formatTime } from '@/utils/format'
+import { getInvoiceStatusLabel, getInvoiceStatusTagType } from '@/utils/status-map'
+import { formatAmount, formatTime } from '@/utils/format'
 import { usePermission } from '@/composables/usePermission'
 import { useAuthStore } from '@/stores/auth'
 
@@ -29,12 +30,7 @@ const statusOptions = [
   { label: '需修改', value: 'REJECTED' },
 ]
 
-const statusLabel: Record<string, string> = {
-  DRAFT: '草稿', SUBMITTED: '审核中', APPROVED: '已开票', REJECTED: '需修改',
-}
-const statusTagType: Record<string, 'info' | 'warning' | 'success' | 'danger'> = {
-  DRAFT: 'info', SUBMITTED: 'warning', APPROVED: 'success', REJECTED: 'danger',
-}
+// status 映射统一走 status-map.ts (getInvoiceStatusLabel / getInvoiceStatusTagType)
 
 const currentUserId = computed(() => authStore.user?.id)
 const isFinanceOrAdmin = computed(() =>
@@ -94,11 +90,6 @@ async function handleDelete(row: InvoiceListItem) {
 
 function isMine(row: InvoiceListItem) {
   return row.createdBy === currentUserId.value
-}
-
-function formatAmount(val: any) {
-  if (val == null || val === '') return '--'
-  return `¥${Number(val).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}`
 }
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
@@ -169,8 +160,8 @@ onMounted(fetchData)
         </el-table-column>
         <el-table-column label="状态" width="100" align="center">
           <template #default="{ row }">
-            <el-tag :type="statusTagType[row.status] || 'info'" size="small">
-              {{ statusLabel[row.status] || row.status }}
+            <el-tag :type="getInvoiceStatusTagType(row.status)" size="small">
+              {{ getInvoiceStatusLabel(row.status) }}
             </el-tag>
           </template>
         </el-table-column>

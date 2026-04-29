@@ -38,6 +38,10 @@ const NODE_ACTION_MAP: Record<string, ActionMeta> = {
   REPORT_COMPILE:     { label: '编制', routeFn: (t) => `/report/${t.bizId}`, type: 'warning' },
   ON_SITE_ASSESSMENT: { label: '测评', routeFn: (t) => `/assessment/${t.bizId}`, type: 'warning' },
   MATERIAL_ARCHIVE:   { label: '归档', routeFn: (t) => `/archive/${t.bizId}`, type: 'warning' },
+  // 财务审核 → 跳到详情页（详情页底部有审核按钮）
+  FIN_INVOICE_REVIEW:      { label: '审核', routeFn: (t) => `/finance/invoice/${t.bizId}`, type: 'primary' },
+  FIN_EXPENSE_DEPT_REVIEW: { label: '审核', routeFn: (t) => `/finance/expense/${t.bizId}`, type: 'primary' },
+  FIN_EXPENSE_FIN_REVIEW:  { label: '审核', routeFn: (t) => `/finance/expense/${t.bizId}`, type: 'primary' },
 }
 
 const props = defineProps<{

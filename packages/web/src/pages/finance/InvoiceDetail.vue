@@ -5,7 +5,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { getInvoiceDetail, reviewInvoice, type InvoiceDetail } from '@/api/invoice'
 import { SERVICE_CONTENT_TAG_TYPE } from '@/utils/enums'
-import { formatTime } from '@/utils/format'
+import { getInvoiceStatusLabel, getInvoiceStatusTagType } from '@/utils/status-map'
+import { formatAmount, formatTime } from '@/utils/format'
 import { usePermission } from '@/composables/usePermission'
 import { useAuthStore } from '@/stores/auth'
 
@@ -19,12 +20,7 @@ const loading = ref(false)
 
 const invoiceId = computed(() => Number(route.params.id))
 
-const statusLabel: Record<string, string> = {
-  DRAFT: '草稿', SUBMITTED: '审核中', APPROVED: '已开票', REJECTED: '需修改',
-}
-const statusTagType: Record<string, 'info' | 'warning' | 'success' | 'danger'> = {
-  DRAFT: 'info', SUBMITTED: 'warning', APPROVED: 'success', REJECTED: 'danger',
-}
+// status 映射统一走 status-map.ts
 
 const canReview = computed(() =>
   detail.value?.status === 'SUBMITTED' &&
@@ -38,11 +34,6 @@ async function fetchDetail() {
   } finally {
     loading.value = false
   }
-}
-
-function formatAmount(val: any) {
-  if (val == null || val === '') return '--'
-  return `¥${Number(val).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}`
 }
 
 // ── 审核 ──
@@ -94,8 +85,8 @@ onMounted(fetchDetail)
               {{ detail.serviceContent }}
             </el-tag>
           </div>
-          <el-tag :type="statusTagType[detail.status] || 'info'" size="large">
-            {{ statusLabel[detail.status] || detail.status }}
+          <el-tag :type="getInvoiceStatusTagType(detail.status)" size="large">
+            {{ getInvoiceStatusLabel(detail.status) }}
           </el-tag>
         </div>
       </el-card>

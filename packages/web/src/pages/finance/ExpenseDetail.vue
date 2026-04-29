@@ -6,7 +6,8 @@ import { ArrowLeft, Download } from '@element-plus/icons-vue'
 import { getExpenseDetail, reviewExpense, type ExpenseDetail } from '@/api/expense'
 import { getFileList, getFileDownloadPath, type FileItem } from '@/api/file'
 import { SERVICE_CONTENT_TAG_TYPE, EXPENSE_TYPE_TRAVEL, EXPENSE_TYPE_PARTNER } from '@/utils/enums'
-import { formatTime } from '@/utils/format'
+import { getExpenseStatusLabel, getExpenseStatusTagType } from '@/utils/status-map'
+import { formatAmount, formatTime } from '@/utils/format'
 import { usePermission } from '@/composables/usePermission'
 import { useAuthStore } from '@/stores/auth'
 
@@ -21,20 +22,7 @@ const loading = ref(false)
 
 const expenseId = computed(() => Number(route.params.id))
 
-const statusLabel: Record<string, string> = {
-  DRAFT: '草稿',
-  SUBMITTED: '部门审核中',
-  DEPT_APPROVED: '财务审核中',
-  APPROVED: '已通过',
-  REJECTED: '需修改',
-}
-const statusTagType: Record<string, 'info' | 'warning' | 'success' | 'danger' | 'primary'> = {
-  DRAFT: 'info',
-  SUBMITTED: 'warning',
-  DEPT_APPROVED: 'primary',
-  APPROVED: 'success',
-  REJECTED: 'danger',
-}
+// status 映射统一走 status-map.ts (getExpenseStatusLabel / getExpenseStatusTagType)
 
 // 当前用户在哪个节点能审核
 const isSuperAdmin = computed(() => authStore.user?.roles?.includes('super_admin') ?? false)
@@ -61,11 +49,6 @@ async function fetchDetail() {
   } finally {
     loading.value = false
   }
-}
-
-function formatAmount(val: any) {
-  if (val == null || val === '') return '--'
-  return `¥${Number(val).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}`
 }
 
 function downloadAttachment(fileId: number) {
@@ -123,8 +106,8 @@ onMounted(fetchDetail)
             </el-tag>
             <el-tag size="small" style="margin-left: 8px">{{ detail.expenseType }}</el-tag>
           </div>
-          <el-tag :type="statusTagType[detail.status] || 'info'" size="large">
-            {{ statusLabel[detail.status] || detail.status }}
+          <el-tag :type="getExpenseStatusTagType(detail.status)" size="large">
+            {{ getExpenseStatusLabel(detail.status) }}
           </el-tag>
         </div>
       </el-card>

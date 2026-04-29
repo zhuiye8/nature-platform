@@ -35,3 +35,18 @@ export function formatFileSize(bytes: number): string {
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
+
+/**
+ * 金额格式化：DECIMAL string / number → "¥1,234.56"
+ *
+ * 后端 DECIMAL 字段经 drizzle 映射为 string，前端展示需要统一格式化:
+ *   - null / undefined / '' → "--"
+ *   - NaN（无效输入）       → "--"  ← 防护，避免显示 "¥NaN"
+ *   - 0                      → "¥0.00"
+ */
+export function formatAmount(val: string | number | null | undefined): string {
+  if (val == null || val === '') return '--'
+  const n = typeof val === 'number' ? val : Number(val)
+  if (Number.isNaN(n)) return '--'
+  return `¥${n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}

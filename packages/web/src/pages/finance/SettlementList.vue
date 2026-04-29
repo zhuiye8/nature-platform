@@ -9,7 +9,7 @@ import {
   type SettlementContractDetail,
 } from '@/api/settlement'
 import { SERVICE_CONTENT_OPTIONS, SERVICE_CONTENT_TAG_TYPE } from '@/utils/enums'
-import { formatTime } from '@/utils/format'
+import { formatAmount, formatTime } from '@/utils/format'
 
 const tableData = ref<SettlementGroupItem[]>([])
 const loading = ref(false)
@@ -75,11 +75,6 @@ function handleReset() {
   dateRange.value = null
   currentPage.value = 1
   fetchData()
-}
-
-function formatAmount(val: any) {
-  if (val == null || val === '') return '--'
-  return `¥${Number(val).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}`
 }
 
 // ── 详情弹窗 ──

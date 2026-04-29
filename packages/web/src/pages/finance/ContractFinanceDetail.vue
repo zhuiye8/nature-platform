@@ -7,7 +7,7 @@ import { getContractDetail, updateContractFinancial, type ContractItem } from '@
 import { getPaymentRecords, createPaymentRecord, deletePaymentRecord, type PaymentRecord } from '@/api/payment-record'
 import { getStatusLabel, getStatusTagType } from '@/utils/status-map'
 import { SERVICE_CONTENT_TAG_TYPE } from '@/utils/enums'
-import { formatTime } from '@/utils/format'
+import { formatAmount, formatTime } from '@/utils/format'
 import { usePermission } from '@/composables/usePermission'
 import { useAuthStore } from '@/stores/auth'
 
@@ -66,11 +66,6 @@ function disableFutureDate(d: Date) {
 }
 
 // ── Helpers ──
-function formatAmount(val: any) {
-  if (val == null || val === '') return '--'
-  return `¥${Number(val).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}`
-}
-
 // ── Data loading ──
 async function fetchContract() {
   loading.value = true
