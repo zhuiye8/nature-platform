@@ -220,40 +220,88 @@ export class InvoiceService {
 
   // -----------------------------------------------------------------------
   // 提交审核 (DRAFT → SUBMITTED + 启动 wf_instance)
+  //
+  // 并发安全设计:
+  //   1. 事务内 SELECT contract FOR UPDATE 锁住合同行 (SQL row lock)
+  //      → 其他并发提交此合同的开票申请会等待，避免累计校验的"读 0 → 各自通过"竞态。
+  //   2. 累计校验在锁内执行 (SUBMITTED + APPROVED 之和 + 当前 ≤ 合同金额)。
+  //   3. 校验通过后立即 UPDATE status=SUBMITTED，事务 commit。
+  //   4. workflow.startInstance 在事务外执行（避免嵌套事务复杂度）；
+  //      若启动失败，把 status 回滚到 DRAFT。
   // -----------------------------------------------------------------------
   async submit(id: number, userId: number) {
-    const [app] = await this.db
-      .select()
-      .from(financeInvoiceApplication)
-      .where(eq(financeInvoiceApplication.id, id))
-      .limit(1);
-    if (!app) throw new NotFoundException('开票申请不存在');
-    if (app.status !== 'DRAFT') {
-      throw new BadRequestException('只有草稿状态可以提交');
-    }
-    if (app.createdBy !== userId) {
-      const roles = await this.getRoleCodes(userId);
-      if (!roles.includes('super_admin')) {
-        throw new ForbiddenException('只能提交自己创建的开票申请');
+    const app = await this.db.transaction(async (tx) => {
+      const [appRow] = await tx
+        .select()
+        .from(financeInvoiceApplication)
+        .where(eq(financeInvoiceApplication.id, id))
+        .limit(1);
+      if (!appRow) throw new NotFoundException('开票申请不存在');
+      if (appRow.status !== 'DRAFT') {
+        throw new BadRequestException('只有草稿状态可以提交');
       }
+      if (appRow.createdBy !== userId) {
+        const roles = await this.getRoleCodes(userId);
+        if (!roles.includes('super_admin')) {
+          throw new ForbiddenException('只能提交自己创建的开票申请');
+        }
+      }
+
+      // 锁住合同行（SELECT FOR UPDATE），并发请求会等待
+      const [c] = await tx
+        .select({ paymentAmount: contract.paymentAmount })
+        .from(contract)
+        .where(eq(contract.id, appRow.contractId))
+        .limit(1)
+        .for('update');
+      if (!c) throw new NotFoundException('合同不存在');
+
+      // 累计校验（锁内 + 事务内，无并发漏洞）
+      const [usedRow] = await tx
+        .select({ used: sql<string>`COALESCE(SUM(apply_amount), 0)` })
+        .from(financeInvoiceApplication)
+        .where(
+          and(
+            eq(financeInvoiceApplication.contractId, appRow.contractId),
+            inArray(financeInvoiceApplication.status, ['SUBMITTED', 'APPROVED']),
+            ne(financeInvoiceApplication.id, id),
+          ),
+        );
+
+      const usedNum = Number(usedRow?.used ?? 0);
+      const currentAmount = Number(appRow.applyAmount);
+      const contractAmount = Number(c.paymentAmount ?? 0);
+      if (contractAmount > 0 && usedNum + currentAmount > contractAmount) {
+        throw new BadRequestException(
+          `累计开票金额 (${(usedNum + currentAmount).toFixed(2)}) 超过合同金额 (${contractAmount.toFixed(2)})`,
+        );
+      }
+
+      // 锁内 UPDATE status=SUBMITTED（占位，后续并发请求看到这个金额）
+      await tx
+        .update(financeInvoiceApplication)
+        .set({ status: 'SUBMITTED', updatedBy: userId, updatedAt: new Date() })
+        .where(eq(financeInvoiceApplication.id, id));
+
+      return appRow;
+    });
+
+    // 事务已 commit。启动 workflow，失败则回滚 status 到 DRAFT 防止业务表卡死。
+    try {
+      await this.workflowService.startInstance(
+        DEF_KEY,
+        'INVOICE',
+        id,
+        userId,
+        { applyAmount: app.applyAmount, contractId: app.contractId },
+      );
+    } catch (err) {
+      await this.db
+        .update(financeInvoiceApplication)
+        .set({ status: 'DRAFT', updatedBy: userId, updatedAt: new Date() })
+        .where(eq(financeInvoiceApplication.id, id));
+      throw err;
     }
-
-    // 累计校验 (严格模式: SUBMITTED + APPROVED 都计入)
-    await this.assertCumulativeAmount(app.contractId, Number(app.applyAmount), id);
-
-    // 启动新工作流实例 (REJECTED→编辑→DRAFT→提交 也走这里, 每次提交都启动新 wf_instance)
-    await this.workflowService.startInstance(
-      DEF_KEY,
-      'INVOICE',
-      id,
-      userId,
-      { applyAmount: app.applyAmount, contractId: app.contractId },
-    );
-
-    await this.db
-      .update(financeInvoiceApplication)
-      .set({ status: 'SUBMITTED', updatedBy: userId, updatedAt: new Date() })
-      .where(eq(financeInvoiceApplication.id, id));
 
     return { success: true };
   }

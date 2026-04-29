@@ -71,8 +71,25 @@ export class ProjectListener {
 
           await this.generateSystemNumbers(tx, payload.bizId);
 
+          // 幂等性保护: 事件可能被重复触发（EventEmitter 重投/重启等），
+          // INSERT 前先 SELECT 检查是否已存在 ACTIVE 成员；存在则跳过，
+          // 防止 DIRECTOR_REVIEW 被多次 APPROVE 时插入重复 project_member 行。
+          // (project_member 表无唯一约束，必须代码层去重)
+          const existingMembers = await tx
+            .select({ userId: projectMember.userId, roleType: projectMember.roleType })
+            .from(projectMember)
+            .where(
+              and(
+                eq(projectMember.projectId, payload.bizId),
+                eq(projectMember.status, 'ACTIVE'),
+              ),
+            );
+          const existingKeys = new Set(
+            existingMembers.map((m) => `${m.userId}:${m.roleType}`),
+          );
+
           // Insert PM from extraData (from senior/middle assessor pool)
-          if (pmUserId) {
+          if (pmUserId && !existingKeys.has(`${pmUserId}:PM`)) {
             this.logger.log(`Assigning PM #${pmUserId} to project #${payload.bizId}`);
             await tx.insert(projectMember).values({
               projectId: payload.bizId,
@@ -91,6 +108,7 @@ export class ProjectListener {
             for (const userId of assessorUserIds) {
               // Skip duplicate if PM is also selected as assessor
               if (userId === pmUserId) continue;
+              if (existingKeys.has(`${userId}:ASSESSOR`)) continue;
               await tx.insert(projectMember).values({
                 projectId: payload.bizId,
                 userId,

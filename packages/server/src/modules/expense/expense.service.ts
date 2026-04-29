@@ -221,36 +221,54 @@ export class ExpenseService {
 
   // -----------------------------------------------------------------------
   // 提交审核 (DRAFT → SUBMITTED + 启动 wf_instance)
+  //
+  // 原子性设计:
+  //   1. 事务内校验 + UPDATE status=SUBMITTED
+  //   2. workflow.startInstance 在事务外，失败时回滚 status 到 DRAFT
+  //      防止"业务表 SUBMITTED 但 wf_instance 未启动"的卡死状态
   // -----------------------------------------------------------------------
   async submit(id: number, userId: number) {
-    const [app] = await this.db
-      .select()
-      .from(financeExpenseRequest)
-      .where(eq(financeExpenseRequest.id, id))
-      .limit(1);
-    if (!app) throw new NotFoundException('费用请款不存在');
-    if (app.status !== 'DRAFT') {
-      throw new BadRequestException('只有草稿状态可以提交');
-    }
-    if (app.createdBy !== userId) {
-      const roles = await this.getRoleCodes(userId);
-      if (!roles.includes('super_admin')) {
-        throw new ForbiddenException('只能提交自己创建的费用请款');
+    const app = await this.db.transaction(async (tx) => {
+      const [appRow] = await tx
+        .select()
+        .from(financeExpenseRequest)
+        .where(eq(financeExpenseRequest.id, id))
+        .limit(1);
+      if (!appRow) throw new NotFoundException('费用请款不存在');
+      if (appRow.status !== 'DRAFT') {
+        throw new BadRequestException('只有草稿状态可以提交');
       }
+      if (appRow.createdBy !== userId) {
+        const roles = await this.getRoleCodes(userId);
+        if (!roles.includes('super_admin')) {
+          throw new ForbiddenException('只能提交自己创建的费用请款');
+        }
+      }
+
+      await tx
+        .update(financeExpenseRequest)
+        .set({ status: 'SUBMITTED', updatedBy: userId, updatedAt: new Date() })
+        .where(eq(financeExpenseRequest.id, id));
+
+      return appRow;
+    });
+
+    // 事务已 commit。启动 workflow，失败回滚 status 到 DRAFT。
+    try {
+      await this.workflowService.startInstance(
+        DEF_KEY,
+        'EXPENSE',
+        id,
+        userId,
+        { requestAmount: app.requestAmount, contractId: app.contractId },
+      );
+    } catch (err) {
+      await this.db
+        .update(financeExpenseRequest)
+        .set({ status: 'DRAFT', updatedBy: userId, updatedAt: new Date() })
+        .where(eq(financeExpenseRequest.id, id));
+      throw err;
     }
-
-    await this.workflowService.startInstance(
-      DEF_KEY,
-      'EXPENSE',
-      id,
-      userId,
-      { requestAmount: app.requestAmount, contractId: app.contractId },
-    );
-
-    await this.db
-      .update(financeExpenseRequest)
-      .set({ status: 'SUBMITTED', updatedBy: userId, updatedAt: new Date() })
-      .where(eq(financeExpenseRequest.id, id));
 
     return { success: true };
   }
