@@ -27,12 +27,20 @@ async function fetchTasks() {
 }
 
 // Split tasks into review tasks and business reminders
+// PENDING_RECTIFICATION (PM 待整改): 虽然 nodeType=REVIEW (来自 TECH_REVIEW 等), 但 PM 不审核
+//   归到 businessTasks (业务提醒) 让 PM 看到 + 跳测评详情整改, 更符合直觉
 const reviewTasks = computed(() =>
-  allTasks.value.filter((t) => t.nodeType === 'REVIEW' || t.nodeType === 'PARALLEL_REVIEW'),
+  allTasks.value.filter((t) =>
+    (t as any).status !== 'PENDING_RECTIFICATION' &&
+    (t.nodeType === 'REVIEW' || t.nodeType === 'PARALLEL_REVIEW'),
+  ),
 )
 
 const businessTasks = computed(() =>
-  allTasks.value.filter((t) => t.nodeType !== 'REVIEW' && t.nodeType !== 'PARALLEL_REVIEW'),
+  allTasks.value.filter((t) =>
+    (t as any).status === 'PENDING_RECTIFICATION' ||
+    (t.nodeType !== 'REVIEW' && t.nodeType !== 'PARALLEL_REVIEW'),
+  ),
 )
 
 // Route mapping for business reminders — nodeKey → target route
@@ -55,6 +63,8 @@ const businessRouteMap: Record<string, (task: TaskItem) => string> = {
 // Smart display for task type — uses nodeKey + slotKey instead of raw bizType
 function getTaskTypeLabel(task: TaskItem): string {
   const t = task as any
+  // PENDING_RECTIFICATION: PM 视角的待整改任务（task.assigneeId 是审核人，但 PM 在项目里能看到）
+  if (t.status === 'PENDING_RECTIFICATION') return '现场测评待整改'
   if (t.nodeKey === 'TECH_REVIEW') return '技术审核'
   if (t.nodeKey === 'CONTENT_REVIEW') {
     const slotMap: Record<string, string> = {
@@ -78,8 +88,16 @@ function getTaskTypeLabel(task: TaskItem): string {
   return getStatusLabel(t.bizType) || t.nodeKey
 }
 
-// 统一路由：财务相关审核跳到详情页（详情页内有审核按钮），其他跳 TaskDetail
+// 统一路由：
+//   PENDING_RECTIFICATION (PM 待整改) → 跳现场测评详情页 (整改入口在 AssessmentDetail)
+//   财务相关审核 → 跳详情页 (详情页内有审核按钮)
+//   其他 → 跳 TaskDetail
 function handleAction(task: TaskItem) {
+  const t = task as any
+  if (t.status === 'PENDING_RECTIFICATION') {
+    router.push(`/assessment/${task.bizId}`)
+    return
+  }
   const routeFn = businessRouteMap[task.nodeKey]
   if (routeFn) {
     router.push(routeFn(task))

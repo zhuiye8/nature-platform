@@ -505,9 +505,6 @@ export class WorkflowService {
 
   async getMyTasks(userId: number, status?: string) {
     const taskStatus = status || 'PENDING';
-    // Only show PENDING tasks in todo center
-    // PENDING_RECTIFICATION tasks are handled via notifications + assessment detail page by PM
-    const statusFilter = eq(wfTask.status, taskStatus);
 
     // Get user's role codes for pool task matching
     const userRoles = await this.db
@@ -529,17 +526,62 @@ export class WorkflowService {
       poolNodeKeys = [...new Set(poolRules.map((r) => r.nodeKey))];
     }
 
-    // Query: assigned to me OR (pool task + I have the role)
+    // PENDING 任务 visibility: assigneeId 匹配 OR 池任务 + 角色匹配
+    const pendingVisibility = isSuperAdmin
+      ? or(eq(wfTask.assigneeId, userId), isNull(wfTask.assigneeId))!
+      : poolNodeKeys.length > 0
+        ? or(
+            eq(wfTask.assigneeId, userId),
+            and(isNull(wfTask.assigneeId), inArray(wfTask.nodeKey, poolNodeKeys)),
+          )!
+        : eq(wfTask.assigneeId, userId);
+
+    const pendingClause = and(eq(wfTask.status, 'PENDING'), pendingVisibility)!;
+
+    // PENDING_RECTIFICATION 任务: 仅 PM 看自己项目的整改任务
+    // (待整改任务的 task.assigneeId 是审核人, 不是 PM, 所以要按 wf_instance.bizId 反查 PM)
+    let rectificationClause: ReturnType<typeof and> | null = null;
+    if (taskStatus === 'PENDING') {
+      const pmProjects = await this.db
+        .select({ projectId: projectMember.projectId })
+        .from(projectMember)
+        .where(
+          and(
+            eq(projectMember.userId, userId),
+            eq(projectMember.roleType, 'PM'),
+            eq(projectMember.status, 'ACTIVE'),
+          ),
+        );
+      const pmProjectIds = pmProjects.map((p) => p.projectId);
+      if (pmProjectIds.length > 0) {
+        const pmInstances = await this.db
+          .select({ id: wfInstance.id })
+          .from(wfInstance)
+          .where(
+            and(
+              eq(wfInstance.bizType, 'PROJECT_REGISTER'),
+              inArray(wfInstance.bizId, pmProjectIds),
+            ),
+          );
+        const pmInstanceIds = pmInstances.map((i) => i.id);
+        if (pmInstanceIds.length > 0) {
+          rectificationClause = and(
+            eq(wfTask.status, 'PENDING_RECTIFICATION'),
+            inArray(wfTask.instanceId, pmInstanceIds),
+          );
+        }
+      }
+    }
+
+    // Final WHERE:
+    //   PENDING + visibility   OR   PENDING_RECTIFICATION + PM 项目 (如有)
+    // 非 PENDING 查询 (e.g. 历史) 走原 statusFilter
     const conditions = [
-      statusFilter,
-      isSuperAdmin
-        ? or(eq(wfTask.assigneeId, userId), isNull(wfTask.assigneeId))!
-        : poolNodeKeys.length > 0
-          ? or(
-              eq(wfTask.assigneeId, userId),
-              and(isNull(wfTask.assigneeId), inArray(wfTask.nodeKey, poolNodeKeys)),
-            )!
-          : eq(wfTask.assigneeId, userId),
+      taskStatus === 'PENDING'
+        ? rectificationClause
+          ? or(pendingClause, rectificationClause)!
+          : pendingClause
+        : and(eq(wfTask.status, taskStatus), pendingVisibility)!,
     ];
 
     const rows = await this.db
