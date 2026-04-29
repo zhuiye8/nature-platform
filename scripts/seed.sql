@@ -45,9 +45,10 @@ INSERT INTO iam_role (role_code, role_name, description, enabled, system_flag) V
     ('sales',                    '销售',                '负责客户管理和合同创建',                     TRUE, TRUE),
     ('commercial',               '商务',                '负责合同归档',                               TRUE, TRUE),
     ('dept_manager',             '部门经理',            '负责合同审核、项目准入确认、最终审核',        TRUE, TRUE),
-    ('senior_assessor',          '高级测评师',           '高级测评师，可担任项目经理',                  TRUE, TRUE),
-    ('middle_assessor',          '中级测评师',           '中级测评师，可担任项目经理',                  TRUE, TRUE),
+    ('senior_assessor',          '高级测评师',           '高级测评师，参与现场测评（PM 资格由 project_manager 角色独立授权）', TRUE, TRUE),
+    ('middle_assessor',          '中级测评师',           '中级测评师，参与现场测评（PM 资格由 project_manager 角色独立授权）', TRUE, TRUE),
     ('junior_assessor',          '初级测评师',           '初级测评师，参与现场测评',                    TRUE, TRUE),
+    ('project_manager',          '项目经理',            '可被项目主管指派为项目经理（与测评师等级独立授权）', TRUE, TRUE),
     ('police_register',          '公安登记专员',         '负责公安登记操作',                          TRUE, TRUE),
     ('tech_reviewer',            '整体技术审核员',       '负责整体技术审核',                          TRUE, TRUE),
     ('content_reviewer_tech',    '内容审核员（技术）',   '负责技术向内容审核',                        TRUE, TRUE),
@@ -57,7 +58,8 @@ INSERT INTO iam_role (role_code, role_name, description, enabled, system_flag) V
     ('report_assigner',          '报告分配人',          '负责审核测评成果并分配编制任务给编制人',       TRUE, TRUE),
     ('archiver',                 '归档员',              '负责材料归档',                               TRUE, TRUE),
     ('project_director',         '项目主管',            '负责项目登记审核、分配项目经理和测评师',       TRUE, TRUE),
-    ('finance',                  '财务',                '负责合同回款管理',                           TRUE, TRUE)
+    ('finance',                  '财务',                '负责合同回款管理',                           TRUE, TRUE),
+    ('chairman',                 '董事长',              '预留角色，权限/资源由管理员后台手动配置',     TRUE, TRUE)
 ON CONFLICT (role_code) DO NOTHING;
 
 -- ============================================================================

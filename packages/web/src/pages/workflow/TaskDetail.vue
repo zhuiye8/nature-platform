@@ -95,21 +95,38 @@ async function onOpinionCompleted() {
 }
 
 // Assessor + PM selection for DIRECTOR_REVIEW approval
-// 3 assessor levels: senior / middle / junior
-// PM candidates = senior + middle (single select)
-// Assessor candidates = all 3 levels (multi select, grouped by level)
+//
+// PM candidates = 拥有 'project_manager' 角色的用户（独立授权，与测评师等级解耦）
+// Assessor candidates = 全部测评师 (senior/middle/junior_assessor，多选，按等级分组)
+//
+// 设计变更（2026-04-29）:
+//   原逻辑：PM 候选 = senior_assessor + middle_assessor 自动取
+//   问题：业务上中高级测评师不一定都能当 PM（如颜佳威是中级但不应担任 PM）
+//   修复：单独 project_manager 角色，业务方手工授权，与测评师等级独立
+//   PM 候选区仍按 senior/middle 分组显示（视觉保留），数据源是 pmCandidates 与各等级取交集
+const pmCandidates = ref<{ id: number; displayName: string }[]>([])
 const seniorAssessors = ref<{ id: number; displayName: string }[]>([])
 const middleAssessors = ref<{ id: number; displayName: string }[]>([])
 const juniorAssessors = ref<{ id: number; displayName: string }[]>([])
 const selectedAssessorIds = ref<number[]>([])
 const selectedPmId = ref<number | undefined>(undefined)
 
+// PM 候选按等级分组显示（pmCandidates 与各等级求交集，仅显示有 PM 资格的人）
+const pmSeniorCandidates = computed(() => {
+  const pmIds = new Set(pmCandidates.value.map((u) => u.id))
+  return seniorAssessors.value.filter((u) => pmIds.has(u.id))
+})
+const pmMiddleCandidates = computed(() => {
+  const pmIds = new Set(pmCandidates.value.map((u) => u.id))
+  return middleAssessors.value.filter((u) => pmIds.has(u.id))
+})
+
 // 已选汇总（用于底部确认面板）
 const selectedPmInfo = computed(() => {
   if (!selectedPmId.value) return null
-  const senior = seniorAssessors.value.find((u) => u.id === selectedPmId.value)
+  const senior = pmSeniorCandidates.value.find((u) => u.id === selectedPmId.value)
   if (senior) return { ...senior, level: 'senior' as const, levelLabel: '高级' }
-  const middle = middleAssessors.value.find((u) => u.id === selectedPmId.value)
+  const middle = pmMiddleCandidates.value.find((u) => u.id === selectedPmId.value)
   if (middle) return { ...middle, level: 'middle' as const, levelLabel: '中级' }
   return null
 })
@@ -225,18 +242,23 @@ async function fetchData() {
       }
     }
 
-    // Load assessor candidates (grouped by level) for DIRECTOR_REVIEW
+    // Load assessor candidates (grouped by level) + PM candidates for DIRECTOR_REVIEW
+    // PM 候选 = 拥有 'project_manager' 角色的用户（独立授权，与测评师等级解耦）
+    // 测评师候选 = senior/middle/junior_assessor 全员（多选，分组显示）
     if (task.nodeKey === 'DIRECTOR_REVIEW') {
       try {
-        const [senior, middle, junior] = await Promise.all([
+        const [pms, senior, middle, junior] = await Promise.all([
+          getUsersByRole('project_manager'),
           getUsersByRole('senior_assessor'),
           getUsersByRole('middle_assessor'),
           getUsersByRole('junior_assessor'),
         ])
+        pmCandidates.value = pms
         seniorAssessors.value = senior
         middleAssessors.value = middle
         juniorAssessors.value = junior
       } catch {
+        pmCandidates.value = []
         seniorAssessors.value = []
         middleAssessors.value = []
         juniorAssessors.value = []
@@ -828,19 +850,19 @@ onMounted(() => {
             <span class="assign-section__hint">（仅高级 / 中级测评师可担任）</span>
           </div>
 
-          <div v-if="seniorAssessors.length === 0 && middleAssessors.length === 0" class="assign-empty">
-            暂无高/中级测评师
+          <div v-if="pmSeniorCandidates.length === 0 && pmMiddleCandidates.length === 0" class="assign-empty">
+            暂无可担任项目经理的人员（请联系管理员授予 project_manager 角色）
           </div>
 
           <template v-else>
-            <div v-if="seniorAssessors.length > 0" class="assign-level level--senior">
+            <div v-if="pmSeniorCandidates.length > 0" class="assign-level level--senior">
               <div class="assign-level__head">
                 <span class="assign-level__name">高级</span>
-                <span class="assign-level__count">{{ seniorAssessors.length }}</span>
+                <span class="assign-level__count">{{ pmSeniorCandidates.length }}</span>
               </div>
               <div class="assign-level__grid">
                 <label
-                  v-for="u in seniorAssessors"
+                  v-for="u in pmSeniorCandidates"
                   :key="'pm-s-'+u.id"
                   :class="['person-chip', { 'is-selected': selectedPmId === u.id }]"
                 >
@@ -851,14 +873,14 @@ onMounted(() => {
               </div>
             </div>
 
-            <div v-if="middleAssessors.length > 0" class="assign-level level--middle">
+            <div v-if="pmMiddleCandidates.length > 0" class="assign-level level--middle">
               <div class="assign-level__head">
                 <span class="assign-level__name">中级</span>
-                <span class="assign-level__count">{{ middleAssessors.length }}</span>
+                <span class="assign-level__count">{{ pmMiddleCandidates.length }}</span>
               </div>
               <div class="assign-level__grid">
                 <label
-                  v-for="u in middleAssessors"
+                  v-for="u in pmMiddleCandidates"
                   :key="'pm-m-'+u.id"
                   :class="['person-chip', { 'is-selected': selectedPmId === u.id }]"
                 >
