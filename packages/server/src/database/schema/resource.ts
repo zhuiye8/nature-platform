@@ -5,6 +5,7 @@ import {
   boolean,
   timestamp,
   integer,
+  unique,
 } from 'drizzle-orm/pg-core';
 
 // ---------------------------------------------------------------------------
@@ -32,12 +33,22 @@ export type NewIamResource = typeof iamResource.$inferInsert;
 // ---------------------------------------------------------------------------
 // iam_role_resource
 // ---------------------------------------------------------------------------
-export const iamRoleResource = pgTable('iam_role_resource', {
-  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
-  roleCode: varchar('role_code', { length: 64 }).notNull(),
-  resourceKey: varchar('resource_key', { length: 128 }).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-});
+export const iamRoleResource = pgTable(
+  'iam_role_resource',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    roleCode: varchar('role_code', { length: 64 }).notNull(),
+    resourceKey: varchar('resource_key', { length: 128 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    // 防止 seed 重复跑时累积重复绑定
+    uniqRoleResource: unique('iam_role_resource_role_code_resource_key_unique').on(
+      table.roleCode,
+      table.resourceKey,
+    ),
+  }),
+);
 
 export type IamRoleResourceRow = typeof iamRoleResource.$inferSelect;
 export type NewIamRoleResource = typeof iamRoleResource.$inferInsert;

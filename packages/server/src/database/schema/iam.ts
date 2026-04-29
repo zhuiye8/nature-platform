@@ -5,6 +5,7 @@ import {
   boolean,
   timestamp,
   integer,
+  unique,
 } from 'drizzle-orm/pg-core';
 
 // ---------------------------------------------------------------------------
@@ -48,13 +49,23 @@ export type NewIamRole = typeof iamRole.$inferInsert;
 // ---------------------------------------------------------------------------
 // user_role
 // ---------------------------------------------------------------------------
-export const userRole = pgTable('user_role', {
-  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
-  userId: bigint('user_id', { mode: 'number' }).notNull(),
-  roleCode: varchar('role_code', { length: 64 }).notNull(),
-  sortOrder: integer('sort_order').default(0).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-});
+export const userRole = pgTable(
+  'user_role',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    userId: bigint('user_id', { mode: 'number' }).notNull(),
+    roleCode: varchar('role_code', { length: 64 }).notNull(),
+    sortOrder: integer('sort_order').default(0).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    // 防止 seed 重复跑时累积重复绑定（ON CONFLICT DO NOTHING 依赖此约束）
+    uniqUserRole: unique('user_role_user_id_role_code_unique').on(
+      table.userId,
+      table.roleCode,
+    ),
+  }),
+);
 
 export type UserRoleRow = typeof userRole.$inferSelect;
 export type NewUserRole = typeof userRole.$inferInsert;
@@ -80,12 +91,22 @@ export type NewIamPermission = typeof iamPermission.$inferInsert;
 // ---------------------------------------------------------------------------
 // iam_role_permission
 // ---------------------------------------------------------------------------
-export const iamRolePermission = pgTable('iam_role_permission', {
-  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
-  roleCode: varchar('role_code', { length: 64 }).notNull(),
-  permissionCode: varchar('permission_code', { length: 128 }).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-});
+export const iamRolePermission = pgTable(
+  'iam_role_permission',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    roleCode: varchar('role_code', { length: 64 }).notNull(),
+    permissionCode: varchar('permission_code', { length: 128 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    // 防止 seed 重复跑时累积重复绑定
+    uniqRolePerm: unique('iam_role_permission_role_code_permission_code_unique').on(
+      table.roleCode,
+      table.permissionCode,
+    ),
+  }),
+);
 
 export type IamRolePermissionRow = typeof iamRolePermission.$inferSelect;
 export type NewIamRolePermission = typeof iamRolePermission.$inferInsert;
