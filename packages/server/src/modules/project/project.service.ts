@@ -14,6 +14,7 @@ import {
   contract,
   contractSystemItem,
   customer,
+  partner,
 } from '../../database/schema/business';
 import { userAccount } from '../../database/schema/user';
 import { userRole } from '../../database/schema/iam';
@@ -250,7 +251,9 @@ export class ProjectService {
         paymentAmount: contract.paymentAmount,
         paymentStatus: contract.paymentStatus,
         salesPersonId: contract.salesPersonId,
-        partnerName: contract.partnerName,
+        // 兜底：优先用 partner.name 作为权威源；historic 数据可能 contract.partner_name 是空串
+        // 用 COALESCE(NULLIF(...,''), ...) 把空串也当成"无值"，回退到 partner.name
+        partnerName: sql<string | null>`COALESCE(NULLIF(${contract.partnerName}, ''), ${partner.name})`,
         contactName: contract.contactName,
         contactPhone: contract.contactPhone,
         contractArchiveStatus: contract.archiveStatus,
@@ -260,6 +263,7 @@ export class ProjectService {
       .from(projectRegister)
       .leftJoin(contract, eq(projectRegister.contractId, contract.id))
       .leftJoin(customer, eq(contract.customerId, customer.id))
+      .leftJoin(partner, eq(contract.partnerId, partner.id))
       .where(
         and(eq(projectRegister.id, id), eq(projectRegister.deleted, false)),
       )

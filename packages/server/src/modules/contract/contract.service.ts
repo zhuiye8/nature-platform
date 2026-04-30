@@ -39,6 +39,36 @@ export class ContractService {
   ) {}
 
   // -----------------------------------------------------------------------
+  // 解析 partner_name —— 单一数据源（partner 表）
+  //
+  // 历史 bug：前端 ContractForm 的 el-select 只把 partnerId 绑进表单，
+  // partnerName 永远是空串，提交后 contract.partner_name 写成 ''，导致
+  // 项目详情等不 JOIN partner 表的查询拿到空值（前端展示为 '--'）。
+  // 修复方式：写库前，根据 partnerId 反查 partner.name 作为权威值。
+  //
+  // 规则：
+  //   - partnerId 有值且能在 partner 表查到 → 用 partner.name
+  //   - partnerId 为 null/undefined 但 dto.partnerName === '无' → 保留 '无'
+  //   - 其他情况 → null
+  // -----------------------------------------------------------------------
+  private async resolvePartnerName(
+    partnerId: number | null | undefined,
+    fallbackName?: string | null,
+  ): Promise<string | null> {
+    if (partnerId) {
+      const rows = await this.db
+        .select({ name: partner.name })
+        .from(partner)
+        .where(eq(partner.id, partnerId))
+        .limit(1);
+      return rows[0]?.name ?? null;
+    }
+    // 没选合作方 — 兼容前端传 '无' 的语义
+    if (fallbackName === '无') return '无';
+    return null;
+  }
+
+  // -----------------------------------------------------------------------
   // 已通过审核的合同选项 (开票申请 / 费用请款 选合同时用)
   //
   // 复用 findPage 的可见性条件:
@@ -559,6 +589,12 @@ export class ContractService {
   // Create
   // -----------------------------------------------------------------------
   async create(dto: CreateContractDto, userId: number) {
+    // 解析合作方名称（写库前用 partnerId 反查 partner.name，避免空串污染）
+    const resolvedPartnerName = await this.resolvePartnerName(
+      dto.partnerId ?? null,
+      dto.partnerName ?? null,
+    );
+
     const created = await this.db.transaction(async (tx) => {
       const result = await tx
         .insert(contract)
@@ -574,7 +610,7 @@ export class ContractService {
           paymentInfo: dto.paymentInfo ?? null,
           invoiceType: dto.invoiceType ?? null,
           taxRate: dto.taxRate ?? null,
-          partnerName: dto.partnerName ?? null,
+          partnerName: resolvedPartnerName,
           partnerId: dto.partnerId ?? null,
           salesPersonId: dto.salesPersonId ?? null,
           performanceCity: dto.performanceCity ?? null,
@@ -656,6 +692,20 @@ export class ContractService {
 
     const oldRecord = existing as unknown as Record<string, unknown>;
 
+    // partnerId 或 partnerName 任一字段被改时，统一以 partner 表为权威源重新解析
+    // （避免前端只更新 partnerId 导致 partner_name 残留旧值或写空串）
+    const partnerTouched =
+      contractFields.partnerId !== undefined || contractFields.partnerName !== undefined;
+    const resolvedPartnerName = partnerTouched
+      ? await this.resolvePartnerName(
+          // 优先用本次传入的 partnerId；如果只传 partnerName 没传 id，沿用现有 id
+          contractFields.partnerId !== undefined
+            ? contractFields.partnerId
+            : (existing.partnerId as number | null | undefined),
+          contractFields.partnerName ?? null,
+        )
+      : null; // 不会被使用
+
     const result = await this.db
       .update(contract)
       .set({
@@ -670,7 +720,8 @@ export class ContractService {
         ...(contractFields.paymentInfo !== undefined && { paymentInfo: contractFields.paymentInfo }),
         ...(contractFields.invoiceType !== undefined && { invoiceType: contractFields.invoiceType }),
         ...(contractFields.taxRate !== undefined && { taxRate: contractFields.taxRate }),
-        ...(contractFields.partnerName !== undefined && { partnerName: contractFields.partnerName }),
+        // partner_name 始终从 partner 表反查得到，不直接信任前端传值
+        ...(partnerTouched && { partnerName: resolvedPartnerName }),
         ...(contractFields.partnerId !== undefined && { partnerId: contractFields.partnerId }),
         ...(contractFields.salesPersonId !== undefined && { salesPersonId: contractFields.salesPersonId }),
         ...(contractFields.performanceCity !== undefined && { performanceCity: contractFields.performanceCity }),
