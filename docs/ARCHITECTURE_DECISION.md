@@ -1,7 +1,13 @@
 # Architecture Decision Record — Nature 等保测评平台
 
 > 本文档是系统架构设计的唯一事实来源，记录所有已对齐的架构决策。
-> 最后更新：2026-03-23
+> 最后更新：2026-04-30
+>
+> **2026-04 增量决策**（详见本文末"附录 A：增量决策记录"）：
+> - 财务模块新增 4 张菜单：合同财务、开票申请、费用请款、结算管理（FIN_INVOICE + FIN_EXPENSE 工作流）
+> - PM 资格独立成 `project_manager` 角色（与测评师等级解耦）
+> - 新增 `chairman` 预留角色（董事长）
+> - migration 0016 修复 m-to-n 绑定表缺唯一约束的历史 bug
 
 ---
 
@@ -910,3 +916,65 @@ Phase 5 — AI 增强
 - [Ollama JavaScript 库](https://github.com/ollama/ollama-js) — Node.js LLM 集成
 - [onnxruntime-node](https://onnxruntime.ai/docs/get-started/with-javascript/node.html) — Node.js OCR 推理
 - [纯 JS PaddleOCR](https://github.com/VrajVyas11/Multilingual_PureJS_Based_OCR) — 无 Python 依赖 OCR
+
+---
+
+## 附录 A：增量决策记录
+
+### A.1 财务模块（2026-04 上线）
+
+新增 4 张前端菜单 + 2 个工作流定义：
+
+| 菜单 | 后端模块 | 工作流 | 关键能力 |
+|------|---------|--------|---------|
+| 合同财务 | `payment-record` | — | 合同回款记录 CRUD（财务角色专用） |
+| 开票申请 | `invoice` | `FIN_INVOICE` | 申请人提交 → 财务审核 → 已开票/需修改；与合同 + 系统明细多对多 |
+| 费用请款 | `expense` | `FIN_EXPENSE` | 请款人 → 部门负责人 → 财务 → 抄送董事长（双层审核） |
+| 结算管理 | `settlement` | — | 按合同维度聚合：开票总额 + 回款总额 + 费用总额 + 毛利计算 |
+
+**累计校验并发安全**：开票/请款金额累计校验使用 `SELECT ... FOR UPDATE` 行锁，避免并发提交超合同金额（A 批次修复，commit fb0bedd）。
+
+### A.2 PM 资格独立化（2026-04-29）
+
+**问题**：原系统将 PM 资格隐式绑定到"中/高级测评师"等级 → 业务上中级测评师不一定都能担任 PM（如颜佳威）。
+
+**方案**：
+- 引入 `project_manager` 角色作为"资格标志位"，**不附带任何权限/资源**，仅作筛选标记。
+- DIRECTOR_REVIEW 节点 PM 候选过滤：`project_manager` ∩ `senior_assessor`/`middle_assessor`，按等级分组显示。
+- 持有 PM 资格的人**必须同时持有**某等级测评师角色（菜单/权限由测评师角色提供）。
+- 具体项目的 PM 指派关系仍由 `project_member.roleType='PM'` 实现（运行时关系，与角色资格独立）。
+
+**与历史方案区别**：
+
+| 维度 | 历史（已废弃） | 当前（2026-04 起） |
+|------|--------------|------------------|
+| `project_manager` 角色 | 固定权限角色，自动赋予所有 PM | 资格标志位，由项目主管手工授予 |
+| PM 候选 | senior + middle assessor 自动取 | senior + middle assessor ∩ project_manager |
+| 删除条件 | 测评师身份废弃同时删 | 与等级独立维护 |
+
+### A.3 chairman（董事长）预留角色（2026-04-29）
+
+需求：业务方需要能给"董事长"账号挂角色，但具体权限/菜单等待管理员后台手工配置。
+
+方案：
+- 在 `iam_role` 中预留 `chairman` 角色（system_flag=TRUE）
+- 不预先 grant 任何 `iam_role_permission` / `iam_role_resource`
+- 通过 seed.sql 第 7 步的"非 super_admin 自动有 dashboard"规则，chairman 默认可登录看 dashboard
+- 后续按需在管理端"角色管理"页面挂权限
+
+### A.4 m-to-n 绑定表唯一约束修复（migration 0016）
+
+**问题**：`user_role` / `iam_role_permission` / `iam_role_resource` 三张关联表只有自增主键 `id`，缺 `(user/role, role/perm/resource)` 复合唯一约束。导致 seed.sql 中的 `ON CONFLICT DO NOTHING` 因找不到约束而失效，每次 deploy 都重复插入一行。生产累积出 4 倍重复（876/303、488/182）。
+
+**修复**（migration `0016_lame_baron_zemo.sql`）：
+
+```sql
+-- 1. 先去重（保留 id 最小的那条）
+DELETE FROM iam_role_permission WHERE id NOT IN (SELECT MIN(id) FROM iam_role_permission GROUP BY role_code, permission_code);
+DELETE FROM user_role WHERE id NOT IN (SELECT MIN(id) FROM user_role GROUP BY user_id, role_code);
+DELETE FROM iam_role_resource WHERE id NOT IN (SELECT MIN(id) FROM iam_role_resource GROUP BY role_code, resource_key);
+-- 2. 加唯一约束
+ALTER TABLE ... ADD CONSTRAINT ... UNIQUE (...);
+```
+
+后续 seed.sql 重复执行将真正幂等。
