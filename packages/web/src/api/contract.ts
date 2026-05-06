@@ -30,6 +30,8 @@ export interface ContractItem {
   customerRegion?: string | null
   /** Customer address detail — only returned by findById, used to auto-fill project system items */
   customerAddressDetail?: string | null
+  /** Customer industry — only returned by findById, used to inherit into project system items as default */
+  customerIndustry?: string | null
   contractNo: string | null
   contractName: string | null
   contactName: string | null

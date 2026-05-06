@@ -6,22 +6,10 @@ import type { CascaderValue, FormInstance, FormRules } from 'element-plus'
 import { createCustomer, updateCustomer, getCustomerDetail } from '@/api/customer'
 import type { CustomerForm as CustomerFormData, ContactFormItem } from '@/api/customer'
 import { regionData } from '@/utils/region-data'
+import { INDUSTRY_GROUPS } from '@nature/shared'
 
-// 行业分组选项
-const industryGroups = [
-  { label: '信息通信', options: ['电信', '广电', '经营性公众互联网'] },
-  { label: '金融交通能源', options: ['铁路', '银行', '海关', '税务', '民航', '电力', '证券', '保险'] },
-  { label: '政务部门', options: [
-    '国防科技工业', '公安', '人力资源和社会保障', '财政', '审计', '商务',
-    '国土资源', '能源', '交通', '统计', '市场监督管理', '邮政',
-    '教育', '文旅', '卫生', '农业农村', '水利', '外交',
-    '发展改革', '科技', '宣传', '网信', '法院', '检察院',
-    '国防', '工信', '民族事务', '民政', '司法', '自然资源',
-    '生态环境', '住建', '退役军人事务', '应急', '国资监管', '体育',
-    '信访', '国际发展合作', '医疗保障', '气象', '数据管理', '药监', '电子政务',
-  ]},
-  { label: '其他', options: ['其他'] },
-]
+// 行业分组选项 — 与项目登记的"被测单位行业"共享同一份等保监管分类枚举
+const industryGroups = INDUSTRY_GROUPS
 
 const props = defineProps<{
   visible: boolean

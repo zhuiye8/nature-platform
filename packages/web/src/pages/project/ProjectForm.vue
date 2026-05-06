@@ -12,6 +12,7 @@ import { regionData } from '@/utils/region-data'
 import type { ContractItem } from '@/api/contract'
 import RejectReasonPanel from '@/components/RejectReasonPanel.vue'
 import { deleteFile, uploadFileRaw } from '@/api/file'
+import { INDUSTRY_GROUPS } from '@nature/shared'
 
 const route = useRoute()
 const router = useRouter()
@@ -352,6 +353,9 @@ async function fetchDetail() {
         clientKey: si.clientKey || `existing_${si.id}`,
         assessedUnitContact: si.assessedUnitContact || '',
         assessedUnitMobile: si.assessedUnitMobile || '',
+        // 行业字段：现有值优先；空值时不在加载时立即继承，留给加载完合同详情后再回填，
+        // 避免因合同接口尚未返回 customerIndustry 导致回填用 undefined
+        assessedUnitIndustry: si.assessedUnitIndustry || '',
         pendingCertName: null,
         pendingFormName: null,
         pendingReportName: null,
@@ -377,6 +381,14 @@ async function fetchDetail() {
       selectedContractDetail.value = (await getContractDetail(data.contractId)) as unknown as ContractItem
     } catch {
       selectedContractDetail.value = null
+    }
+    // 编辑模式下：如果某个 system 行业为空，从客户行业回填一次（"补录"语义）
+    // 用户已填的不动；客户也没填的也不动
+    const inherited = selectedContractDetail.value?.customerIndustry
+    if (inherited) {
+      for (const si of formData.value.systemItems as any[]) {
+        if (!si.assessedUnitIndustry) si.assessedUnitIndustry = inherited
+      }
     }
     // Load quota (excludes this project's own items)
     await fetchSystemQuota(data.contractId)
@@ -419,6 +431,7 @@ function addSystemItem() {
     requiredEntryDate: '',
     requiredReportDeliveryDate: '',
     assessedUnitName: detail?.customerName ?? '',
+    assessedUnitIndustry: detail?.customerIndustry ?? '',
     assessedUnitContact: detail?.contactName ?? '',
     assessedUnitMobile: detail?.contactPhone ?? '',
     assessedUnitAddress: detail?.customerAddressDetail ?? '',
@@ -483,6 +496,7 @@ async function handleSubmit() {
       if (!si.requiredEntryDate) missing.push('要求录入日期')
       if (!si.requiredReportDeliveryDate) missing.push('要求出报告日期')
       if (!si.assessedUnitName) missing.push('被测单位名称')
+      if (!si.assessedUnitIndustry) missing.push('所属行业')
       if (!si.assessedUnitContact) missing.push('联系人')
       if (!si.assessedUnitMobile) missing.push('联系电话')
       if (!si.assessedUnitAddress) missing.push('地址')
@@ -753,6 +767,24 @@ onMounted(async () => {
                 </el-form-item>
               </el-col>
               <el-col :span="12">
+                <el-form-item label="所属行业" required>
+                  <el-select
+                    v-model="item.assessedUnitIndustry"
+                    filterable
+                    placeholder="请选择行业（等保监管分类）"
+                    style="width: 100%"
+                  >
+                    <el-option-group v-for="g in INDUSTRY_GROUPS" :key="g.label" :label="g.label">
+                      <el-option v-for="opt in g.options" :key="opt" :label="opt" :value="opt" />
+                    </el-option-group>
+                  </el-select>
+                  <span
+                    v-if="item.assessedUnitIndustry && selectedContractDetail?.customerIndustry === item.assessedUnitIndustry"
+                    style="color: #909399; font-size: 12px; margin-left: 6px"
+                  >（继承自客户）</span>
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
                 <el-form-item label="联系人" required>
                   <el-input v-model="item.assessedUnitContact" placeholder="请输入联系人" />
                 </el-form-item>
@@ -762,7 +794,7 @@ onMounted(async () => {
                   <el-input v-model="item.assessedUnitMobile" placeholder="请输入联系电话" />
                 </el-form-item>
               </el-col>
-              <el-col :span="12">
+              <el-col :span="24">
                 <el-form-item label="地址" required>
                   <el-input v-model="item.assessedUnitAddress" placeholder="请输入地址" />
                 </el-form-item>

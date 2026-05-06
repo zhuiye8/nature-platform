@@ -442,6 +442,7 @@ export class ContractService {
         customerUscc: customer.uscc,
         customerRegion: customer.region,
         customerAddressDetail: customer.addressDetail,
+        customerIndustry: customer.industry,
       })
       .from(contract)
       .leftJoin(customer, eq(contract.customerId, customer.id))
