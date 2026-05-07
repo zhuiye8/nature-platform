@@ -207,3 +207,11 @@ Redis: `localhost:6389` / MinIO: `http://localhost:9010`（控制台 `:9011`）
 3. **seed.sql 必须幂等**：所有 INSERT 用 `ON CONFLICT DO NOTHING`（前提是表上有合适的 unique 约束）。
 4. **改文档先核对**：任何文档要写"已确认/最后更新"的，先核对真实代码状态再写。
 5. **生产操作只读**：除非用户明确同意，所有 SSH 到生产的操作都用 SELECT/journalctl 等只读命令。
+6. **专业术语必须中英对照**：与用户的所有汇报/文档/对话中，凡涉及以下内容首次出现时必须用 `中文（英文）` 形式同时给出，方便用户与代码/数据库一一对照：
+   - **角色**：销售（sales）/ 档案管理员（archiver）/ 部门经理（dept_manager）/ 项目主管（project_director）/ 项目经理（project_manager）/ 财务（finance）/ 董事长（chairman）/ 整体技术审核员（tech_reviewer）/ 内容审核员-技术/管理/网络（content_reviewer_tech / mgmt / network）/ 报告编制员（report_writer）/ 报告分配人（report_assigner）/ 公安登记专员（police_register）/ 高/中/初级测评师（senior/middle/junior_assessor）/ 商务（commercial）/ 超级管理员（super_admin）等
+   - **工作流定义**：合同流程（CONTRACT_FLOW）/ 项目测评流程（PROJECT_ASSESSMENT_FLOW）/ 开票申请流程（FIN_INVOICE）/ 费用请款流程（FIN_EXPENSE）
+   - **工作流节点**：项目登记申请（PROJECT_REGISTER）/ 部门经理确认（DEPT_REVIEW）/ 项目主管审核（DIRECTOR_REVIEW）/ 公安登记（POLICE_REGISTER）/ 现场测评（ON_SITE_ASSESSMENT）/ 技术审核（TECH_REVIEW）/ 内容审核（CONTENT_REVIEW）/ 报告分配（REPORT_ASSIGN）/ 报告编制（REPORT_COMPILE）/ 最终审核（FINAL_REVIEW）/ 材料归档（MATERIAL_ARCHIVE）/ 财务审核（FIN_INVOICE_REVIEW）/ 部门负责人审核（FIN_EXPENSE_DEPT_REVIEW）等
+   - **状态码**：草稿（DRAFT）/ 已提交（SUBMITTED）/ 已通过（APPROVED）/ 已驳回（REJECTED）/ 部门审核通过（DEPT_APPROVED）/ 待归档（PENDING_ARCHIVE）/ 已归档（ARCHIVED）/ 未回款（UNPAID）/ 部分回款（PARTIAL）/ 已回款（PAID）等
+   - **bizType**：合同（CONTRACT）/ 合同组（CONTRACT_GROUP）/ 项目登记（PROJECT_REGISTER）/ 注册平台（PLATFORM）等
+   - **权限点**：合同列表（contract:list）/ 编辑财务信息（contract:update_financial）/ 发起开票申请（invoice:apply）等
+   - **菜单/页面**：合同财务（/finance/contract）/ 开票申请（/finance/invoice）等
