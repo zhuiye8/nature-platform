@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
-import { eq, and, ilike, count, desc, gte, lte, inArray, SQL } from 'drizzle-orm';
+import { eq, and, ilike, count, desc, gte, lte, inArray, sql, SQL } from 'drizzle-orm';
 import { DRIZZLE, DrizzleDB } from '../../database/database.module';
 import { registrationPlatform } from '../../database/schema/business';
 import { userAccount } from '../../database/schema/user';
@@ -8,6 +8,23 @@ import { CreatePlatformDto, UpdatePlatformDto, QueryPlatformDto } from './dto/pl
 @Injectable()
 export class PlatformService {
   constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
+
+  // ---------------------------------------------------------------------------
+  // 业务编号生成 — UPSERT platform_serial 单行 + 自增 next_seq
+  // 与 contract_serial 同模式（auto.handler.generateContractNo）
+  // 接收任意 db / tx，便于在 batchCreate 事务里复用
+  // ---------------------------------------------------------------------------
+  private async nextPlatformNo(executor: { execute: DrizzleDB['execute'] }): Promise<string> {
+    const seqResult = await executor.execute(sql`
+      INSERT INTO platform_serial (id, next_seq)
+      VALUES (1, 1)
+      ON CONFLICT (id)
+      DO UPDATE SET next_seq = platform_serial.next_seq + 1, updated_at = NOW()
+      RETURNING next_seq
+    `);
+    const seq = (seqResult as any)[0]?.next_seq as number;
+    return `P-${String(seq).padStart(4, '0')}`;
+  }
 
   private buildConditions(query: QueryPlatformDto): SQL[] {
     const conditions: SQL[] = [eq(registrationPlatform.deleted, false)];
@@ -98,23 +115,27 @@ export class PlatformService {
   }
 
   async create(dto: CreatePlatformDto, userId: number) {
-    const result = await this.db
-      .insert(registrationPlatform)
-      .values({
-        platformName: dto.platformName ?? null,
-        websiteUrl: dto.websiteUrl ?? null,
-        account: dto.account ?? null,
-        password: dto.password ?? null,
-        hasCa: dto.hasCa ?? false,
-        caExpireDate: dto.caExpireDate ?? null,
-        caPassword: dto.caPassword ?? null,
-        contactName: dto.contactName ?? null,
-        contactPhone: dto.contactPhone ?? null,
-        remark: dto.remark ?? null,
-        createdBy: userId,
-      })
-      .returning();
-    return result[0];
+    return this.db.transaction(async (tx) => {
+      const platformNo = await this.nextPlatformNo(tx);
+      const result = await tx
+        .insert(registrationPlatform)
+        .values({
+          platformNo,
+          platformName: dto.platformName ?? null,
+          websiteUrl: dto.websiteUrl ?? null,
+          account: dto.account ?? null,
+          password: dto.password ?? null,
+          hasCa: dto.hasCa ?? false,
+          caExpireDate: dto.caExpireDate ?? null,
+          caPassword: dto.caPassword ?? null,
+          contactName: dto.contactName ?? null,
+          contactPhone: dto.contactPhone ?? null,
+          remark: dto.remark ?? null,
+          createdBy: userId,
+        })
+        .returning();
+      return result[0];
+    });
   }
 
   async update(id: number, dto: UpdatePlatformDto, userId: number) {
@@ -148,24 +169,31 @@ export class PlatformService {
       .where(eq(registrationPlatform.id, id));
   }
 
-  // Batch import
+  // Batch import — 事务内逐条分配 platform_no（保证编号唯一，但失去批量 INSERT 性能；
+  // 工具型主数据导入量级小，可接受）
   async batchCreate(items: CreatePlatformDto[], userId: number) {
     if (items.length === 0) return { count: 0 };
-    await this.db.insert(registrationPlatform).values(
-      items.map((dto) => ({
-        platformName: dto.platformName ?? null,
-        websiteUrl: dto.websiteUrl ?? null,
-        account: dto.account ?? null,
-        password: dto.password ?? null,
-        hasCa: dto.hasCa ?? false,
-        caExpireDate: dto.caExpireDate ?? null,
-        caPassword: dto.caPassword ?? null,
-        contactName: dto.contactName ?? null,
-        contactPhone: dto.contactPhone ?? null,
-        remark: dto.remark ?? null,
-        createdBy: userId,
-      })),
-    );
-    return { count: items.length };
+    return this.db.transaction(async (tx) => {
+      const rows: any[] = [];
+      for (const dto of items) {
+        const platformNo = await this.nextPlatformNo(tx);
+        rows.push({
+          platformNo,
+          platformName: dto.platformName ?? null,
+          websiteUrl: dto.websiteUrl ?? null,
+          account: dto.account ?? null,
+          password: dto.password ?? null,
+          hasCa: dto.hasCa ?? false,
+          caExpireDate: dto.caExpireDate ?? null,
+          caPassword: dto.caPassword ?? null,
+          contactName: dto.contactName ?? null,
+          contactPhone: dto.contactPhone ?? null,
+          remark: dto.remark ?? null,
+          createdBy: userId,
+        });
+      }
+      await tx.insert(registrationPlatform).values(rows);
+      return { count: items.length };
+    });
   }
 }

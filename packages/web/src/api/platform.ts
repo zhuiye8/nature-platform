@@ -3,6 +3,8 @@ import type { PageQuery, PageResult } from '@nature/shared'
 
 export interface PlatformItem {
   id: number
+  /** 业务编号 P-{4位序号}（如 P-0001），由后端 platform_serial 自增分配 */
+  platformNo: string | null
   platformName: string | null
   websiteUrl: string | null
   account: string | null

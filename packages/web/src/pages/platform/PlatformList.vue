@@ -276,7 +276,11 @@ onMounted(fetchData)
 
       <!-- Table -->
       <el-table v-loading="loading" :data="tableData" stripe border style="width: 100%">
-        <el-table-column prop="id" label="编号" width="70" align="center" />
+        <el-table-column label="业务编号" width="100" align="center">
+          <template #default="{ row }">
+            <span style="font-family: monospace; color: #409EFF">{{ row.platformNo || '--' }}</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="platformName" label="平台名称" min-width="150">
           <template #default="{ row }">
             <span style="white-space: normal; word-break: break-all; line-height: 1.5">{{ row.platformName || '--' }}</span>

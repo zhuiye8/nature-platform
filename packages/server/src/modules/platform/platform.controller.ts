@@ -29,12 +29,13 @@ export class PlatformController {
     const data = await this.service.findAll(query);
 
     const fieldList = fields ? fields.split(',') : [
-      'platformName', 'websiteUrl', 'account', 'password',
+      'platformNo', 'platformName', 'websiteUrl', 'account', 'password',
       'hasCa', 'caExpireDate', 'caPassword',
       'contactName', 'contactPhone', 'remark', 'creatorName', 'createdAt',
     ];
 
     const headerMap: Record<string, string> = {
+      platformNo: '业务编号',
       platformName: '平台名称', websiteUrl: '网址', account: '账户', password: '密码',
       hasCa: '是否办理CA', caExpireDate: 'CA到期时间', caPassword: 'CA密码',
       contactName: '联系人', contactPhone: '手机号', remark: '备注',

@@ -181,6 +181,20 @@ export type ContractSerialRow = typeof contractSerial.$inferSelect;
 export type NewContractSerial = typeof contractSerial.$inferInsert;
 
 // ---------------------------------------------------------------------------
+// platform_serial — 注册平台业务编号自增计数器
+// 单行表（id 固定为 1），UPSERT 自增 next_seq
+// 与 contract_serial 同模式，参考 auto.handler.generateContractNo
+// ---------------------------------------------------------------------------
+export const platformSerial = pgTable('platform_serial', {
+  id: integer('id').primaryKey(),
+  nextSeq: integer('next_seq').notNull().default(1),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type PlatformSerialRow = typeof platformSerial.$inferSelect;
+export type NewPlatformSerial = typeof platformSerial.$inferInsert;
+
+// ---------------------------------------------------------------------------
 // project_register
 // ---------------------------------------------------------------------------
 export const projectRegister = pgTable('project_register', {
@@ -390,6 +404,9 @@ export type NewMaterialArchive = typeof materialArchive.$inferInsert;
 // ---------------------------------------------------------------------------
 export const registrationPlatform = pgTable('registration_platform', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  // 业务编号 P-{4位序号}（如 P-0001）— 用户视角的主标识，由 platform_serial 自增分配
+  // 注意：与 ID 一样跳号不可避免（PG sequence 单调递增是业界通用行为）
+  platformNo: varchar('platform_no', { length: 32 }).unique(),
   platformName: varchar('platform_name', { length: 255 }),
   websiteUrl: varchar('website_url', { length: 500 }),
   account: varchar('account', { length: 128 }),
