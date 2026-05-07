@@ -197,6 +197,8 @@ Redis: `localhost:6389` / MinIO: `http://localhost:9010`（控制台 `:9011`）
 |------|------|------|
 | 2026-04-29 | migration 0016 | 给 `user_role` / `iam_role_permission` / `iam_role_resource` 三张表加唯一约束（修复 seed 重复跑导致绑定累积重复的历史 bug）|
 | 2026-04-29 | seed.sql + TaskDetail.vue | PM 资格独立成 `project_manager` 角色，与测评师等级解耦 |
+| 2026-05-07 | migration 0017 + platform.service | 注册平台引入业务编号 `platform_no`（P-0001 格式），单行 `platform_serial` 维护自增 |
+| 2026-05-07 | recycle.service + 4 处 remove | 回收站从空架子复活：`RecycleService.softDelete` 通用入口；contract / project / platform / contract_group 的 `remove` 改走此入口；新增软删表必须遵循此约定 |
 
 ## 给 Claude 的工作偏好
 

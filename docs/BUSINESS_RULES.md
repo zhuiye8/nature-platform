@@ -1,7 +1,7 @@
 # 业务规则确认记录 — Nature 等保测评平台
 
 > 本文档记录所有经团队确认的业务规则细节，避免重复讨论。
-> 最后更新：2026-04-30
+> 最后更新：2026-05-07
 
 ---
 
@@ -90,11 +90,14 @@ DRAFT → SUBMITTED → APPROVED → ARCHIVED
 
 | 规则 | 结论 | 确认日期 |
 |------|------|---------|
-| 哪些模块可删除 | 仅合同 + 项目登记 | 2026-03-23 |
-| 回收站保留期限 | **永久保留**，除非手动从回收站删除 | 2026-03-23 |
-| 恢复权限 | 仅超级管理员 | 2026-03-23 |
-| 恢复冲突检查 | 若存在同 contract_id + contract_year 的未删除记录，不可恢复 | 2026-03-23 |
-| 永久删除 | 超级管理员可从回收站中永久删除（物理删除） | 2026-03-23 |
+| 接入回收站的业务类型 | **CONTRACT / CONTRACT_GROUP / PROJECT_REGISTER / PLATFORM** 共 4 种 | 2026-05-07 |
+| 软删除统一入口 | **业务侧必须调用 `RecycleService.softDelete(opts)`**，事务内执行业务侧 applyDelete 回调 + INSERT recycle_bin。新增软删表必须遵循此约定 | 2026-05-07 |
+| 子记录处理 | 跟随父记录恢复（不单独入回收站）。例如恢复 contract 时连带恢复 contract_system_item | 2026-05-07 |
+| 回收站保留期限 | **永久保留**，无自动清理；只能由 super_admin 手动永久删除 | 2026-03-23 |
+| 恢复/永久删除权限 | 仅 super_admin（默认 chairman 不开放） | 2026-05-07 |
+| 恢复唯一性校验 | CONTRACT: contract_no 不冲突；PROJECT_REGISTER: contract_id+contract_year 不冲突；CONTRACT_GROUP/PLATFORM 无校验 | 2026-05-07 |
+| 永久删除行为 | 物理 DELETE 原表（含子记录）+ 删 recycle_bin 记录。**不释放 ID/业务编号**（PG sequence 单调递增固有行为） | 2026-05-07 |
+| file_attachment 是否进回收站 | **不进**。文件级软删属工程实现（覆盖上传/换附件等场景），非业务"误删恢复"语义 | 2026-05-07 |
 
 ---
 

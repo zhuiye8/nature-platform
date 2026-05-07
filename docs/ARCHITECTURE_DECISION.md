@@ -1,13 +1,15 @@
 # Architecture Decision Record — Nature 等保测评平台
 
 > 本文档是系统架构设计的唯一事实来源，记录所有已对齐的架构决策。
-> 最后更新：2026-04-30
+> 最后更新：2026-05-07
 >
-> **2026-04 增量决策**（详见本文末"附录 A：增量决策记录"）：
+> **2026-04 ~ 2026-05 增量决策**（详见本文末"附录 A：增量决策记录"）：
 > - 财务模块新增 4 张菜单：合同财务、开票申请、费用请款、结算管理（FIN_INVOICE + FIN_EXPENSE 工作流）
 > - PM 资格独立成 `project_manager` 角色（与测评师等级解耦）
 > - 新增 `chairman` 预留角色（董事长）
 > - migration 0016 修复 m-to-n 绑定表缺唯一约束的历史 bug
+> - **2026-05-07：注册平台引入业务编号 `platform_no`（P-0001 格式）**
+> - **2026-05-07：回收站从空架子复活 — 4 处 remove 改走 `RecycleService.softDelete` 统一入口**
 
 ---
 
@@ -978,3 +980,37 @@ ALTER TABLE ... ADD CONSTRAINT ... UNIQUE (...);
 ```
 
 后续 seed.sql 重复执行将真正幂等。
+
+### A.5 业务编号 `platform_no` + 回收站基础设施重构（2026-05-07）
+
+**A.5.1 注册平台业务编号（migration 0017）**
+
+需求：用户视角的注册平台主标识应当是业务编号（`P-0001` 格式）而非裸 ID。
+
+设计：
+- `registration_platform.platform_no VARCHAR(32) UNIQUE` 字段
+- 单行 `platform_serial` 表（与 `contract_serial` 同模式）维护自增计数器
+- `platform.service.create / batchCreate` 用 UPSERT `platform_serial` 生成编号，与 `auto.handler.generateContractNo` 保持一致的并发安全模式
+- 一次性 backfill 给历史 156 条按 id ASC 赋号
+
+> ⚠ 业务编号也会跳号（PG sequence 单调递增是固有行为）。它解决"用户视角看 P-0001 比 id=1 友好"，不解决"绝对连续"。
+
+**A.5.2 回收站基础设施（无 schema 变更）**
+
+**问题（之前发现）**：
+- `recycle_bin` 表只有读路径（list/restore/permanentDelete），**从无任何写路径**
+- `contract / project / platform / contract_group` 的 `.remove` 都只 `set deleted=true`，从不写 recycle_bin
+- 历史"软删数据"全部不在 recycle_bin —— 主列表和回收站都看不到（死区）
+- `BUSINESS_RULES.md` 第 5 章描述"回收站永久保留" — 与代码完全脱节，是 dead doc
+
+**修复**：
+- `RecycleService.softDelete(opts)` 通用入口：业务侧通过 `applyDelete` 回调提供"打 deleted 标记 + 连带子记录"动作，与 INSERT recycle_bin 同事务执行
+- `restore` 加 PLATFORM / CONTRACT_GROUP 分支 + CONTRACT / PROJECT_REGISTER 唯一性校验 + 子记录连带恢复
+- `permanentDelete` 加 4 种 bizType 真物理删除原表（含子记录）
+- `findPage` 增强：JOIN `user_account` 返回 `deletedByName`
+- 4 处 `remove` 改造（contract / contract_group / project / platform），3 个模块 import RecycleModule
+- 前端 RecycleBin.vue：4 个 tab + 删除人/原 ID 列 + 危险操作二次确认
+- 一次性 backfill SQL 把现有 deleted=TRUE 的记录补写进 recycle_bin（prod 3 条：1 contract + 1 group + 1 platform）
+
+**长期纪律**：
+> 新增任何带 `deleted` 字段的业务表，**`.remove` 必须走 `RecycleService.softDelete`**，不允许业务侧直接 `set deleted=true`。否则会重新出现"孤立软删"反模式。
