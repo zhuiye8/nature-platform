@@ -1,12 +1,16 @@
 import request from './request'
 
+export type RecycleBizType = 'CONTRACT' | 'CONTRACT_GROUP' | 'PROJECT_REGISTER' | 'PLATFORM'
+
 export interface RecycleItem {
   id: number
-  bizType: string
+  bizType: RecycleBizType
   bizId: number
   displayName: string | null
   snapshotJson: any
   deletedBy: number
+  /** 删除人姓名（后端 enrich，2026-05-07 新增）*/
+  deletedByName?: string | null
   deletedAt: string
   remark: string | null
 }

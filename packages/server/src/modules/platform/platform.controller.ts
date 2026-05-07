@@ -121,8 +121,8 @@ export class PlatformController {
 
   @Delete(':id')
   @RequirePermission('platform:delete')
-  async remove(@Param('id', ParseIntPipe) id: number) {
-    await this.service.remove(id);
+  async remove(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: { id: number }) {
+    await this.service.remove(id, user.id);
     return { success: true };
   }
 }

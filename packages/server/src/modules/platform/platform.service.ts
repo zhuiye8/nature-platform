@@ -4,10 +4,14 @@ import { DRIZZLE, DrizzleDB } from '../../database/database.module';
 import { registrationPlatform } from '../../database/schema/business';
 import { userAccount } from '../../database/schema/user';
 import { CreatePlatformDto, UpdatePlatformDto, QueryPlatformDto } from './dto/platform.dto';
+import { RecycleService } from '../recycle/recycle.service';
 
 @Injectable()
 export class PlatformService {
-  constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: DrizzleDB,
+    private readonly recycleService: RecycleService,
+  ) {}
 
   // ---------------------------------------------------------------------------
   // 业务编号生成 — UPSERT platform_serial 单行 + 自增 next_seq
@@ -161,12 +165,24 @@ export class PlatformService {
     return result[0];
   }
 
-  async remove(id: number) {
-    await this.findById(id);
-    await this.db
-      .update(registrationPlatform)
-      .set({ deleted: true, deletedAt: new Date() })
-      .where(eq(registrationPlatform.id, id));
+  async remove(id: number, userId: number) {
+    const existing = await this.findById(id);
+    const platformNo = (existing as any).platformNo;
+    const platformName = (existing as any).platformName;
+    const display = [platformNo, platformName].filter(Boolean).join(' ') || `平台#${id}`;
+    await this.recycleService.softDelete({
+      bizType: 'PLATFORM',
+      bizId: id,
+      displayName: display,
+      snapshot: existing,
+      userId,
+      applyDelete: async (tx) => {
+        await tx
+          .update(registrationPlatform)
+          .set({ deleted: true, deletedAt: new Date() })
+          .where(eq(registrationPlatform.id, id));
+      },
+    });
   }
 
   // Batch import — 事务内逐条分配 platform_no（保证编号唯一，但失去批量 INSERT 性能；

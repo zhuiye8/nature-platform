@@ -27,6 +27,7 @@ import {
   AssignMembersDto,
 } from './dto/project.dto';
 import { WorkflowService } from '../workflow/workflow.service';
+import { RecycleService } from '../recycle/recycle.service';
 import {
   loadProjectMembersEnriched,
   loadReportWriterInfo,
@@ -37,6 +38,7 @@ export class ProjectService {
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDB,
     private readonly workflowService: WorkflowService,
+    private readonly recycleService: RecycleService,
   ) {}
 
   // -----------------------------------------------------------------------
@@ -579,19 +581,23 @@ export class ProjectService {
       throw new BadRequestException('Only DRAFT projects can be deleted');
     }
 
-    await this.db
-      .update(projectRegister)
-      .set({
-        deleted: true,
-        deletedAt: new Date(),
-      })
-      .where(eq(projectRegister.id, id));
-
-    // Soft delete system items
-    await this.db
-      .update(projectSystemItem)
-      .set({ deleted: true })
-      .where(eq(projectSystemItem.projectRegisterId, id));
+    await this.recycleService.softDelete({
+      bizType: 'PROJECT_REGISTER',
+      bizId: id,
+      displayName: existing.applicationName ?? `项目#${id}`,
+      snapshot: existing,
+      userId,
+      applyDelete: async (tx) => {
+        await tx
+          .update(projectRegister)
+          .set({ deleted: true, deletedAt: new Date() })
+          .where(eq(projectRegister.id, id));
+        await tx
+          .update(projectSystemItem)
+          .set({ deleted: true })
+          .where(eq(projectSystemItem.projectRegisterId, id));
+      },
+    });
 
     // Refresh quota flag (re-opens contract for new registrations)
     await this.refreshSystemQuotaFull(existing.contractId!);

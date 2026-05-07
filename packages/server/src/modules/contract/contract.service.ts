@@ -30,12 +30,14 @@ import {
   QueryGroupDto,
 } from './dto/contract.dto';
 import { WorkflowService } from '../workflow/workflow.service';
+import { RecycleService } from '../recycle/recycle.service';
 
 @Injectable()
 export class ContractService {
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDB,
     private readonly workflowService: WorkflowService,
+    private readonly recycleService: RecycleService,
   ) {}
 
   // -----------------------------------------------------------------------
@@ -825,19 +827,24 @@ export class ContractService {
       throw new BadRequestException('只有草稿状态的合同可以删除');
     }
 
-    await this.db
-      .update(contract)
-      .set({
-        deleted: true,
-        deletedAt: new Date(),
-      })
-      .where(eq(contract.id, id));
-
-    // Soft delete system items
-    await this.db
-      .update(contractSystemItem)
-      .set({ deleted: true })
-      .where(eq(contractSystemItem.contractId, id));
+    // 走通用软删除入口：事务内 set deleted=true 主表+子表 + 写 recycle_bin
+    await this.recycleService.softDelete({
+      bizType: 'CONTRACT',
+      bizId: id,
+      displayName: existing.contractName ?? existing.contractNo ?? `合同#${id}`,
+      snapshot: existing,
+      userId,
+      applyDelete: async (tx) => {
+        await tx
+          .update(contract)
+          .set({ deleted: true, deletedAt: new Date() })
+          .where(eq(contract.id, id));
+        await tx
+          .update(contractSystemItem)
+          .set({ deleted: true })
+          .where(eq(contractSystemItem.contractId, id));
+      },
+    });
   }
 
   // -----------------------------------------------------------------------
@@ -1426,9 +1433,18 @@ export class ContractService {
       throw new BadRequestException('合同组内还有合同，无法删除');
     }
 
-    await this.db
-      .update(contractGroup)
-      .set({ deleted: true, deletedAt: new Date() })
-      .where(eq(contractGroup.id, id));
+    await this.recycleService.softDelete({
+      bizType: 'CONTRACT_GROUP',
+      bizId: id,
+      displayName: rows[0].groupName ?? `合同组#${id}`,
+      snapshot: rows[0],
+      userId,
+      applyDelete: async (tx) => {
+        await tx
+          .update(contractGroup)
+          .set({ deleted: true, deletedAt: new Date() })
+          .where(eq(contractGroup.id, id));
+      },
+    });
   }
 }
