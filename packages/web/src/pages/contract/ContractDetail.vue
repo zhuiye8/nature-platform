@@ -8,7 +8,7 @@ import { getFileList, getFileDownloadPath, getFilePreviewPath, deleteFile, getUp
 import { getSystemItems, type EnrichedSystemItem } from '@/api/project'
 import { ElMessage } from 'element-plus'
 import { getInstanceByBiz } from '@/api/workflow'
-import RejectReasonPanel from '@/components/RejectReasonPanel.vue'
+import ReviewOpinionPanel from "@/components/ReviewOpinionPanel.vue"
 import SystemItemDetailDialog from '@/components/SystemItemDetailDialog.vue'
 import { getStatusLabel, getStatusTagType } from '@/utils/status-map'
 import { formatTime } from '@/utils/format'
@@ -284,8 +284,8 @@ onMounted(async () => {
     </div>
 
     <template v-if="contract">
-      <!-- 驳回意见醒目提示 -->
-      <RejectReasonPanel v-if="contract.reviewStatus === 'REJECTED'" biz-type="CONTRACT" :biz-id="contract.id" />
+      <!-- 审核意见展示（通过/驳回/复核都展示，组件内部对无意见自动隐藏）-->
+      <ReviewOpinionPanel biz-type="CONTRACT" :biz-id="contract.id" />
 
       <!-- ── 基本信息 ────────────────────────────────────────── -->
       <!-- ── 1. 基本信息 ──────────────────────────────────────── -->
@@ -314,7 +314,26 @@ onMounted(async () => {
             </el-tag>
             <span v-else>--</span>
           </el-descriptions-item>
-          <el-descriptions-item label="合同类型">{{ contract.contractType || '--' }}</el-descriptions-item>
+          <el-descriptions-item>
+            <template #label>
+              <span style="display: inline-flex; align-items: center; gap: 4px">
+                合同类型
+                <el-tooltip placement="top">
+                  <template #content>
+                    <div style="line-height: 1.7">
+                      <div><b>自主</b>：无第三方</div>
+                      <div><b>直接合作</b>：第三方为付款方</div>
+                      <div><b>间接合作</b>：本公司为付款方</div>
+                    </div>
+                  </template>
+                  <el-icon style="color: var(--el-text-color-placeholder); cursor: help; font-size: 14px">
+                    <QuestionFilled />
+                  </el-icon>
+                </el-tooltip>
+              </span>
+            </template>
+            {{ contract.contractType || '--' }}
+          </el-descriptions-item>
           <el-descriptions-item label="成交情况">{{ getStatusLabel(contract.dealStatus) || contract.dealStatus || '--' }}</el-descriptions-item>
           <el-descriptions-item label="签单销售">{{ contract.salesPersonName || '--' }}</el-descriptions-item>
           <el-descriptions-item label="合作方">{{ contract.partnerName || '--' }}</el-descriptions-item>

@@ -1,13 +1,22 @@
 <script setup lang="ts">
 /**
- * RejectReasonPanel — 驳回/复核意见展示面板
- * 方案1: 最新驳回原因醒目 Alert
- * 方案2: 所有驳回/复核记录列表（支持并行审核的多条记录）
+ * ReviewOpinionPanel — 审核意见展示面板
  *
- * 数据来源: workflow action log 中 action=REJECT/REVIEW 的记录
+ * 数据来源: workflow action log 中带 remark 的所有审核记录
+ *   - APPROVE（通过）: 绿色 success
+ *   - REJECT / REJECT_TO_ASSESSMENT / REJECT_TO_TECH（驳回）: 红色 error
+ *   - REVIEW / REVIEW_TO_COMPILE（复核）: 黄色 warning
+ *
+ * 视觉:
+ *   - 最新一条意见 Alert 醒目展示
+ *   - 多条历史折叠在 Timeline 里
+ *   - 没有 remark 的通过记录不展示（避免刷屏）
+ *
+ * 历史: 2026-05-08 由 RejectReasonPanel 重命名扩大语义而来
+ *       原仅展示驳回/复核 → 现在通过有意见也展示
  */
 import { ref, onMounted, watch, computed } from 'vue'
-import { getInstanceByBiz, type ActionLog } from '@/api/workflow'
+import { getInstanceByBiz } from '@/api/workflow'
 import { getStatusLabel } from '@/utils/status-map'
 import { formatTime } from '@/utils/format'
 
@@ -16,7 +25,7 @@ const props = defineProps<{
   bizId: number
 }>()
 
-interface RejectRecord {
+interface OpinionRecord {
   action: string
   nodeKey: string
   operatorName: string
@@ -24,31 +33,47 @@ interface RejectRecord {
   createdAt: string
 }
 
-const records = ref<RejectRecord[]>([])
+const records = ref<OpinionRecord[]>([])
 const loading = ref(false)
 
-const latestReject = computed(() => records.value.length > 0 ? records.value[0] : null)
+const latestOpinion = computed(() => records.value.length > 0 ? records.value[0] : null)
 
-const alertType = computed(() => {
-  if (!latestReject.value) return 'info'
-  return latestReject.value.action === 'REJECT' ? 'error' : 'warning'
+const alertType = computed<'success' | 'error' | 'warning' | 'info'>(() => {
+  if (!latestOpinion.value) return 'info'
+  const action = latestOpinion.value.action
+  if (action === 'APPROVE') return 'success'
+  if (['REJECT', 'REJECT_TO_ASSESSMENT', 'REJECT_TO_TECH'].includes(action)) return 'error'
+  return 'warning'
 })
 
 const alertTitle = computed(() => {
-  if (!latestReject.value) return ''
-  const actionLabel = latestReject.value.action === 'REJECT' ? '驳回' : '复核'
-  return `${getStatusLabel(latestReject.value.nodeKey)} ${actionLabel}`
+  if (!latestOpinion.value) return ''
+  const action = latestOpinion.value.action
+  let label = '审核'
+  if (action === 'APPROVE') label = '通过'
+  else if (['REJECT', 'REJECT_TO_ASSESSMENT', 'REJECT_TO_TECH'].includes(action)) label = '驳回'
+  else if (['REVIEW', 'REVIEW_TO_COMPILE'].includes(action)) label = '复核'
+  return `${getStatusLabel(latestOpinion.value.nodeKey)} ${label}`
 })
 
 async function fetchData() {
   if (!props.bizId) return
   loading.value = true
   try {
-    const instance = await getInstanceByBiz(props.bizType, props.bizId) as any
+    const instance = (await getInstanceByBiz(props.bizType, props.bizId)) as any
     const logs: any[] = instance?.logs || instance?.actionLogs || []
-    // Filter REJECT and REVIEW actions, newest first
+    // 过滤所有审核动作 + 必须有 remark（避免没填意见的通过记录刷屏）
     records.value = logs
-      .filter((log: any) => ['REJECT', 'REVIEW', 'REJECT_TO_ASSESSMENT', 'REJECT_TO_TECH', 'REVIEW_TO_COMPILE'].includes(log.action))
+      .filter((log: any) =>
+        [
+          'APPROVE',
+          'REJECT',
+          'REVIEW',
+          'REJECT_TO_ASSESSMENT',
+          'REJECT_TO_TECH',
+          'REVIEW_TO_COMPILE',
+        ].includes(log.action) && (log.remark ?? '').trim().length > 0,
+      )
       .reverse()
       .map((log: any) => ({
         action: log.action,
@@ -64,8 +89,8 @@ async function fetchData() {
   }
 }
 
-
 function getActionTag(action: string) {
+  if (action === 'APPROVE') return { label: '通过', type: 'success' as const }
   if (['REJECT', 'REJECT_TO_ASSESSMENT', 'REJECT_TO_TECH'].includes(action))
     return { label: '驳回', type: 'danger' as const }
   return { label: '复核', type: 'warning' as const }
@@ -73,13 +98,15 @@ function getActionTag(action: string) {
 
 onMounted(fetchData)
 watch(() => [props.bizType, props.bizId], fetchData)
+
+defineExpose({ refresh: fetchData })
 </script>
 
 <template>
   <div v-if="!loading && records.length > 0">
-    <!-- 方案1: 最新驳回/复核原因醒目提示 -->
+    <!-- 最新一条审核意见醒目提示 -->
     <el-alert
-      v-if="latestReject"
+      v-if="latestOpinion"
       :title="alertTitle"
       :type="alertType"
       :closable="false"
@@ -88,14 +115,14 @@ watch(() => [props.bizType, props.bizId], fetchData)
     >
       <template #default>
         <div style="font-size: 13px">
-          <span style="font-weight: 500">{{ latestReject.operatorName }}</span>
-          <span style="color: #909399; margin-left: 8px">{{ formatTime(latestReject.createdAt) }}</span>
+          <span style="font-weight: 500">{{ latestOpinion.operatorName }}</span>
+          <span style="color: #909399; margin-left: 8px">{{ formatTime(latestOpinion.createdAt) }}</span>
         </div>
-        <div v-if="latestReject.remark" style="margin-top: 4px; white-space: pre-wrap">{{ latestReject.remark }}</div>
+        <div v-if="latestOpinion.remark" style="margin-top: 4px; white-space: pre-wrap">{{ latestOpinion.remark }}</div>
       </template>
     </el-alert>
 
-    <!-- 方案2: 全部驳回/复核记录列表 -->
+    <!-- 多条历史折叠展示 -->
     <el-collapse v-if="records.length > 1">
       <el-collapse-item name="history">
         <template #title>

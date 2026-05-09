@@ -3,7 +3,7 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { CascaderValue, FormInstance, FormRules } from 'element-plus'
-import { ArrowLeft, Plus, Delete, Upload, Download, Paperclip } from '@element-plus/icons-vue'
+import { ArrowLeft, Plus, Delete, Upload, Download, Paperclip, QuestionFilled } from '@element-plus/icons-vue'
 import { regionData } from '@/utils/region-data'
 import { createContract, updateContract, getContractDetail } from '@/api/contract'
 import type { ContractForm as ContractFormData } from '@/api/contract'
@@ -11,7 +11,7 @@ import { getCustomerPage, getCustomerContacts } from '@/api/customer'
 import type { CustomerItem, CustomerContact } from '@/api/customer'
 import { getPartnerList, createPartner } from '@/api/partner'
 import type { PartnerItem } from '@/api/partner'
-import RejectReasonPanel from '@/components/RejectReasonPanel.vue'
+import ReviewOpinionPanel from "@/components/ReviewOpinionPanel.vue"
 import { getUsersByRole } from '@/api/workflow'
 import { useAuthStore } from '@/stores/auth'
 import { formatTime } from '@/utils/format'
@@ -439,7 +439,7 @@ onMounted(() => {
       </h2>
     </div>
 
-    <RejectReasonPanel v-if="isEdit" biz-type="CONTRACT" :biz-id="contractId!" />
+    <ReviewOpinionPanel v-if="isEdit" biz-type="CONTRACT" :biz-id="contractId!" />
 
     <el-card shadow="never">
       <el-form
@@ -531,7 +531,24 @@ onMounted(() => {
                 <el-option v-for="t in serviceContentOptions" :key="t" :label="t" :value="t" />
               </el-select>
             </el-form-item>
-            <el-form-item label="合同类型" prop="contractType">
+            <el-form-item prop="contractType">
+              <template #label>
+                <span style="display: inline-flex; align-items: center; gap: 4px">
+                  合同类型
+                  <el-tooltip placement="top">
+                    <template #content>
+                      <div style="line-height: 1.7">
+                        <div><b>自主</b>：无第三方</div>
+                        <div><b>直接合作</b>：第三方为付款方</div>
+                        <div><b>间接合作</b>：本公司为付款方</div>
+                      </div>
+                    </template>
+                    <el-icon style="color: var(--el-text-color-placeholder); cursor: help; font-size: 14px">
+                      <QuestionFilled />
+                    </el-icon>
+                  </el-tooltip>
+                </span>
+              </template>
               <el-radio-group v-model="formData.contractType">
                 <el-radio v-for="t in contractTypeOptions" :key="t" :value="t">{{ t }}</el-radio>
               </el-radio-group>
