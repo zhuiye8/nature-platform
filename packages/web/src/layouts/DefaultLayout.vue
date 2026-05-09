@@ -106,13 +106,17 @@ function getTimeAgo(dateStr: string): string {
 }
 
 function getRefRoute(item: NotificationItem): string {
+  // 优先用后端写入的 target_url（2026-05-08 新增字段，含完整跳转路径，
+  // 待办类通知会跳工作流任务审核页 /workflow/task/{taskId}，
+  // 知情类通知会跳业务详情页）
+  if (item.targetUrl) return item.targetUrl
+
+  // 降级：老通知 target_url=NULL，按 refType + refId 映射到详情页（向前兼容）
   const typeRouteMap: Record<string, string> = {
     CONTRACT: `/contract/${item.refId}`,
     PROJECT: `/project/${item.refId}`,
     PROJECT_REGISTER: `/project/${item.refId}`,
-    // 材料归档相关通知（归档员待办 / 销售/PM/部门经理知情抄送）都跳归档详情页
     MATERIAL_ARCHIVE: `/archive/${item.refId}`,
-    // 财务相关
     INVOICE: `/finance/invoice/${item.refId}`,
     EXPENSE: `/finance/expense/${item.refId}`,
   }
@@ -349,7 +353,15 @@ onUnmounted(() => {
                   <span v-if="!item.readFlag" class="n-notification-item__dot" />
                   <div class="n-notification-item__content">
                     <div class="n-notification-item__title">{{ item.title }}</div>
-                    <div class="n-notification-item__desc">{{ item.content }}</div>
+                    <!-- 列表 desc 截断 3 行，hover tooltip 看完整文本（含审核意见全文）-->
+                    <el-tooltip
+                      :content="item.content"
+                      placement="left"
+                      :show-after="500"
+                      raw-content
+                    >
+                      <div class="n-notification-item__desc" style="white-space: pre-wrap">{{ item.content }}</div>
+                    </el-tooltip>
                     <div class="n-notification-item__time">{{ getTimeAgo(item.createdAt) }}</div>
                   </div>
                 </div>

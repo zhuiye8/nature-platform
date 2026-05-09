@@ -8,6 +8,8 @@ export interface NotificationItem {
   eventType: string
   refType: string
   refId: number
+  /** 完整跳转路径 — 优先使用，老通知 NULL 时降级到 refType + refId 映射 */
+  targetUrl?: string | null
   readFlag: boolean
   createdAt: string
 }

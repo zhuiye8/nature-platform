@@ -38,6 +38,28 @@ export class NotificationListener {
     private readonly notificationService: NotificationService,
   ) {}
 
+  // ─── target_url 拼接辅助 ─────────────────────────────────────────
+  // 待办类通知 → 跳工作流任务审核页
+  private buildTaskUrl(taskId: number): string {
+    return `/workflow/task/${taskId}`;
+  }
+
+  // 业务知情类通知 → 跳业务详情页
+  private buildBizUrl(bizType: string, bizId: number): string {
+    if (bizType === 'CONTRACT') return `/contract/${bizId}`;
+    if (bizType === 'PROJECT_REGISTER') return `/project/${bizId}`;
+    if (bizType === 'MATERIAL_ARCHIVE') return `/archive/${bizId}`;
+    if (bizType === 'INVOICE') return `/finance/invoice/${bizId}`;
+    if (bizType === 'EXPENSE') return `/finance/expense/${bizId}`;
+    return '/dashboard';
+  }
+
+  // 拼接审核意见到通知 content：有 remark 时附加 "，意见：「xxx」"
+  private appendOpinion(content: string, remark: string | null | undefined): string {
+    const r = (remark ?? '').trim();
+    return r ? `${content}\n意见：「${r}」` : content;
+  }
+
   // Nodes that represent the initiator's own action — no need to notify them
   // about a task they just created themselves.
   private static readonly SILENT_NODES = new Set([
@@ -73,6 +95,7 @@ export class NotificationListener {
         'TASK_CREATED',
         payload.bizType,
         payload.bizId,
+        this.buildTaskUrl(payload.taskId),
       );
     } else {
       // Pool mode — notify eligible users
@@ -145,8 +168,8 @@ export class NotificationListener {
           }
         }
 
-        // 发"待办任务"文案给归档员
-        // refType='MATERIAL_ARCHIVE' 让前端点击跳转到归档详情页而非项目详情页
+        // 发"待办任务"文案给档案管理员（archiver）
+        // 待办类 → 跳工作流任务审核页
         for (const userId of archiverIds) {
           await this.notificationService.createNotification(
             userId,
@@ -155,10 +178,11 @@ export class NotificationListener {
             'TASK_CREATED',
             'MATERIAL_ARCHIVE',
             payload.bizId,
+            this.buildTaskUrl(payload.taskId),
           );
         }
 
-        // 发"知情抄送"文案给销售/PM/部门经理 (跳过已收到待办的人，避免重复)
+        // 发"知情抄送"文案给销售/PM/部门经理 — 跳归档详情页（不是任务页）
         for (const userId of informationalIds) {
           if (archiverIds.has(userId)) continue;
           await this.notificationService.createNotification(
@@ -168,6 +192,7 @@ export class NotificationListener {
             'ARCHIVE_STARTED',
             'MATERIAL_ARCHIVE',
             payload.bizId,
+            `/archive/${payload.bizId}`,
           );
         }
 
@@ -245,6 +270,7 @@ export class NotificationListener {
           'TASK_CREATED',
           payload.bizType,
           payload.bizId,
+          this.buildTaskUrl(payload.taskId),
         );
       }
       this.logger.log(`Notified ${userIds.size} users for pool task`);
@@ -284,10 +310,14 @@ export class NotificationListener {
         await this.notificationService.createNotification(
           w.userId,
           '编制报告需要修改',
-          `项目「${projectName}」的编制报告需要修改，最终审核提出了意见，请前往报告详情页修改后重新提交`,
+          this.appendOpinion(
+            `项目「${projectName}」的编制报告需要修改，最终审核（FINAL_REVIEW）提出了意见，请前往报告详情页修改后重新提交`,
+            payload.remark,
+          ),
           'TASK_REVIEW',
           payload.bizType,
           payload.bizId,
+          this.buildTaskUrl(payload.taskId),
         );
       }
       return;
@@ -305,10 +335,14 @@ export class NotificationListener {
     await this.notificationService.createNotification(
       pmId,
       `质量审核需要整改：${nodeLabel}`,
-      `项目「${projectName}」的${nodeLabel}需要整改，请前往现场测评详情页修改测评成果后重新提交`,
+      this.appendOpinion(
+        `项目「${projectName}」的${nodeLabel}需要整改，请前往现场测评详情页修改测评成果后重新提交`,
+        payload.remark,
+      ),
       'TASK_REVIEW',
       payload.bizType,
       payload.bizId,
+      this.buildTaskUrl(payload.taskId),
     );
   }
 
@@ -325,6 +359,8 @@ export class NotificationListener {
     // Notify all original reviewers that the PM has resubmitted
     const bizLabel = this.getBizTypeLabel(payload.bizType);
     const bizName = await this.getBizDisplayName(payload.bizType, payload.bizId);
+    // 重新提交后会创建新的待办任务，但 payload 里只有原 taskIds 数组，
+    // 新生成的任务 id 在 payload.taskIds 里不一定包含，安全做法是跳业务详情页
     for (const assigneeId of payload.assigneeIds) {
       this.logger.log(
         `Notifying reviewer #${assigneeId} about resubmission at ${payload.nodeKey}`,
@@ -336,6 +372,7 @@ export class NotificationListener {
         'TASK_RESUBMITTED',
         payload.bizType,
         payload.bizId,
+        this.buildBizUrl(payload.bizType, payload.bizId),
       );
     }
   }
@@ -373,6 +410,7 @@ export class NotificationListener {
           'CONTRACT_ARCHIVED',
           payload.bizType,
           payload.bizId,
+          this.buildBizUrl(payload.bizType, payload.bizId),
         );
       }
       return;
@@ -386,14 +424,17 @@ export class NotificationListener {
         await this.notificationService.createNotification(
           uid,
           '审核已通过',
-          `您提交的${bizLabel}「${bizName}」审核已通过`,
+          this.appendOpinion(
+            `您提交的${bizLabel}「${bizName}」审核已通过`,
+            payload.remark,
+          ),
           'WORKFLOW_APPROVED',
           payload.bizType,
           payload.bizId,
+          this.buildBizUrl(payload.bizType, payload.bizId),
         );
       }
     } else if (payload.event === 'REJECT') {
-      const reason = payload.remark ?? '';
       const bizName = await this.getBizDisplayName(payload.bizType, payload.bizId);
       const bizLabel = this.getBizTypeLabel(payload.bizType);
       for (const uid of notifyIds) {
@@ -401,10 +442,14 @@ export class NotificationListener {
         await this.notificationService.createNotification(
           uid,
           '审核被驳回',
-          `您提交的${bizLabel}「${bizName}」被驳回${reason ? '：' + reason : ''}`,
+          this.appendOpinion(
+            `您提交的${bizLabel}「${bizName}」被驳回`,
+            payload.remark,
+          ),
           'WORKFLOW_REJECTED',
           payload.bizType,
           payload.bizId,
+          this.buildBizUrl(payload.bizType, payload.bizId),
         );
       }
     }
@@ -531,6 +576,7 @@ export class NotificationListener {
         eventType,
         'PROJECT_REGISTER',
         projectId,
+        `/project/${projectId}`,
       );
     }
     this.logger.log(
@@ -569,6 +615,7 @@ export class NotificationListener {
         'MEMBER_ASSIGNED',
         'PROJECT_REGISTER',
         payload.projectId,
+        `/project/${payload.projectId}`,
       );
     }
     this.logger.log(

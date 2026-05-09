@@ -59,6 +59,7 @@ export class NotificationService {
     eventType: string,
     refType?: string,
     refId?: number,
+    targetUrl?: string | null,
   ) {
     const result = await this.db
       .insert(systemNotification)
@@ -69,6 +70,7 @@ export class NotificationService {
         eventType,
         refType: refType ?? null,
         refId: refId ?? null,
+        targetUrl: targetUrl ?? null,
         readFlag: false,
       })
       .returning();

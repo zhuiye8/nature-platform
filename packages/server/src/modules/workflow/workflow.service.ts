@@ -488,7 +488,9 @@ export class WorkflowService {
         return this.loadInstance(tx, instanceId);
       }
 
-      await this.advanceToNextNode(txDb, instance, nodeDef, event, operatorId, extraData);
+      // 把 signal(remark) 入参一路传给 advanceToNextNode → emit 'workflow.node.completed'
+      // 让 notification.listener 能拿到审核意见拼接到通知 content
+      await this.advanceToNextNode(txDb, instance, nodeDef, event, operatorId, remark, extraData);
 
       return this.loadInstance(tx, instanceId);
     });
@@ -1121,9 +1123,12 @@ export class WorkflowService {
     fromNodeDef: typeof wfNode.$inferSelect,
     event: string,
     operatorId: number,
+    remark?: string | null,
     extraData?: Record<string, any>,
   ): Promise<void> {
-    // Emit node-completed event for listeners (includes extraData for contextual actions)
+    // Emit node-completed event for listeners (includes remark + extraData)
+    // remark 来自审核人在 TaskDetail.vue 那个 textarea 填的"审核意见"，
+    // 由 signal(dto.remark) 一路传到这里。listener 用它拼接到通知 content。
     this.eventEmitter.emit('workflow.node.completed', {
       bizType: instance.bizType,
       bizId: instance.bizId,
@@ -1131,6 +1136,7 @@ export class WorkflowService {
       nodeKey: fromNodeDef.nodeKey,
       event,
       operatorId,
+      remark,
       extraData,
     });
 
@@ -1258,7 +1264,8 @@ export class WorkflowService {
     };
 
     const event = await handler.resolveCompletionEvent(ctx);
-    await this.advanceToNextNode(db, instance, nodeDef, event, operatorId);
+    // AUTO 节点无人工操作，没有审核 remark，传 null
+    await this.advanceToNextNode(db, instance, nodeDef, event, operatorId, null);
   }
 
   /**
