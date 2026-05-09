@@ -1,0 +1,1 @@
+ALTER TABLE "system_notification" ADD COLUMN "target_url" varchar(255);

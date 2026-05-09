@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Delete } from '@element-plus/icons-vue'
 import type { CascaderValue, FormInstance, FormRules } from 'element-plus'
-import { createCustomer, updateCustomer, getCustomerDetail } from '@/api/customer'
+import { useRouter } from 'vue-router'
+import { createCustomer, updateCustomer, getCustomerDetail, checkCustomerName } from '@/api/customer'
 import type { CustomerForm as CustomerFormData, ContactFormItem } from '@/api/customer'
 import { regionData } from '@/utils/region-data'
-import { INDUSTRY_GROUPS } from '@nature/shared'
+import { INDUSTRY_GROUPS, isValidUSCC } from '@nature/shared'
+
+const router = useRouter()
 
 // 行业分组选项 — 与项目登记的"被测单位行业"共享同一份等保监管分类枚举
 const industryGroups = INDUSTRY_GROUPS
@@ -54,8 +57,68 @@ const formData = ref<CustomerFormData>({
   contacts: [emptyContact()],
 })
 
+// 异步校验器：失焦时检查客户名称是否已存在（同名禁止 + 跳转到该客户详情页）
+const checkDuplicateFullName = async (
+  _rule: any,
+  value: string,
+  callback: (err?: Error) => void,
+) => {
+  if (!value?.trim()) return callback()
+  try {
+    const res = (await checkCustomerName(
+      value.trim(),
+      props.customerId ?? undefined,
+    )) as any
+    if (res?.exists) {
+      callback(new Error(`已存在同名客户「${value}」`))
+      // 弹"去查看"按钮，点击直接跳到该客户的详情页（之前是跳列表）
+      ElMessageBox.confirm(
+        `客户「${value}」已存在（信用代码: ${res.customer?.uscc ?? '--'}），是否前往查看？`,
+        '同名客户提醒',
+        { confirmButtonText: '去查看', cancelButtonText: '取消', type: 'warning' },
+      )
+        .then(() => {
+          emit('update:visible', false)
+          router.push(`/customer/${res.customer.id}`)
+        })
+        .catch(() => {})
+      return
+    }
+    callback()
+  } catch {
+    callback() // 网络错误时不阻塞
+  }
+}
+
+// USCC 分级精确提示：长度 → 字符集 → 校验码
+// 每条 message 控制在 15 字内，避免被下方 form-item 遮盖
+const validateUSCC = (_rule: any, value: string, callback: (err?: Error) => void) => {
+  if (!value) return callback() // required 校验另外管
+  const v = value.trim()
+  if (v.length !== 18) {
+    return callback(new Error(`需 18 位（当前 ${v.length} 位）`))
+  }
+  if (!/^[0-9A-HJ-NP-RTUWXY]{18}$/.test(v)) {
+    return callback(new Error('含非法字符（不应有 I/O/Z/S/V）'))
+  }
+  if (!isValidUSCC(v)) {
+    return callback(new Error('末位校验码不正确，请核对原件'))
+  }
+  callback()
+}
+
 const rules: FormRules = {
-  fullName: [{ required: true, message: '请输入客户名称', trigger: 'blur' }],
+  fullName: [
+    { required: true, message: '请输入客户名称', trigger: 'blur' },
+    { validator: checkDuplicateFullName, trigger: 'blur' },
+  ],
+  uscc: [
+    { required: true, message: '请输入统一社会信用代码', trigger: 'blur' },
+    { validator: validateUSCC, trigger: 'blur' },
+  ],
+  industry: [{ required: true, message: '请选择行业', trigger: 'change' }],
+  region: [{ required: true, message: '请选择区域', trigger: 'change' }],
+  addressDetail: [{ required: true, message: '请输入地址', trigger: 'blur' }],
 }
 
 const isEdit = ref(false)
@@ -129,8 +192,23 @@ async function handleSubmit() {
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) return
 
-  // Filter out empty contacts
-  const contacts = (formData.value.contacts || []).filter(c => c.contactName.trim())
+  // 联系人校验：每一条联系人姓名 + 电话必填
+  const contacts = formData.value.contacts || []
+  if (contacts.length === 0) {
+    ElMessage.warning('请至少添加一条联系人')
+    return
+  }
+  for (let i = 0; i < contacts.length; i++) {
+    const c = contacts[i]
+    if (!c.contactName?.trim()) {
+      ElMessage.warning(`第 ${i + 1} 条联系人姓名必填`)
+      return
+    }
+    if (!c.contactPhone?.trim()) {
+      ElMessage.warning(`第 ${i + 1} 条联系人电话必填`)
+      return
+    }
+  }
 
   submitLoading.value = true
   try {
@@ -172,8 +250,8 @@ async function handleSubmit() {
         <el-form-item label="客户名称" prop="fullName">
           <el-input v-model="formData.fullName" placeholder="请输入客户名称" />
         </el-form-item>
-        <el-form-item label="信用代码" prop="uscc">
-          <el-input v-model="formData.uscc" placeholder="统一社会信用代码" />
+        <el-form-item label="信用代码" prop="uscc" style="margin-bottom: 28px">
+          <el-input v-model="formData.uscc" placeholder="18 位真实统一社会信用代码（例：91320000XXXXXXXXXX）" maxlength="18" />
         </el-form-item>
         <el-form-item label="行业" prop="industry">
           <el-select v-model="formData.industry" filterable placeholder="请选择行业" style="width: 100%">

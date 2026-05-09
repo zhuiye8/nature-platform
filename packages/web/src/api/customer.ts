@@ -69,3 +69,14 @@ export function updateCustomer(id: number, data: Partial<CustomerForm>) {
 export function deleteCustomer(id: number) {
   return request.delete(`/customer/${id}`)
 }
+
+// 按客户名称精确查重（新建客户失焦时调用）
+export interface CheckNameResult {
+  exists: boolean
+  customer?: { id: number; fullName: string; uscc: string | null }
+}
+export function checkCustomerName(fullName: string, excludeId?: number) {
+  return request.get<CheckNameResult>('/customer/check-name', {
+    params: { fullName, excludeId },
+  })
+}

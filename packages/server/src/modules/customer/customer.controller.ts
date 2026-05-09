@@ -32,6 +32,20 @@ export class CustomerController {
     return this.customerService.findPage(query);
   }
 
+  // 按客户名称精确查重 — 前端新建客户失焦时调用
+  // 返回 { exists: true, customer: {id, fullName, uscc} } 或 { exists: false }
+  @Get('check-name')
+  @RequirePermission('customer:list')
+  async checkName(
+    @Query('fullName') fullName: string,
+    @Query('excludeId') excludeId?: string,
+  ) {
+    return this.customerService.findByFullName(
+      fullName,
+      excludeId ? Number(excludeId) : undefined,
+    );
+  }
+
   @Get(':id/contacts')
   @RequirePermission('customer:list')
   async findContacts(@Param('id', ParseIntPipe) id: number) {

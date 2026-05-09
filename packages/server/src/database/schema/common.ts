@@ -20,6 +20,9 @@ export const systemNotification = pgTable('system_notification', {
   eventType: varchar('event_type', { length: 64 }),
   refType: varchar('ref_type', { length: 64 }),
   refId: bigint('ref_id', { mode: 'number' }),
+  // 完整跳转路径（如 /workflow/task/123 或 /archive/45）— listener 创建通知时直接拼好
+  // 优先级高于 refType + refId 的旧映射规则；老通知 NULL → 前端降级到旧映射
+  targetUrl: varchar('target_url', { length: 255 }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
