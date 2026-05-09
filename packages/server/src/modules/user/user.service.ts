@@ -74,6 +74,9 @@ export class UserService {
           sourceType: userAccount.sourceType,
           deptId: userAccount.deptId,
           certificateNo: userAccount.certificateNo,
+          // 钉钉（DingTalk）绑定标识 — 前端用户管理列表用 dingUnionId 是否非 null
+          // 判断"已绑定 / 未绑定"。漏了这个字段会导致全部展示"未绑定"
+          dingUnionId: userAccount.dingUnionId,
           createdAt: userAccount.createdAt,
         })
         .from(userAccount)
@@ -117,6 +120,8 @@ export class UserService {
         sourceType: userAccount.sourceType,
         deptId: userAccount.deptId,
         certificateNo: userAccount.certificateNo,
+        // 与 findPage 保持一致返回钉钉（DingTalk）绑定标识
+        dingUnionId: userAccount.dingUnionId,
         createdAt: userAccount.createdAt,
       })
       .from(userAccount)

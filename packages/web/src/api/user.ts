@@ -10,6 +10,8 @@ export interface UserItem {
   sourceType: string
   deptId: number | null
   certificateNo: string | null
+  /** 钉钉（DingTalk）绑定标识 — 非 null 视为"已绑定"，列表 UserList.vue 用此字段渲染 el-tag */
+  dingUnionId: string | null
   roles?: string[]
   createdAt: string
 }
