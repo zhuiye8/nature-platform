@@ -594,14 +594,23 @@ onMounted(() => {
           </template>
           <span v-else>--</span>
         </el-descriptions-item>
+        <!-- 合同归档状态：始终展示（待归档 / 部分归档 / 已归档），帮助审核人判断流程路径 -->
+        <el-descriptions-item label="合同归档状态">
+          <el-tag
+            :type="contractData.archiveStatus === 'ARCHIVED' ? 'success'
+              : contractData.archiveStatus === 'PARTIAL_ARCHIVE' ? 'warning' : 'info'"
+            size="small"
+          >
+            {{
+              contractData.archiveStatus === 'ARCHIVED' ? '已归档'
+                : contractData.archiveStatus === 'PARTIAL_ARCHIVE' ? '部分归档'
+                : '待归档'
+            }}
+          </el-tag>
+        </el-descriptions-item>
         <template v-if="contractData.archiveStatus === 'ARCHIVED' || contractData.archiveStatus === 'PARTIAL_ARCHIVE'">
-          <el-descriptions-item label="归档状态">
-            <el-tag :type="contractData.archiveStatus === 'ARCHIVED' ? 'success' : 'warning'" size="small">
-              {{ contractData.archiveStatus === 'ARCHIVED' ? '已归档' : '部分归档' }}
-            </el-tag>
-          </el-descriptions-item>
           <el-descriptions-item label="归档人">{{ contractData.archivedByName || '--' }}</el-descriptions-item>
-          <el-descriptions-item label="归档时间" :span="2">{{ contractData.archivedAt ? formatTime(contractData.archivedAt) : '--' }}</el-descriptions-item>
+          <el-descriptions-item label="归档时间">{{ contractData.archivedAt ? formatTime(contractData.archivedAt) : '--' }}</el-descriptions-item>
         </template>
       </el-descriptions>
 

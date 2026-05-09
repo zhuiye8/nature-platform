@@ -11,7 +11,7 @@ import { getInstanceByBiz } from '@/api/workflow'
 import type { InstanceDetail, TaskItem } from '@/api/workflow'
 import { getFileDownloadPath, getFilePreviewPath, getFileList, type FileItem } from '@/api/file'
 import { useAuthStore } from '@/stores/auth'
-import RejectReasonPanel from '@/components/RejectReasonPanel.vue'
+import ReviewOpinionPanel from "@/components/ReviewOpinionPanel.vue"
 import SystemItemDetailDialog from '@/components/SystemItemDetailDialog.vue'
 import AssessorLevelTag from '@/components/AssessorLevelTag.vue'
 import ReportWriterCard from '@/components/ReportWriterCard.vue'
@@ -190,7 +190,8 @@ onMounted(() => {
         </div>
       </template>
 
-      <RejectReasonPanel v-if="project?.status === 'REJECTED'" biz-type="PROJECT_REGISTER" :biz-id="project.id" />
+      <!-- 审核意见展示（通过/驳回/复核都展示，组件内部对无意见自动隐藏）-->
+      <ReviewOpinionPanel v-if="project" biz-type="PROJECT_REGISTER" :biz-id="project.id" />
 
       <template v-if="project">
         <!-- 基本信息 -->
@@ -227,14 +228,23 @@ onMounted(() => {
           <el-descriptions-item label="合作方">{{ (project as any).partnerName || '--' }}</el-descriptions-item>
           <el-descriptions-item label="服务年份">{{ ((project as any).serviceYears || []).map((y: number) => y + '年').join('、') || '--' }}</el-descriptions-item>
           <el-descriptions-item label="合同金额">{{ (project as any).paymentAmount ? `¥${Number((project as any).paymentAmount).toLocaleString()}` : '--' }}</el-descriptions-item>
+          <!-- 合同归档状态：始终展示（待归档 / 部分归档 / 已归档）。归档人/时间仅在已归档/部分归档时展示 -->
+          <el-descriptions-item label="合同归档状态">
+            <el-tag
+              :type="(project as any).contractArchiveStatus === 'ARCHIVED' ? 'success'
+                : (project as any).contractArchiveStatus === 'PARTIAL_ARCHIVE' ? 'warning' : 'info'"
+              size="small"
+            >
+              {{
+                (project as any).contractArchiveStatus === 'ARCHIVED' ? '已归档'
+                  : (project as any).contractArchiveStatus === 'PARTIAL_ARCHIVE' ? '部分归档'
+                  : '待归档'
+              }}
+            </el-tag>
+          </el-descriptions-item>
           <template v-if="(project as any).contractArchiveStatus === 'ARCHIVED' || (project as any).contractArchiveStatus === 'PARTIAL_ARCHIVE'">
-            <el-descriptions-item label="归档状态">
-              <el-tag :type="(project as any).contractArchiveStatus === 'ARCHIVED' ? 'success' : 'warning'" size="small">
-                {{ (project as any).contractArchiveStatus === 'ARCHIVED' ? '已归档' : '部分归档' }}
-              </el-tag>
-            </el-descriptions-item>
             <el-descriptions-item label="归档人">{{ (project as any).contractArchivedByName || '--' }}</el-descriptions-item>
-            <el-descriptions-item label="归档时间" :span="2">{{ (project as any).contractArchivedAt ? formatTime((project as any).contractArchivedAt) : '--' }}</el-descriptions-item>
+            <el-descriptions-item label="归档时间">{{ (project as any).contractArchivedAt ? formatTime((project as any).contractArchivedAt) : '--' }}</el-descriptions-item>
           </template>
         </el-descriptions>
 

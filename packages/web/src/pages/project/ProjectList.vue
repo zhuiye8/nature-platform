@@ -118,6 +118,14 @@ async function handleSubmit(row: ProjectItem) {
       }
     }
 
+    // 合同未归档场景 → 走部门经理（dept_manager）确认 DEPT_REVIEW 节点 → 备注必填
+    // 合同已归档（archive_status='ARCHIVED'）→ 跳过 DEPT_REVIEW → 备注选填
+    const contractArchived = detail?.contractArchiveStatus === 'ARCHIVED'
+    if (!contractArchived && !detail?.remark?.trim()) {
+      ElMessage.warning('合同未归档，提交项目登记时必须填写备注（部门经理审核时会查看）。请回到编辑页填写备注后再提交。')
+      return
+    }
+
     await ElMessageBox.confirm('确定要提交该项目进行审核吗？', '提交确认', {
       confirmButtonText: '确定',
       cancelButtonText: '取消',

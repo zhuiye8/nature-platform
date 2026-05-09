@@ -10,9 +10,11 @@ import { useAuthStore } from '@/stores/auth'
 import { getContractPage, getContractDetail } from '@/api/contract'
 import { regionData } from '@/utils/region-data'
 import type { ContractItem } from '@/api/contract'
-import RejectReasonPanel from '@/components/RejectReasonPanel.vue'
+import ReviewOpinionPanel from "@/components/ReviewOpinionPanel.vue"
 import { deleteFile, uploadFileRaw } from '@/api/file'
 import { INDUSTRY_GROUPS } from '@nature/shared'
+import { SERVICE_CONTENT_TAG_TYPE } from '@/utils/enums'
+import { formatTime } from '@/utils/format'
 
 const route = useRoute()
 const router = useRouter()
@@ -162,6 +164,18 @@ const rules: FormRules = {
   contractId: [{ required: true, message: '请选择合同', trigger: 'change' }],
   contractYear: [{ required: true, message: '请选择年度', trigger: 'change' }],
   applicationName: [{ required: true, message: '请输入申请单名称', trigger: 'blur' }],
+  // 备注：合同未归档场景下必填（中文 message 替代 Element Plus 默认的"remark is required"）
+  remark: [
+    {
+      validator: (_rule: any, value: string, callback: (err?: Error) => void) => {
+        if (requiresRemark.value && !value?.trim()) {
+          return callback(new Error('合同未归档场景下，提交项目登记必须填写备注'))
+        }
+        callback()
+      },
+      trigger: 'blur',
+    },
+  ],
 }
 
 // Contract selector
@@ -171,6 +185,15 @@ const selectedContractName = ref('')
 // Full contract detail (including customer region / address / contact) used to
 // auto-fill defaults when adding a new system item.
 const selectedContractDetail = ref<ContractItem | null>(null)
+
+// 当前选中合同是否未归档（决定提交后是否走部门经理确认 DEPT_REVIEW 节点）
+// 合同已归档 archive_status='ARCHIVED' → 跳过部门经理审核 → 备注选填
+// 否则 → 走部门经理审核 → 备注必填（让部门经理审核时能看到提交原因）
+const requiresRemark = computed(() => {
+  const detail = selectedContractDetail.value as any
+  if (!detail) return false
+  return detail.archiveStatus !== 'ARCHIVED'
+})
 
 // System quota
 const systemQuota = ref<ContractSystemQuota | null>(null)
@@ -478,6 +501,11 @@ async function handleSubmit() {
     return
   }
 
+  // 注意：备注必填校验放在"提交审核"动作里（ProjectList.vue:handleSubmit），
+  // 这里的 handleSubmit 只是保存草稿/项目，不强制 remark 必填。
+  // ProjectForm 的视觉高亮（warning alert + 黄标签）只是提醒用户：
+  // "现在的合同未归档状态下，将来你点提交审核时备注会必填"。
+
   // Edit mode: validate system items
   if (isEdit.value) {
     if (formData.value.systemItems.length === 0) {
@@ -596,7 +624,7 @@ onMounted(async () => {
       </h2>
     </div>
 
-    <RejectReasonPanel v-if="isEdit" biz-type="PROJECT_REGISTER" :biz-id="projectId!" />
+    <ReviewOpinionPanel v-if="isEdit" biz-type="PROJECT_REGISTER" :biz-id="projectId!" />
 
     <el-card shadow="never">
       <el-form
@@ -648,12 +676,99 @@ onMounted(async () => {
         <el-form-item label="申请单名称" prop="applicationName">
           <el-input v-model="formData.applicationName" placeholder="选择合同和年度后自动生成" disabled />
         </el-form-item>
-        <el-form-item label="备注" prop="remark">
+
+        <!-- ── 关联合同信息（选了合同后展示，便于一眼看到合同状态/客户/金额/归档状态）── -->
+        <el-card
+          v-if="selectedContractDetail"
+          shadow="never"
+          style="margin: 0 0 16px 120px; max-width: 1000px"
+          body-style="padding: 12px 16px"
+        >
+          <template #header>
+            <span style="font-weight: 600; font-size: 14px">关联合同信息</span>
+          </template>
+          <el-descriptions :column="2" border size="small">
+            <el-descriptions-item label="合同编号">{{ (selectedContractDetail as any).contractNo || '--' }}</el-descriptions-item>
+            <el-descriptions-item label="合同名称">{{ selectedContractDetail.contractName || '--' }}</el-descriptions-item>
+            <el-descriptions-item label="客户名称">{{ (selectedContractDetail as any).customerName || '--' }}</el-descriptions-item>
+            <el-descriptions-item label="服务内容">
+              <el-tag
+                v-if="(selectedContractDetail as any).serviceContent"
+                :type="SERVICE_CONTENT_TAG_TYPE[(selectedContractDetail as any).serviceContent] || 'info'"
+                size="small"
+              >
+                {{ (selectedContractDetail as any).serviceContent }}
+              </el-tag>
+              <span v-else>--</span>
+            </el-descriptions-item>
+            <el-descriptions-item label="合同金额">
+              {{
+                (selectedContractDetail as any).paymentAmount
+                  ? `¥${Number((selectedContractDetail as any).paymentAmount).toLocaleString()}`
+                  : '--'
+              }}
+            </el-descriptions-item>
+            <el-descriptions-item label="合作方">{{ (selectedContractDetail as any).partnerName || '--' }}</el-descriptions-item>
+            <el-descriptions-item label="签单销售">{{ (selectedContractDetail as any).salesPersonName || '--' }}</el-descriptions-item>
+            <!-- 合同归档状态：始终展示（待归档 / 部分归档 / 已归档），决定提交项目登记是否走部门经理审核 -->
+            <el-descriptions-item label="合同归档状态">
+              <el-tag
+                :type="(selectedContractDetail as any).archiveStatus === 'ARCHIVED' ? 'success'
+                  : (selectedContractDetail as any).archiveStatus === 'PARTIAL_ARCHIVE' ? 'warning' : 'info'"
+                size="small"
+              >
+                {{
+                  (selectedContractDetail as any).archiveStatus === 'ARCHIVED' ? '已归档'
+                    : (selectedContractDetail as any).archiveStatus === 'PARTIAL_ARCHIVE' ? '部分归档'
+                    : '待归档'
+                }}
+              </el-tag>
+            </el-descriptions-item>
+            <template
+              v-if="(selectedContractDetail as any).archiveStatus === 'ARCHIVED'
+                || (selectedContractDetail as any).archiveStatus === 'PARTIAL_ARCHIVE'"
+            >
+              <el-descriptions-item label="归档时间">
+                {{ (selectedContractDetail as any).archivedAt ? formatTime((selectedContractDetail as any).archivedAt) : '--' }}
+              </el-descriptions-item>
+            </template>
+          </el-descriptions>
+        </el-card>
+
+        <!-- 合同未归档时，提交项目登记会增加一步"部门经理确认"节点，备注必填 -->
+        <el-alert
+          v-if="requiresRemark"
+          type="warning"
+          :closable="false"
+          show-icon
+          style="margin: 0 0 8px 120px; max-width: 1000px"
+        >
+          <template #title>
+            当前合同<strong>还未归档</strong>，请联系商务同事进行归档。仍要提交请<strong>在下方备注说明提交原因</strong>，供部门经理在审核时查看。
+          </template>
+        </el-alert>
+
+        <!-- 黄色"合同未归档场景必填"标签独立一行（不再挤在 label 旁）-->
+        <div v-if="requiresRemark" style="margin: 0 0 4px 120px">
+          <el-tag type="warning" size="small" effect="dark" style="font-weight: normal">
+            合同未归档场景必填
+          </el-tag>
+        </div>
+
+        <!-- 注意：不要用 :required，那会让 Element Plus 注入自己的英文 required 校验，
+             盖掉 rules.remark 里的中文 message。改用自定义 #label slot 显示红色 *。 -->
+        <el-form-item prop="remark">
+          <template #label>
+            <span v-if="requiresRemark" style="color: var(--el-color-danger); margin-right: 4px">*</span>
+            备注
+          </template>
           <el-input
             v-model="formData.remark"
             type="textarea"
             :rows="3"
-            placeholder="请输入备注"
+            :placeholder="requiresRemark
+              ? '⚠ 合同未归档，请说明提交原因（部门经理审核时会看到）'
+              : '请输入备注'"
           />
         </el-form-item>
 
