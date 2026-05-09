@@ -628,6 +628,13 @@ export class ProjectService {
       .limit(1);
 
     const skip_dept_review = contractRow[0]?.archiveStatus === 'ARCHIVED';
+    // 合同未归档 → 提交项目登记会走部门经理（dept_manager）确认 DEPT_REVIEW 节点
+    //                → 强制要求 remark 非空，让部门经理审核时能看到提交原因
+    if (!skip_dept_review && !existing.remark?.trim()) {
+      throw new BadRequestException(
+        '合同未归档，提交项目登记时必须填写备注（部门经理审核时会查看）',
+      );
+    }
     // variables.reviewerRoleCode is read by ReviewHandler when entering DEPT_REVIEW
     // or DIRECTOR_REVIEW to pick the correct pool role.
     // variables.skipDeptReview is read by WorkflowService.advanceToNextNode via
