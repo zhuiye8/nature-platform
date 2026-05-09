@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Refresh, Plus, Upload, Download, Paperclip, Delete } from '@element-plus/icons-vue'
+import { Search, Refresh, Plus, Upload, Download, Paperclip, Delete, QuestionFilled } from '@element-plus/icons-vue'
 import { getStatusLabel, getStatusTagType } from '@/utils/status-map'
 import { formatTime } from '@/utils/format'
 import {
@@ -134,6 +134,36 @@ function isMyContract(row: any) {
 
 function isDraftOrRejected(row: any) {
   return row.reviewStatus === 'DRAFT' || row.reviewStatus === 'REJECTED'
+}
+
+// ── 合同组归档进度 ──
+// 显示规则:
+//   - 全 0（组下都是草稿/审核中）→ "-"
+//   - 已审核通过的 + 已归档：用 已归档 N/M 形式，N=已归档数，M=已审核通过数
+//   - 草稿/审核中/驳回：归到"进行中"
+//   - 颜色：全部归档=绿，部分归档=橙，进行中=灰
+function formatGroupProgress(contracts: any[]): string {
+  if (!contracts?.length) return '<span style="color:#909399">-</span>'
+  const archived = contracts.filter((c) => c.archiveStatus === 'ARCHIVED').length
+  const approved = contracts.filter((c) => c.reviewStatus === 'APPROVED').length
+  // 进行中 = 草稿 + 已提交 + 已驳回（但实际上 REJECTED 也算进行中 — 业务上需要继续处理）
+  const inProgress = contracts.filter(
+    (c) => c.reviewStatus !== 'APPROVED',
+  ).length
+
+  if (approved === 0 && inProgress === 0) {
+    return '<span style="color:#909399">-</span>'
+  }
+
+  const parts: string[] = []
+  if (approved > 0) {
+    const color = archived === approved ? '#67C23A' : '#E6A23C'
+    parts.push(`<span style="color:${color}">已归档 ${archived}/${approved}</span>`)
+  }
+  if (inProgress > 0) {
+    parts.push(`<span style="color:#909399">进行中 ${inProgress}</span>`)
+  }
+  return parts.join(' ｜ ')
 }
 
 
@@ -413,6 +443,21 @@ onMounted(() => {
         </el-table-column>
         <el-table-column label="合同数" width="80" align="center">
           <template #default="{ row }">{{ row.contracts?.length ?? 0 }}</template>
+        </el-table-column>
+        <el-table-column label="合同组进度" min-width="200" align="center">
+          <template #header>
+            合同组进度
+            <el-tooltip placement="top">
+              <template #content>
+                已归档 N/M：N=已归档合同数，M=已审核通过的合同数<br/>
+                进行中：草稿 / 已提交 / 已驳回的合同数
+              </template>
+              <el-icon style="margin-left: 4px; cursor: help; color: #909399; vertical-align: middle"><QuestionFilled /></el-icon>
+            </el-tooltip>
+          </template>
+          <template #default="{ row }">
+            <span v-html="formatGroupProgress(row.contracts)" />
+          </template>
         </el-table-column>
         <el-table-column prop="remark" label="备注" min-width="200" show-overflow-tooltip />
         <el-table-column label="创建时间" width="170">
