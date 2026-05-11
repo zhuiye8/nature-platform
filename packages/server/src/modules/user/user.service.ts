@@ -316,6 +316,10 @@ export class UserService {
         displayName: userAccount.displayName,
         mobile: userAccount.mobile,
         email: userAccount.email,
+        // 钉钉（DingTalk）绑定标识 — 个人中心 ProfilePage 用 dingUnionId
+        // 是否非 null 判断"已绑定 / 未绑定"。漏了这个字段会导致已绑定的
+        // 用户在个人中心也看到"未绑定"，且暴露"绑定钉钉"按钮（覆盖原绑定的风险）
+        dingUnionId: userAccount.dingUnionId,
         createdAt: userAccount.createdAt,
       })
       .from(userAccount)
