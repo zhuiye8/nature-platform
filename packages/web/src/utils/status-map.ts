@@ -57,11 +57,8 @@ export const statusLabel: Record<string, string> = {
   FINAL_REVIEW: '最终审核',
   MATERIAL_ARCHIVE: '材料归档',
 
-  ADJUST: '调整',
-  ADJUSTED: '已调整',
   REVIEW: '复核',
   RESUBMIT: '重新提交',
-  REJECT_TO_TECH: '驳回至技术审核',
   REJECT_TO_ASSESSMENT: '驳回至现场测评',
   REVIEW_TO_COMPILE: '复核至报告编制',
   PENDING_RECTIFICATION: '待整改',
@@ -132,7 +129,6 @@ export const statusLabel: Record<string, string> = {
   CONTENT_APPROVED: '内容审核通过',
   CONTENT_REJECTED: '内容审核驳回',
   FINAL_APPROVED: '最终审核通过',
-  FINAL_ADJUST: '最终审核调整',
 }
 
 export const statusTagType: Record<string, StatusTagType> = {
@@ -179,7 +175,6 @@ export const statusTagType: Record<string, StatusTagType> = {
 
   REVIEW: 'warning',
   RESUBMIT: 'info',
-  REJECT_TO_TECH: 'danger',
   REJECT_TO_ASSESSMENT: 'danger',
   REVIEW_TO_COMPILE: 'warning',
   PENDING_RECTIFICATION: 'warning',
@@ -196,7 +191,6 @@ export const statusTagType: Record<string, StatusTagType> = {
   CONTENT_APPROVED: 'success',
   CONTENT_REJECTED: 'danger',
   FINAL_APPROVED: 'success',
-  FINAL_ADJUST: 'warning',
 
   // 财务请款专用: 部门通过 → 进入财务审核（用 primary 区分两阶段）
   DEPT_APPROVED: 'primary',

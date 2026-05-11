@@ -472,8 +472,9 @@ export class WorkflowService {
       // 8. Node is complete — resolve transition and advance
       const event = await handler.resolveCompletionEvent(ctx);
 
-      // FINAL_REVIEW REJECT is handled by assessment.listener.ts (rejectToTechReview)
-      // Don't go through advanceToNextNode which would mark instance COMPLETED (no transition defined)
+      // FINAL_REVIEW REJECT 由 assessment.listener.ts 处理（调 rejectToAssessment 跳到 ON_SITE_ASSESSMENT）。
+      // 这里只 emit 事件让 listener 接管，不能走 advanceToNextNode —— transition 表里
+      // FINAL_REVIEW 没有 REJECT 路径，调 advanceToNextNode 会把 instance 标为 COMPLETED 退出流程。
       if (instance.currentNode === 'FINAL_REVIEW' && event === 'REJECT') {
         this.eventEmitter.emit('workflow.node.completed', {
           bizType: instance.bizType,
@@ -890,95 +891,6 @@ export class WorkflowService {
       });
 
       return { success: true };
-    });
-  }
-
-  // ---------------------------------------------------------------------------
-  // Reject to tech review — FINAL_REVIEW REJECT rolls back to TECH_REVIEW
-  // ---------------------------------------------------------------------------
-  async rejectToTechReview(
-    instanceId: number,
-    userId: number,
-    remark: string,
-  ) {
-    return this.db.transaction(async (tx) => {
-      const txDb = tx as unknown as DrizzleDB;
-
-      // 1. Load instance
-      const instances = await tx
-        .select()
-        .from(wfInstance)
-        .where(eq(wfInstance.id, instanceId))
-        .limit(1);
-
-      const instance = instances[0];
-      if (!instance) {
-        throw new NotFoundException(`Instance #${instanceId} not found`);
-      }
-
-      // 2. Increment roundNo
-      const newRoundNo = instance.roundNo + 1;
-
-      // 3. Cancel all non-terminal tasks
-      await tx
-        .update(wfTask)
-        .set({ status: 'CANCELLED', updatedAt: new Date() })
-        .where(
-          and(
-            eq(wfTask.instanceId, instanceId),
-            ne(wfTask.status, 'COMPLETED'),
-            ne(wfTask.status, 'CANCELLED'),
-          ),
-        );
-
-      // 4. Update instance: roundNo+1, currentNode = TECH_REVIEW
-      const targetNode = 'TECH_REVIEW';
-      await tx
-        .update(wfInstance)
-        .set({
-          roundNo: newRoundNo,
-          currentNode: targetNode,
-          updatedAt: new Date(),
-        })
-        .where(eq(wfInstance.id, instanceId));
-
-      // 5. Load TECH_REVIEW node definition and enter
-      const nodeDef = await this.loadNodeDef(
-        tx,
-        instance.definitionId,
-        targetNode,
-      );
-      const handler = this.getHandler(nodeDef.nodeType);
-
-      const refreshed = await this.loadInstance(tx, instanceId);
-      const ctx: NodeContext = {
-        db: txDb,
-        instance: refreshed,
-        nodeDef,
-        currentUserId: userId,
-      };
-
-      await handler.onEnter(ctx);
-
-      // 6. Emit task.created events
-      await this.emitTaskCreatedEvents(txDb, refreshed, nodeDef);
-
-      // 7. Log REJECT_TO_TECH action
-      await tx.insert(wfActionLog).values({
-        instanceId,
-        nodeKey: 'FINAL_REVIEW',
-        action: 'REJECT_TO_TECH',
-        fromNode: 'FINAL_REVIEW',
-        toNode: targetNode,
-        operatorId: userId,
-        remark,
-      });
-
-      this.logger.log(
-        `Instance #${instanceId} rejected from FINAL_REVIEW to TECH_REVIEW (round ${newRoundNo})`,
-      );
-
-      return refreshed;
     });
   }
 

@@ -4,7 +4,7 @@
  *
  * 数据来源: workflow action log 中带 remark 的所有审核记录
  *   - APPROVE（通过）: 绿色 success
- *   - REJECT / REJECT_TO_ASSESSMENT / REJECT_TO_TECH（驳回）: 红色 error
+ *   - REJECT / REJECT_TO_ASSESSMENT（驳回）: 红色 error
  *   - REVIEW / REVIEW_TO_COMPILE（复核）: 黄色 warning
  *
  * 视觉:
@@ -42,7 +42,7 @@ const alertType = computed<'success' | 'error' | 'warning' | 'info'>(() => {
   if (!latestOpinion.value) return 'info'
   const action = latestOpinion.value.action
   if (action === 'APPROVE') return 'success'
-  if (['REJECT', 'REJECT_TO_ASSESSMENT', 'REJECT_TO_TECH'].includes(action)) return 'error'
+  if (['REJECT', 'REJECT_TO_ASSESSMENT'].includes(action)) return 'error'
   return 'warning'
 })
 
@@ -51,7 +51,7 @@ const alertTitle = computed(() => {
   const action = latestOpinion.value.action
   let label = '审核'
   if (action === 'APPROVE') label = '通过'
-  else if (['REJECT', 'REJECT_TO_ASSESSMENT', 'REJECT_TO_TECH'].includes(action)) label = '驳回'
+  else if (['REJECT', 'REJECT_TO_ASSESSMENT'].includes(action)) label = '驳回'
   else if (['REVIEW', 'REVIEW_TO_COMPILE'].includes(action)) label = '复核'
   return `${getStatusLabel(latestOpinion.value.nodeKey)} ${label}`
 })
@@ -70,7 +70,6 @@ async function fetchData() {
           'REJECT',
           'REVIEW',
           'REJECT_TO_ASSESSMENT',
-          'REJECT_TO_TECH',
           'REVIEW_TO_COMPILE',
         ].includes(log.action) && (log.remark ?? '').trim().length > 0,
       )
@@ -91,7 +90,7 @@ async function fetchData() {
 
 function getActionTag(action: string) {
   if (action === 'APPROVE') return { label: '通过', type: 'success' as const }
-  if (['REJECT', 'REJECT_TO_ASSESSMENT', 'REJECT_TO_TECH'].includes(action))
+  if (['REJECT', 'REJECT_TO_ASSESSMENT'].includes(action))
     return { label: '驳回', type: 'danger' as const }
   return { label: '复核', type: 'warning' as const }
 }

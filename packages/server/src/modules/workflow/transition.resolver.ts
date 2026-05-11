@@ -52,8 +52,12 @@ export class TransitionResolver {
   }
 
   /**
-   * Simple guard evaluator: checks if a variable name is truthy in instance.variables
-   * Supports: "skip_to_final" → checks instance.variables.skip_to_final === true
+   * Simple guard evaluator: checks if a variable name is truthy in instance.variables.
+   *
+   * 当前支持的 guard 表达式（写在 wf_transition.guard_expr）：
+   * - "skip_dept_review" → 项目登记审核时，合同已归档跳过部门经理确认节点
+   *
+   * （后续如需基于 project_member 等业务表查询的 guard，应改为 async 实现）
    */
   private evaluateGuard(
     guardExpr: string,

@@ -192,42 +192,6 @@ export class ReviewHandler implements NodeHandler {
       return true;
     }
 
-    if (action === 'ADJUST') {
-      if (!remark || remark.trim().length === 0) {
-        throw new BadRequestException('调整时备注为必填项');
-      }
-
-      const updated = await ctx.db
-        .update(wfTask)
-        .set({
-          status: 'COMPLETED',
-          result: 'ADJUSTED',
-          remark,
-          completedAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(
-          and(eq(wfTask.id, taskId), eq(wfTask.status, 'PENDING')),
-        )
-        .returning({ id: wfTask.id });
-
-      if (updated.length === 0) {
-        throw new BadRequestException('该任务已被他人处理');
-      }
-
-      // Set skip_to_final flag in instance variables
-      const currentVars = (ctx.instance.variables as Record<string, any>) || {};
-      await ctx.db
-        .update(wfInstance)
-        .set({
-          variables: { ...currentVars, skip_to_final: true },
-          updatedAt: new Date(),
-        })
-        .where(eq(wfInstance.id, ctx.instance.id));
-
-      return true;
-    }
-
     throw new BadRequestException(`未知的审核操作: ${action}`);
   }
 
@@ -246,7 +210,6 @@ export class ReviewHandler implements NodeHandler {
     const lastTask = tasks[0]; // Most recent task (highest id)
     if (lastTask?.result === 'APPROVED') return 'APPROVE';
     if (lastTask?.result === 'REJECTED') return 'REJECT';
-    if (lastTask?.result === 'ADJUSTED') return 'ADJUST';
     return 'APPROVE';
   }
 }

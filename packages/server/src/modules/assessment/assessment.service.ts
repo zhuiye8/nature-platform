@@ -461,17 +461,6 @@ export class AssessmentService {
       throw new BadRequestException('Workflow is not at ON_SITE_ASSESSMENT node');
     }
 
-    // Check if skip_to_final is set — if not from ADJUST, clear it
-    const vars = (instance[0].variables as Record<string, any>) || {};
-    if (!vars.skip_to_final) {
-      // Normal re-initiation after tech/content reject — ensure skip is cleared
-      await this.db
-        .update(wfInstance)
-        .set({ variables: { ...vars, skip_to_final: false }, updatedAt: new Date() })
-        .where(eq(wfInstance.id, instance[0].id));
-    }
-    // If skip_to_final is true (from ADJUST), leave it — TransitionResolver will handle
-
     // Signal all pending tasks for this node as SUBMITTED
     const pendingTasks = await this.db
       .select()
